@@ -1,0 +1,23 @@
+# Build output
+/bin/
+/dist/
+/trustdiff
+/trustdiff.exe
+
+# Test and coverage artifacts
+*.test
+*.out
+coverage.*
+
+# Local planning and editor state
+/.planning/
+.vscode/
+.idea/
+*.swp
+
+# Backups written by doctor --fix during local experiments
+*.trustdiff-backup-*
+
+# OS noise
+.DS_Store
+Thumbs.db
