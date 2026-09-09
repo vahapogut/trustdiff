@@ -12,7 +12,7 @@ LDFLAGS  := -s -w \
 
 export CGO_ENABLED = 0
 
-.PHONY: build test test-integration lint vet vuln sec snapshot clean
+.PHONY: build test test-integration lint vet vuln sec snapshot fixture clean
 
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BIN) ./cmd/trustdiff
@@ -37,6 +37,10 @@ sec:
 
 snapshot:
 	goreleaser release --snapshot --clean --skip=sign,publish,sbom
+
+# Record one live response into testdata: make fixture URL=https://... OUT=internal/.../testdata/x.json
+fixture:
+	go run ./scripts/record-fixture $(URL) $(OUT)
 
 clean:
 	rm -rf bin dist

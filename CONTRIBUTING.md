@@ -73,7 +73,20 @@ Conventions:
 
 ### Recording fixtures
 
-The recording script (`go run ./scripts/record-fixture <url> <path>`) and the full instructions for this section arrive with the first registry client. Until then, record a response with `curl` and add the README line described above by hand.
+Tests never touch the network. A registry or advisory response is recorded once
+with the helper and served by `net/http/httptest` from then on:
+
+```bash
+go run ./scripts/record-fixture https://registry.npmjs.org/express internal/registry/npm/testdata/express.json
+```
+
+`make fixture URL=<url> OUT=<path>` runs the same command. The helper writes the body
+byte for byte and adds a line to the `README.md` next to it with the method, URL,
+status, size and date, so every fixture carries its provenance. Use `-accept` for
+an alternate media type (the abbreviated npm packument) and `-post <file>` for batch
+endpoints such as OSV `querybatch`. Re-record a fixture when the code needs a field
+the old copy lacks; commit the fixture and the README line together with the change
+that needs them.
 
 ## Architecture decision records
 
