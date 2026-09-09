@@ -332,7 +332,7 @@ func newRecord(rec *osvRecord, log *slog.Logger) *Record {
 		Aliases:       slices.Clone(rec.Aliases),
 		Summary:       summaryOf(rec),
 		SeverityLabel: databaseSeverity(rec),
-		CVSSv3:        cvss3Vector(rec),
+		CVSSv3:        cvss3Vectors(rec),
 		Published:     parseTime(rec.ID, "published", rec.Published, log),
 		Modified:      parseTime(rec.ID, "modified", rec.Modified, log),
 		Withdrawn:     parseTime(rec.ID, "withdrawn", rec.Withdrawn, log),
@@ -347,6 +347,15 @@ func newRecord(rec *osvRecord, log *slog.Logger) *Record {
 // comparing one with a package version is meaningless; a range with an unknown
 // or missing type is kept, because real records carry one (MAL-2021-1 had a
 // range with no type on 2026-09-10) and its events are versions.
+//
+// The schema allows exactly one key per event object. An event that carries more
+// than one is malformed, and every key of it is applied anyway rather than only
+// the first: reading {"introduced":"1.0.0","fixed":"2.0.0"} as an introduced
+// event alone leaves a range with no upper bound, which says every later version
+// of the package is affected and reports a finding against versions that are not.
+// Applying both keys is also the only reading of that object anyone could have
+// meant. A closing key still closes the range once, fixed before last_affected,
+// so an event that spells both cannot open a second range behind the first.
 func flattenRanges(ranges []osvRange) []Range {
 	var out []Range
 	for i := range ranges {
@@ -356,27 +365,26 @@ func flattenRanges(ranges []osvRange) []Range {
 		}
 		var current *Range
 		for _, event := range r.Events {
-			switch {
-			case event["introduced"] != "":
+			if introduced := event["introduced"]; introduced != "" {
 				if current != nil {
 					out = append(out, *current)
 				}
-				current = &Range{Introduced: event["introduced"]}
-			case event["fixed"] != "":
-				if current == nil {
-					current = &Range{Introduced: "0"}
-				}
-				current.Fixed = event["fixed"]
-				out = append(out, *current)
-				current = nil
-			case event["last_affected"] != "":
-				if current == nil {
-					current = &Range{Introduced: "0"}
-				}
-				current.LastAffected = event["last_affected"]
-				out = append(out, *current)
-				current = nil
+				current = &Range{Introduced: introduced}
 			}
+			fixed, lastAffected := event["fixed"], event["last_affected"]
+			if fixed == "" && lastAffected == "" {
+				continue
+			}
+			if current == nil {
+				current = &Range{Introduced: "0"}
+			}
+			if fixed != "" {
+				current.Fixed = fixed
+			} else {
+				current.LastAffected = lastAffected
+			}
+			out = append(out, *current)
+			current = nil
 		}
 		if current != nil {
 			out = append(out, *current)
@@ -418,15 +426,23 @@ func databaseSeverity(rec *osvRecord) string {
 	return strings.TrimSpace(label)
 }
 
-// cvss3Vector returns the first CVSS_V3 vector of the record. It is not scored
-// here; see the package comment for why the input is stored instead.
-func cvss3Vector(rec *osvRecord) string {
+// cvss3Vectors returns every CVSS_V3 vector of the record, in the record's own
+// order. Nothing is scored or validated here; see the package comment for why the
+// inputs are stored instead. The whole list is kept because the rule that scores
+// them skips a vector that does not parse and takes the next one, so storing only
+// the first would let one malformed vector hide a usable one from the offline
+// path while the online path found it.
+func cvss3Vectors(rec *osvRecord) []string {
+	var out []string
 	for _, s := range rec.Severity {
-		if s.Type == "CVSS_V3" && strings.TrimSpace(s.Score) != "" {
-			return strings.TrimSpace(s.Score)
+		if s.Type != "CVSS_V3" {
+			continue
+		}
+		if score := strings.TrimSpace(s.Score); score != "" {
+			out = append(out, score)
 		}
 	}
-	return ""
+	return out
 }
 
 // parseTime reads an RFC 3339 timestamp (OSV writes UTC with a Z suffix and
@@ -446,9 +462,15 @@ func parseTime(id, field, value string, log *slog.Logger) time.Time {
 	return t.UTC()
 }
 
-// marshalShards sorts everything and renders one file per non-empty shard. The
-// sorting is what makes a build reproducible: keys, ids, ranges and versions all
-// come out in the same order for the same input, so the bytes do too.
+// marshalShards sorts what is merged and renders one file per non-empty shard.
+// The sorting is what makes a build reproducible: keys, ids, ranges and versions
+// all come out in the same order for the same input, so the bytes do too.
+//
+// Aliases and CVSS vectors are not sorted. They are read from a single record and
+// never merged across affected blocks, so the record's own order is already
+// reproducible, and that order is what the online path shows: an advisory has to
+// read the same offline. For the vectors the order is also load bearing, since
+// the severity rule takes the first one that parses.
 func marshalShards(built *Built, byKey map[string]map[string]*Record) error {
 	buckets := make([][]packageEntry, shardCount)
 	for key, perID := range byKey {
@@ -456,7 +478,6 @@ func marshalShards(built *Built, byKey map[string]map[string]*Record) error {
 		for _, rec := range perID {
 			rec.Ranges = sortRanges(rec.Ranges)
 			rec.Versions = sortStrings(rec.Versions)
-			rec.Aliases = sortStrings(rec.Aliases)
 			entry.Advisories = append(entry.Advisories, *rec)
 		}
 		slices.SortFunc(entry.Advisories, func(a, b Record) int { return strings.Compare(a.ID, b.ID) })

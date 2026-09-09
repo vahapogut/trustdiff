@@ -52,6 +52,13 @@ func download(ctx context.Context, client *http.Client, url, userAgent, dir stri
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotModified {
+		// A 304 to a request that carried no validator is a server or a proxy
+		// answering something nobody asked, and there is no previous index to keep,
+		// so it is an error rather than an unchanged archive. Reading prev here
+		// unconditionally used to panic on exactly that.
+		if prev == nil {
+			return nil, fmt.Errorf("osvindex: %s: answered 304 although nothing was sent to match against", url)
+		}
 		log.Debug("osv archive unchanged", "url", url)
 		return &downloaded{Unchanged: true, ETag: prev.ETag, LastModified: prev.LastModified}, nil
 	}

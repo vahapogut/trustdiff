@@ -140,6 +140,13 @@ func refreshOne(ctx context.Context, client *http.Client, cacheDir string, eco m
 		return res
 	}
 	if got.Unchanged {
+		if prev == nil {
+			// download refuses a 304 with nothing to match against, so this cannot
+			// happen; the guard is here because the alternative is a panic in a
+			// command people run on a schedule.
+			res.Err = fmt.Errorf("osvindex: %s: unchanged with no index to keep", eco)
+			return res
+		}
 		meta := *prev
 		meta.DownloadedAt = now().UTC()
 		if err := writeMeta(cacheDir, &meta); err != nil {
@@ -193,22 +200,16 @@ func refreshOne(ctx context.Context, client *http.Client, cacheDir string, eco m
 	return res
 }
 
-// usablePrevious returns the metadata of the index on disk, but only when the
-// shard files it describes are still there. Revalidating against a metadata file
-// whose shards someone deleted would answer 304 and leave the ecosystem
-// permanently empty, so in that case the archive is downloaded in full.
+// usablePrevious returns the metadata of the index on disk, and nil when there is
+// nothing on disk to revalidate against. readMeta answers that question for the
+// whole package: it reports an ecosystem as indexed only when the shard files the
+// metadata counts are there too. Revalidating against a metadata file whose
+// shards someone deleted would answer 304 and leave the ecosystem permanently
+// empty, so in that case the archive is downloaded in full.
 func usablePrevious(cacheDir string, eco model.Ecosystem, log *slog.Logger) *Meta {
 	meta, err := readMeta(cacheDir, eco)
 	if err != nil || meta == nil {
-		return nil
-	}
-	present, err := countShards(ecosystemDir(cacheDir, eco))
-	if err != nil {
-		return nil
-	}
-	if present != meta.Shards {
-		log.Debug("osv index metadata does not match the shards on disk, downloading in full",
-			"ecosystem", eco, "shards_on_disk", present, "shards_recorded", meta.Shards)
+		log.Debug("no usable index on disk, downloading the archive in full", "ecosystem", eco, "error", err)
 		return nil
 	}
 	return meta
@@ -217,14 +218,14 @@ func usablePrevious(cacheDir string, eco model.Ecosystem, log *slog.Logger) *Met
 // shardFileName matches a finished shard file, which is what countShards counts.
 var shardFileName = regexp.MustCompile(`^[0-9a-f]{2}\.json$`)
 
-// countShards counts the finished shard files of one ecosystem directory.
-func countShards(dir string) (int, error) {
+// countShards counts the finished shard files of one ecosystem directory. A
+// directory that is missing, or that cannot be listed at all, counts as none:
+// that is the answer every caller wants, since shard files nobody can list are
+// shard files nobody can read either, and the ecosystem is then not indexed.
+func countShards(dir string) int {
 	entries, err := os.ReadDir(dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return 0, nil
-	}
 	if err != nil {
-		return 0, fmt.Errorf("osvindex: reading %s: %w", dir, err)
+		return 0
 	}
 	n := 0
 	for _, e := range entries {
@@ -232,5 +233,5 @@ func countShards(dir string) (int, error) {
 			n++
 		}
 	}
-	return n, nil
+	return n
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -133,7 +134,7 @@ func TestLookupRecordContents(t *testing.T) {
 	if rec.SeverityLabel != "HIGH" {
 		t.Errorf("SeverityLabel = %q, want HIGH", rec.SeverityLabel)
 	}
-	if rec.CVSSv3 != "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H" {
+	if len(rec.CVSSv3) != 1 || rec.CVSSv3[0] != "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H" {
 		t.Errorf("CVSSv3 = %q", rec.CVSSv3)
 	}
 	if rec.Published.IsZero() || rec.Modified.IsZero() {
@@ -153,7 +154,7 @@ func TestLookupRecordContents(t *testing.T) {
 	if !mal.Malicious() {
 		t.Error("Malicious() = false for a MAL- record")
 	}
-	if mal.SeverityLabel != "" || mal.CVSSv3 != "" {
+	if mal.SeverityLabel != "" || len(mal.CVSSv3) != 0 {
 		t.Errorf("severity inputs = %q, %q; want both empty", mal.SeverityLabel, mal.CVSSv3)
 	}
 
@@ -166,7 +167,7 @@ func TestLookupRecordContents(t *testing.T) {
 	if !strings.HasPrefix(got[0].Summary, "zope.interface 5.4.0 and 5.5.0") {
 		t.Errorf("Summary = %q", got[0].Summary)
 	}
-	if got[0].SeverityLabel != "" || got[0].CVSSv3 != "" {
+	if got[0].SeverityLabel != "" || len(got[0].CVSSv3) != 0 {
 		t.Errorf("severity inputs = %q, %q; want both empty", got[0].SeverityLabel, got[0].CVSSv3)
 	}
 
@@ -176,7 +177,7 @@ func TestLookupRecordContents(t *testing.T) {
 	if err != nil || len(got) != 1 {
 		t.Fatalf("Lookup = %v, %v", got, err)
 	}
-	if got[0].SeverityLabel != "" || !strings.HasPrefix(got[0].CVSSv3, "CVSS:3.1/") {
+	if got[0].SeverityLabel != "" || len(got[0].CVSSv3) != 1 || !strings.HasPrefix(got[0].CVSSv3[0], "CVSS:3.1/") {
 		t.Errorf("severity inputs = %q, %q", got[0].SeverityLabel, got[0].CVSSv3)
 	}
 }
@@ -260,6 +261,140 @@ func TestLookupOfAnUnindexedEcosystem(t *testing.T) {
 	}
 }
 
+// TestOpenWithoutTheShards is the false negative an offline security tool can
+// least afford. "cache clear" removes an ecosystem's files in the order ReadDir
+// gives, so 00.json through ff.json go before meta.json and an interrupted clear
+// leaves the metadata behind with no shards. Every lookup then lands in an absent
+// shard, which reads as an empty bucket, and the run reports the package as clean.
+func TestOpenWithoutTheShards(t *testing.T) {
+	dir, _ := indexFixture(t)
+	removeShards(t, ecosystemDir(dir, model.NPM))
+
+	r, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open with two ecosystems left: %v", err)
+	}
+	if slices.Contains(r.Ecosystems(), model.NPM) {
+		t.Errorf("Ecosystems() = %v, want npm left out", r.Ecosystems())
+	}
+	if _, err := r.Lookup(model.NPM, "lodash", "4.17.20"); !errors.Is(err, ErrNoIndex) {
+		t.Fatalf("Lookup of a shardless ecosystem: err = %v, want ErrNoIndex", err)
+	}
+	// "cache status" reads the same metadata and must not call it indexed either.
+	stats, err := Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range stats.Ecosystems {
+		if stats.Ecosystems[i].Ecosystem == model.NPM {
+			t.Errorf("Stat still reports npm as indexed: %+v", stats.Ecosystems[i])
+		}
+	}
+
+	// With every ecosystem in that state there is nothing to read at all.
+	for _, eco := range Indexable() {
+		removeShards(t, ecosystemDir(dir, eco))
+	}
+	if _, err := Open(dir); !errors.Is(err, ErrNoIndex) {
+		t.Fatalf("Open with no shards anywhere: err = %v, want ErrNoIndex", err)
+	}
+}
+
+// removeShards deletes an ecosystem's shard files and leaves its meta.json, which
+// is what an interrupted "cache clear" leaves behind.
+func removeShards(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.Name() == metaName {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestListedVersionsUseTheEcosystemScheme covers the versions list, which OSV
+// records use instead of a range. PEP 440 makes each of these three spellings the
+// same version as one the record lists, and the OSV API reports all three as
+// affected, so an offline run that compared the bytes would answer clean where an
+// online run answers vulnerable.
+func TestListedVersionsUseTheEcosystemScheme(t *testing.T) {
+	record := `{"id":"PYSEC-2026-2","summary":"listed versions only",
+		"affected":[{"package":{"name":"pkg","ecosystem":"PyPI"},
+		"versions":["1.0","2.0.0","3.0.post1","not-a-version"]}]}`
+	r := readerOfRecords(t, model.PyPI, record)
+
+	affected := []string{"1.0", "1.0.0", "1.0.0.0", "2.0", "2.0.0", "3.0-1", "3.0.post1", "not-a-version"}
+	for _, ver := range affected {
+		got, err := r.Lookup(model.PyPI, "pkg", ver)
+		if err != nil {
+			t.Fatalf("Lookup(pypi, pkg, %s): %v", ver, err)
+		}
+		if len(got) != 1 {
+			t.Errorf("Lookup(pypi, pkg, %s) = %v, want PYSEC-2026-2", ver, got)
+		}
+	}
+	for _, ver := range []string{"1.1", "2.0.1", "3.0", "3.0.post2", "another-odd-one"} {
+		got, err := r.Lookup(model.PyPI, "pkg", ver)
+		if err != nil {
+			t.Fatalf("Lookup(pypi, pkg, %s): %v", ver, err)
+		}
+		if got != nil {
+			t.Errorf("Lookup(pypi, pkg, %s) = %v, want nothing", ver, got)
+		}
+	}
+}
+
+// TestEventWithTwoKeysStaysBounded covers a malformed range that fails toward a
+// false positive: the OSV schema allows one key per event object, and reading only
+// the first key of {"introduced":"1.0.0","fixed":"2.0.0"} leaves a range with no
+// upper bound, which reports every version the package will ever publish.
+func TestEventWithTwoKeysStaysBounded(t *testing.T) {
+	record := `{"id":"GHSA-two-keys","summary":"one event, two keys",
+		"affected":[{"package":{"name":"p","ecosystem":"npm"},
+		"ranges":[{"type":"SEMVER","events":[{"introduced":"1.0.0","fixed":"2.0.0"}]}]}]}`
+	r := readerOfRecords(t, model.NPM, record)
+
+	cases := map[string]bool{"0.9.0": false, "1.0.0": true, "1.5.0": true, "2.0.0": false, "99.0.0": false}
+	for ver, want := range cases {
+		got, err := r.Lookup(model.NPM, "p", ver)
+		if err != nil {
+			t.Fatalf("Lookup(npm, p, %s): %v", ver, err)
+		}
+		if (len(got) == 1) != want {
+			t.Errorf("Lookup(npm, p, %s) = %v, want affected = %v", ver, got, want)
+		}
+	}
+}
+
+// TestUnparsableIntroducedKeepsTheFix is the other half of the same trade. An
+// introduced version that is not a semantic version cannot be ordered, but the
+// fixed version of the same range still says plainly that everything below it is
+// affected, and dropping the whole range over the bound that could not be read
+// hid the advisory from every version it covers.
+func TestUnparsableIntroducedKeepsTheFix(t *testing.T) {
+	record := `{"id":"GHSA-odd-bound","summary":"an introduced version that is not a semantic version",
+		"affected":[{"package":{"name":"p","ecosystem":"npm"},
+		"ranges":[{"type":"SEMVER","events":[{"introduced":"1.0.0.beta"},{"fixed":"2.0.0"}]}]}]}`
+	r := readerOfRecords(t, model.NPM, record)
+
+	cases := map[string]bool{"0.9.0": true, "1.5.0": true, "1.0.0.beta": true, "2.0.0": false, "3.0.0": false}
+	for ver, want := range cases {
+		got, err := r.Lookup(model.NPM, "p", ver)
+		if err != nil {
+			t.Fatalf("Lookup(npm, p, %s): %v", ver, err)
+		}
+		if (len(got) == 1) != want {
+			t.Errorf("Lookup(npm, p, %s) = %v, want affected = %v", ver, got, want)
+		}
+	}
+}
+
 // TestOpenIgnoresAnotherSchema checks the upgrade path: an index written by a
 // format this build does not know reads as not downloaded, not as empty.
 func TestOpenIgnoresAnotherSchema(t *testing.T) {
@@ -334,9 +469,15 @@ func TestClear(t *testing.T) {
 	}
 }
 
-func TestClearRefusesForeignFiles(t *testing.T) {
+// TestClearKeepsForeignFilesAndClearsTheRest is what a person asking for the
+// cache to be cleared gets when one stray file is under the index: the index
+// goes, the stray file stays, and the answer names it. Refusing the whole
+// operation over one file used to leave every ecosystem on disk with no way
+// forward except deleting the directory by hand.
+func TestClearKeepsForeignFilesAndClearsTheRest(t *testing.T) {
 	dir, _ := indexFixture(t)
-	keep := filepath.Join(ecosystemDir(dir, model.NPM), "thesis.docx")
+	npm := ecosystemDir(dir, model.NPM)
+	keep := filepath.Join(npm, "thesis.docx")
 	if err := os.WriteFile(keep, []byte("irreplaceable"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -350,9 +491,54 @@ func TestClearRefusesForeignFiles(t *testing.T) {
 	if _, err := os.Stat(keep); err != nil {
 		t.Fatalf("the foreign file was removed: %v", err)
 	}
-	// The refusal happens before anything is removed.
-	if _, err := os.Stat(filepath.Join(ecosystemDir(dir, model.Cargo), metaName)); err != nil {
-		t.Fatalf("another ecosystem was removed before the refusal: %v", err)
+	// Everything this package wrote is gone, in the ecosystem that held the
+	// stray file and in the ones that did not.
+	if _, err := os.Stat(filepath.Join(npm, metaName)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the index files beside the foreign file survived: %v", err)
+	}
+	for _, eco := range []model.Ecosystem{model.PyPI, model.Cargo} {
+		if _, err := os.Stat(ecosystemDir(dir, eco)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s survived a refusal about another ecosystem: %v", eco, err)
+		}
+	}
+	// A second clear has nothing of its own left to remove and says the same
+	// thing about the same file.
+	if err := Clear(dir); !errors.Is(err, ErrForeignFiles) {
+		t.Fatalf("second Clear: err = %v, want ErrForeignFiles", err)
+	}
+	// And once the file is out of the way, the directories go too.
+	if err := os.Remove(keep); err != nil {
+		t.Fatal(err)
+	}
+	if err := Clear(dir); err != nil {
+		t.Fatalf("Clear after the foreign file was removed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, Subdir)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the index directory survived: %v", err)
+	}
+}
+
+// TestClearKeepsAForeignDirectory checks the other shape: a directory under the
+// index that is not an ecosystem is not ours to look inside, so it is kept whole.
+func TestClearKeepsAForeignDirectory(t *testing.T) {
+	dir, _ := indexFixture(t)
+	foreign := filepath.Join(Dir(dir), "not-an-ecosystem")
+	if err := os.MkdirAll(foreign, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	inside := filepath.Join(foreign, "notes.txt")
+	if err := os.WriteFile(inside, []byte("irreplaceable"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := Clear(dir)
+	if !errors.Is(err, ErrForeignFiles) || !strings.Contains(err.Error(), "not-an-ecosystem") {
+		t.Fatalf("err = %v, want ErrForeignFiles naming the directory", err)
+	}
+	if _, err := os.Stat(inside); err != nil {
+		t.Fatalf("the foreign directory was emptied: %v", err)
+	}
+	if _, err := os.Stat(ecosystemDir(dir, model.NPM)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("npm survived a refusal about another directory: %v", err)
 	}
 }
 

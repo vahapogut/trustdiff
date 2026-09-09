@@ -65,11 +65,14 @@
 // prefix of the id and the advisory page is https://osv.dev/vulnerability/<id>,
 // and at npm's record count each of them would cost several megabytes to store.
 //
-// The severity is stored as its two inputs, database_specific.severity and the
-// first CVSS_V3 vector, not as a bucketed severity. The rule that turns those
-// into an advisory.Severity lives in internal/advisory/osv and must not be
+// The severity is stored as its two inputs, database_specific.severity and every
+// CVSS_V3 vector of the record, not as a bucketed severity. The rule that turns
+// those into an advisory.Severity lives in internal/advisory/osv and must not be
 // forked here: keeping the inputs verbatim lets that one rule decide for the
-// offline path exactly as it decides for the online one.
+// offline path exactly as it decides for the online one. That is also why the
+// vectors are stored as a list, unfiltered: the rule skips a vector that does not
+// parse and takes the next one, and it can only do that offline if the index kept
+// the next one.
 //
 // # Layout
 //
@@ -131,8 +134,12 @@ const (
 
 	// Schema is the version of the on-disk format. A reader that meets another
 	// number treats the ecosystem as not indexed rather than guessing, so an
-	// upgrade that changes the format is a refresh away from working.
-	Schema = 1
+	// upgrade that changes the format is a refresh away from working. It went
+	// from 1 to 2 when cvss_v3 became the list of every CVSS_V3 vector of the
+	// record rather than the first one, so that the severity rule in
+	// internal/advisory/osv can skip a vector that does not parse offline exactly
+	// as it does online.
+	Schema = 2
 
 	// shardCount is how many shards one ecosystem is split into. It is 256 so
 	// that a shard is named by the first byte of the key hash in hex, which
@@ -184,7 +191,11 @@ type Range struct {
 type Record struct {
 	// ID is the OSV id, for example GHSA-xxxx or MAL-2026-1234.
 	ID string `json:"id"`
-	// Aliases are other identifiers for the same advisory (CVE ids).
+	// Aliases are other identifiers for the same advisory (CVE ids), in the
+	// order the record lists them. The order is kept rather than sorted because
+	// it carries meaning (OSV lists the identifier the record came from first)
+	// and because the online path shows the record's own order: an advisory must
+	// not read differently offline.
 	Aliases []string `json:"aliases,omitempty"`
 	// Summary is the record's summary, or the first line of its details when it
 	// has none, bounded to summaryMaxRunes.
@@ -193,10 +204,14 @@ type Record struct {
 	// MODERATE, HIGH or CRITICAL). It is stored unparsed: the caller's own rule
 	// decides what it means.
 	SeverityLabel string `json:"severity_label,omitempty"`
-	// CVSSv3 is the first CVSS_V3 vector string of the record, stored verbatim
-	// for the same reason. A record with only a CVSS_V4 entry leaves it empty,
+	// CVSSv3 holds every CVSS_V3 vector string of the record, in the order the
+	// record listed them and unparsed, for the same reason. It is the whole list
+	// rather than the first one because the rule that scores them skips a vector
+	// that does not parse, so one malformed vector must not hide the usable one
+	// behind it; keeping the list is what lets that rule decide offline exactly
+	// as it decides online. A record with only a CVSS_V4 entry leaves it empty,
 	// which is the same answer the online path gives today.
-	CVSSv3 string `json:"cvss_v3,omitempty"`
+	CVSSv3 []string `json:"cvss_v3,omitempty"`
 	// Published and Modified are the record's timestamps, zero when it had none
 	// or they did not parse.
 	Published time.Time `json:"published,omitzero"`
@@ -356,21 +371,29 @@ func lookupKey(eco model.Ecosystem, name string) string {
 }
 
 // normalizePyPI applies PEP 503: lower case, and every run of -, _ or . becomes
-// a single -.
+// a single -. A run at either end becomes a hyphen too, which is what the PEP's
+// re.sub(r"[-_.]+", "-", name) does and what the reference implementation
+// produces: _foo_ normalizes to -foo-, not to foo. PyPI would not accept such a
+// name, so nothing in the archives depends on it, but the write side and the read
+// side share this function and a rule that is not the published one is a
+// divergence waiting for the day a name like that appears.
 func normalizePyPI(name string) string {
 	var b strings.Builder
 	b.Grow(len(name))
-	dash := false
+	sep := false
 	for _, r := range strings.ToLower(name) {
 		if r == '-' || r == '_' || r == '.' {
-			dash = true
+			sep = true
 			continue
 		}
-		if dash && b.Len() > 0 {
+		if sep {
 			b.WriteByte('-')
+			sep = false
 		}
-		dash = false
 		b.WriteRune(r)
+	}
+	if sep {
+		b.WriteByte('-')
 	}
 	return b.String()
 }

@@ -2,7 +2,10 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -13,6 +16,7 @@ import (
 	"github.com/vahapogut/trustdiff/internal/httpcache"
 	"github.com/vahapogut/trustdiff/internal/model"
 	"github.com/vahapogut/trustdiff/internal/policy"
+	"github.com/vahapogut/trustdiff/internal/typosquat"
 	"github.com/vahapogut/trustdiff/internal/version"
 )
 
@@ -23,15 +27,24 @@ var refreshOptions = func() osvindex.Options { return osvindex.Options{} }
 
 // cache subcommands. status and clear are thin wrappers over internal/httpcache
 // and internal/advisory/osvindex; refresh downloads the OSV advisory archives
-// and rebuilds the offline index; refresh-lists arrives in a later milestone.
+// and rebuilds the offline index; refresh-lists downloads the popular package
+// lists the typosquat check compares a name against.
 func (a *App) newCacheCommand() *cobra.Command {
 	var dir string
 	cmd := &cobra.Command{
 		Use:   "cache",
 		Short: "Inspect or refresh the local data cache",
+		// NoArgs is what makes a mistyped subcommand a usage error, and RunE is what makes
+		// NoArgs run at all: cobra returns help for a command with no body of its own
+		// before it ever validates the arguments, so "trustdiff cache refresh-lsits"
+		// would exit 0 and read as a success. With both, a bare "trustdiff cache" still
+		// prints its help and exits 0, which is what a group of subcommands should do.
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	cmd.PersistentFlags().StringVar(&dir, "cache-dir", "",
-		"cache directory (default: $"+httpcache.EnvDir+" when set, otherwise the trustdiff directory under the user cache directory)")
+		"cache directory for this command only; the other commands read $"+httpcache.EnvDir+
+			" when set, otherwise the trustdiff directory under the user cache directory")
 
 	var ecosystems []string
 	refresh := &cobra.Command{
@@ -72,7 +85,22 @@ last refresh is not transferred again and the index on disk is kept.`,
 				return a.cacheClear(dir)
 			},
 		},
-		&cobra.Command{Use: "refresh-lists", Short: "Refresh the popular package lists used for typosquat detection", Args: cobra.NoArgs, RunE: notImplemented("cache refresh-lists")},
+		&cobra.Command{
+			Use:   "refresh-lists",
+			Short: "Refresh the popular package lists used for typosquat detection",
+			Long: `Download the popular package lists of npm, PyPI and crates.io into the cache,
+where the typosquat check prefers them over the snapshot compiled into the binary
+for thirty days.
+
+The lists are what a name is compared with, so a stale one is a package that
+became popular after the release and is not recognized as the thing a squat
+imitates. It makes about fifty requests to crates.io at one request per second,
+so it takes about a minute, and nothing is written unless every source answered.`,
+			Args: cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, _ []string) error {
+				return a.cacheRefreshLists(cmd, dir)
+			},
+		},
 		refresh,
 	)
 	return cmd
@@ -213,13 +241,17 @@ func (a *App) writeIndexStatus(index *osvindex.Stats, now time.Time) error {
 	return nil
 }
 
-// cacheClearReport is the --format json shape of "cache clear".
+// cacheClearReport is the --format json shape of "cache clear". The counts are
+// what was actually removed, so a run that refused one half reports the other
+// half's bytes and zero for the half it kept.
 type cacheClearReport struct {
 	Dir            string `json:"dir"`
 	RemovedEntries int    `json:"removed_entries"`
 	RemovedBytes   int64  `json:"removed_bytes"`
 	// RemovedIndexBytes is the part of RemovedBytes that was the advisory index.
 	RemovedIndexBytes int64 `json:"removed_index_bytes"`
+	// Refused names what was kept and why, empty when everything was removed.
+	Refused string `json:"refused,omitempty"`
 }
 
 func (a *App) cacheClear(dirFlag string) error {
@@ -235,31 +267,66 @@ func (a *App) cacheClear(dirFlag string) error {
 	if err != nil {
 		return Exit(ExitUsage, fmt.Errorf("cache clear: %w", err))
 	}
-	// The advisory index goes first, because internal/httpcache's Clear refuses
-	// any subdirectory it does not know by name and would otherwise report the
-	// index itself as a foreign file. osvindex.Clear does its own refusal check
-	// over the files it owns, so a cache directory that is not one still keeps
-	// its contents.
-	if err := osvindex.Clear(dir); err != nil {
-		return Exit(ExitUsage, fmt.Errorf("cache clear: %w", err))
+	// The advisory index goes first, because it is the one that may leave its
+	// directory behind: osvindex.Clear removes every file it owns and keeps
+	// anything else, naming what it kept, so a cache directory that is not one
+	// still keeps its contents. httpcache.Clear then steps around that directory
+	// whether or not it survived, so a refusal over one stray advisory file never
+	// costs the rest of the cache. Both refusals are reported together, because
+	// somebody who asked for the cache to be cleared wants to know everything
+	// that was kept and not only the first thing.
+	indexErr := osvindex.Clear(dir)
+	refused := errors.Join(indexErr, httpcache.Clear(dir))
+
+	// What was removed is measured rather than assumed, because a refusal is
+	// partial now: the index files of an ecosystem go even when a file beside
+	// them is kept, and the counts have to say what actually happened.
+	afterCache, cacheStatErr := httpcache.Stat(dir)
+	afterIndex, indexStatErr := osvindex.Stat(dir)
+	if statErr := errors.Join(cacheStatErr, indexStatErr); statErr != nil {
+		return Exit(ExitUsage, fmt.Errorf("cache clear: %w", errors.Join(statErr, refused)))
 	}
-	if err := httpcache.Clear(dir); err != nil {
-		return Exit(ExitUsage, fmt.Errorf("cache clear: %w", err))
+	removed := cacheClearReport{
+		Dir:               dir,
+		RemovedEntries:    before.Entries - afterCache.Entries,
+		RemovedBytes:      (before.Bytes - afterCache.Bytes) + (index.Bytes - afterIndex.Bytes),
+		RemovedIndexBytes: index.Bytes - afterIndex.Bytes,
 	}
-	total := before.Bytes + index.Bytes
-	a.Opts.Log.Debug("cache cleared", "dir", dir, "entries", before.Entries, "bytes", total, "index_bytes", index.Bytes)
+	a.Opts.Log.Debug("cache cleared", "dir", dir, "entries", removed.RemovedEntries,
+		"bytes", removed.RemovedBytes, "index_bytes", removed.RemovedIndexBytes, "refused", refused)
+
+	if err := a.writeClearReport(&removed, refused); err != nil {
+		return err
+	}
+	if refused != nil {
+		return Exit(ExitUsage, fmt.Errorf("cache clear: %w", refused))
+	}
+	return nil
+}
+
+// writeClearReport prints what "cache clear" removed. Nothing is printed when a
+// refusal left nothing removed, so a run that could do nothing says so on stderr
+// alone and stdout stays reserved for reports.
+func (a *App) writeClearReport(removed *cacheClearReport, refused error) error {
+	if refused != nil && removed.RemovedEntries == 0 && removed.RemovedBytes == 0 {
+		return nil
+	}
 	if a.Opts.Format == "json" {
-		return a.writeJSON(cacheClearReport{Dir: dir, RemovedEntries: before.Entries, RemovedBytes: total, RemovedIndexBytes: index.Bytes})
+		if refused != nil {
+			removed.Refused = refused.Error()
+		}
+		return a.writeJSON(removed)
 	}
-	if before.Entries == 0 && total == 0 {
-		_, err = fmt.Fprintf(a.Stdout, "Nothing to remove in %s\n", dir)
+	if removed.RemovedEntries == 0 && removed.RemovedBytes == 0 {
+		_, err := fmt.Fprintf(a.Stdout, "Nothing to remove in %s\n", removed.Dir)
 		return err
 	}
 	suffix := ""
-	if index.Bytes > 0 {
-		suffix = fmt.Sprintf(", the advisory index included (%s)", formatBytes(index.Bytes))
+	if removed.RemovedIndexBytes > 0 {
+		suffix = fmt.Sprintf(", the advisory index included (%s)", formatBytes(removed.RemovedIndexBytes))
 	}
-	_, err = fmt.Fprintf(a.Stdout, "Removed %d entries (%s) from %s%s\n", before.Entries, formatBytes(total), dir, suffix)
+	_, err := fmt.Fprintf(a.Stdout, "Removed %d entries (%s) from %s%s\n",
+		removed.RemovedEntries, formatBytes(removed.RemovedBytes), removed.Dir, suffix)
 	return err
 }
 
@@ -328,6 +395,9 @@ func (a *App) cacheRefresh(cmd *cobra.Command, dirFlag string, ecosystemFlag []s
 	} else if err := a.writeRefreshLines(&report); err != nil {
 		return err
 	}
+	if err := a.warnUnreadableIndexDir(dirFlag, dir); err != nil {
+		return err
+	}
 	if failed > 0 {
 		// A refresh that could not reach a source is the same condition
 		// on_data_unavailable describes: the data is not there, and a later run
@@ -336,6 +406,52 @@ func (a *App) cacheRefresh(cmd *cobra.Command, dirFlag string, ecosystemFlag []s
 		return Exit(ExitUnavailable, nil)
 	}
 	return nil
+}
+
+// warnUnreadableIndexDir says out loud when "cache refresh" has written an index
+// where no other command will look for it.
+//
+// --cache-dir belongs to the cache command alone: the other commands build their
+// cache client from the global flags and take the directory from $TRUSTDIFF_CACHE_DIR
+// or the platform default, so "cache refresh --cache-dir X" followed by
+// "check --offline" reads an index that is not there and reports every advisory
+// check as skipped. Making the flag global would mean changing the root command
+// and the loader every command shares, which is a wider change than this defect
+// needs and a decision about the whole flag set rather than about the cache; the
+// mismatch is made impossible to hit silently instead. The refresh still writes
+// where it was told to, since a run that fills a cache directory for a container
+// or a CI artifact is exactly what the flag is for, and the line names the
+// environment variable that makes the choice reach every command.
+func (a *App) warnUnreadableIndexDir(dirFlag, dir string) error {
+	if dirFlag == "" {
+		return nil
+	}
+	other, err := httpcache.DefaultDir()
+	if err == nil && sameDir(other, dir) {
+		return nil
+	}
+	if err != nil {
+		// The other commands cannot locate their cache directory either, so the
+		// warning is still the right answer; it just cannot name a directory
+		// that is not there.
+		a.Opts.Log.Debug("could not locate the default cache directory", "error", err)
+		other = "the default cache directory"
+	}
+	_, err = fmt.Fprintf(a.Stderr, "trustdiff: the advisory index is in %s, but the other commands read %s; "+
+		"set %s=%s so that \"trustdiff check --offline\" reads this index\n", dir, other, httpcache.EnvDir, dir)
+	return err
+}
+
+// sameDir compares two directory paths as the file system would on this platform.
+// It is a spelling comparison, not a resolution: two paths that reach the same
+// directory through a symbolic link read as different, which costs a warning
+// nobody needed and never hides one that was needed.
+func sameDir(a, b string) bool {
+	a, b = filepath.Clean(a), filepath.Clean(b)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }
 
 // writeRefreshLines prints one line per ecosystem.
@@ -454,4 +570,75 @@ func formatBytes(n int64) string {
 		}
 	}
 	return fmt.Sprintf("%.1f PiB", value/unit)
+}
+
+// cacheRefreshLists downloads the popular package lists into the cache.
+//
+// It is a separate command from "cache refresh", which downloads the advisory
+// archives, because the two are different sizes and different schedules: the
+// lists are a megabyte and change slowly, the advisories are two hundred and
+// change hourly. A project that wants both runs both.
+func (a *App) cacheRefreshLists(cmd *cobra.Command, dirFlag string) error {
+	dir, err := resolveCacheDir(dirFlag)
+	if err != nil {
+		return err
+	}
+	if a.Opts.Offline {
+		return Usagef("cache refresh-lists downloads the popular package lists and cannot run with --offline")
+	}
+	// The lists are fetched without the disk cache: a refresh that answered from
+	// the copy an earlier refresh left would write the same file back and report
+	// it as new.
+	client, err := httpcache.New(httpcache.Options{
+		NoCache:   true,
+		UserAgent: version.UserAgent(),
+		Logger:    a.Opts.Log,
+	})
+	if err != nil {
+		return fmt.Errorf("cache: %w", err)
+	}
+	if err := typosquat.Refresh(cmd.Context(), client, dir, typosquat.WithLogger(a.Opts.Log)); err != nil {
+		return Exit(ExitUnavailable, err)
+	}
+	written := typosquat.ListsDir(dir)
+	lists := typosquat.Load(dir, time.Now(), a.Opts.Log)
+	if a.Opts.Format != "human" {
+		return a.writeJSON(map[string]any{
+			"dir":   filepath.ToSlash(written),
+			"lists": listCounts(lists),
+		})
+	}
+	if _, err := fmt.Fprintf(a.Stdout, "Popular package lists in %s\n", written); err != nil {
+		return err
+	}
+	for _, eco := range model.Ecosystems() {
+		list, ok := lists.List(eco)
+		if !ok {
+			continue
+		}
+		if _, err := fmt.Fprintf(a.Stdout, "  %-6s %d names from %s\n", eco, len(list.Names), list.Source); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// listCounts is the json shape of what was written: one entry per ecosystem with
+// the number of names and where they came from, which is what a reader checking
+// whether a refresh did anything wants.
+func listCounts(lists *typosquat.Lists) map[string]any {
+	out := map[string]any{}
+	for _, eco := range model.Ecosystems() {
+		list, ok := lists.List(eco)
+		if !ok {
+			continue
+		}
+		out[string(eco)] = map[string]any{
+			"names":   len(list.Names),
+			"source":  list.Source,
+			"fetched": list.Fetched,
+			"license": list.License,
+		}
+	}
+	return out
 }

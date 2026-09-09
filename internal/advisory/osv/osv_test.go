@@ -1,6 +1,7 @@
 package osv
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -23,6 +24,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/vahapogut/trustdiff/internal/advisory"
+	"github.com/vahapogut/trustdiff/internal/advisory/osvindex"
 	"github.com/vahapogut/trustdiff/internal/httpcache"
 	"github.com/vahapogut/trustdiff/internal/model"
 )
@@ -1141,5 +1143,239 @@ func TestNewOptions(t *testing.T) {
 	}
 	if c := New(nil, WithBaseURL("http://127.0.0.1:1/v1///"), WithLogger(nil)); c.base != "http://127.0.0.1:1/v1" || c.log == nil {
 		t.Errorf("New with options = %+v, want the trimmed base URL and the default logger", c)
+	}
+}
+
+// The tests below put one record through both paths that can answer for it: the
+// API, and the offline index built from the per-ecosystem archive. Everything is
+// served from httptest servers built in this process, so no archive is ever
+// downloaded. What they assert is agreement: an advisory that reads one way
+// online and another way offline is worse than an advisory that reads badly both
+// ways, because nobody can tell which run they are looking at.
+
+// recordID reads the id out of a record the test wrote.
+func recordID(t *testing.T, record string) string {
+	t.Helper()
+	var parsed struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(record), &parsed); err != nil {
+		t.Fatalf("test record is not JSON: %v\n%s", err, record)
+	}
+	return parsed.ID
+}
+
+// onlineAdvisories answers a ref from an API server that lists every record for
+// every query and serves each record from the vulns endpoint. The batch entries
+// carry a modified of their own, older than any record's, so a test can see
+// whether an advisory took its timestamp from the record or from the batch.
+func onlineAdvisories(t *testing.T, ref model.PackageRef, records ...string) ([]advisory.Advisory, error) {
+	t.Helper()
+	const batchModified = "2000-01-01T00:00:00Z"
+	byID := make(map[string]string, len(records))
+	ids := make([]string, 0, len(records))
+	for _, record := range records {
+		id := recordID(t, record)
+		byID[id] = record
+		ids = append(ids, id)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/querybatch":
+			var req batchRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Errorf("querybatch body does not decode: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			answer := batchResponse{Results: make([]batchResult, len(req.Queries))}
+			for i := range answer.Results {
+				for _, id := range ids {
+					answer.Results[i].Vulns = append(answer.Results[i].Vulns, batchVuln{ID: id, Modified: batchModified})
+				}
+			}
+			if err := json.NewEncoder(w).Encode(answer); err != nil {
+				t.Errorf("encoding querybatch answer: %v", err)
+			}
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.EscapedPath(), "/vulns/"):
+			record, ok := byID[strings.TrimPrefix(r.URL.EscapedPath(), "/vulns/")]
+			if !ok {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			_, _ = w.Write([]byte(record))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	u, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := httpcache.New(httpcache.Options{
+		Dir:       t.TempDir(),
+		UserAgent: "trustdiff-test",
+		Retries:   -1,
+		HostRPS:   map[string]float64{u.Host: 1000},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := New(h, WithBaseURL(srv.URL), WithLogger(slog.New(slog.DiscardHandler)))
+	got, err := c.Advisories(context.Background(), []model.PackageRef{ref})
+	return got[ref], err
+}
+
+// offlineAdvisories answers the same ref from an index built by a real refresh
+// against an archive of the same records, served from an httptest server at the
+// path the OSV bucket uses.
+func offlineAdvisories(t *testing.T, ref model.PackageRef, records ...string) ([]advisory.Advisory, error) {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, record := range records {
+		w, err := zw.Create(recordID(t, record) + ".json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(record)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	archive := "/" + osvindex.OSVEcosystem(ref.Ecosystem) + "/" + osvindex.ArchiveName
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != archive {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(buf.Bytes())
+	}))
+	t.Cleanup(srv.Close)
+
+	cacheDir := t.TempDir()
+	results, err := osvindex.Refresh(context.Background(), cacheDir, []model.Ecosystem{ref.Ecosystem},
+		osvindex.Options{BaseURL: srv.URL, UserAgent: "trustdiff-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Err != nil {
+		t.Fatalf("refresh = %+v", results)
+	}
+	h, err := httpcache.New(httpcache.Options{Dir: t.TempDir(), Offline: true, UserAgent: "trustdiff-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := New(h, WithIndex(osvindex.Open(cacheDir)), WithLogger(slog.New(slog.DiscardHandler)))
+	got, err := c.Advisories(context.Background(), []model.PackageRef{ref})
+	return got[ref], err
+}
+
+// TestOnlineAndOfflineDescribeTheSameAdvisory is the parity table. Every case is a
+// record whose two answers used to differ.
+func TestOnlineAndOfflineDescribeTheSameAdvisory(t *testing.T) {
+	t.Parallel()
+	const usableVector = "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+	cases := []struct {
+		name   string
+		record string
+		check  func(t *testing.T, got []advisory.Advisory)
+	}{
+		{
+			// A malformed vector in front of a usable one. The rule skips the one
+			// that does not parse, so both paths have to see both vectors: an
+			// index that kept only the first handed it "not-a-vector" and
+			// answered unknown with no score where the API answered critical.
+			name: "a malformed CVSS vector does not hide the usable one",
+			record: `{"id":"GHSA-two-vectors","summary":"Command injection",
+				"published":"2026-01-02T03:04:05+02:00","modified":"2026-02-03T04:05:06Z",
+				"aliases":["CVE-2026-2222","CVE-2026-1111"],
+				"severity":[{"type":"CVSS_V3","score":"not-a-vector"},{"type":"CVSS_V3","score":"` + usableVector + `"}],
+				"affected":[{"package":{"name":"p","ecosystem":"npm"},
+				"ranges":[{"type":"SEMVER","events":[{"introduced":"0"}]}]}]}`,
+			check: func(t *testing.T, got []advisory.Advisory) {
+				t.Helper()
+				if len(got) != 1 {
+					t.Fatalf("advisories = %v, want one", got)
+				}
+				a := got[0]
+				if a.Severity != advisory.SeverityCritical || a.Score != 9.8 || a.SeveritySource != advisory.SeveritySourceCVSS3 {
+					t.Errorf("severity = %v %.1f from %q, want critical 9.8 from the vector", a.Severity, a.Score, a.SeveritySource)
+				}
+				// The record's own order, not sorted: OSV names the identifier
+				// the record came from first.
+				if want := []string{"CVE-2026-2222", "CVE-2026-1111"}; !slices.Equal(a.Aliases, want) {
+					t.Errorf("Aliases = %q, want %q", a.Aliases, want)
+				}
+				// The record spelled published with a +02:00 offset. Both paths
+				// keep the instant in UTC, so the two answers compare equal.
+				if a.Published.Location() != time.UTC || !a.Published.Equal(time.Date(2026, 1, 2, 1, 4, 5, 0, time.UTC)) {
+					t.Errorf("Published = %v, want 2026-01-02T01:04:05Z", a.Published)
+				}
+			},
+		},
+		{
+			// The batch entry carries a modified of its own. The record is the
+			// only source of the timestamps, because the offline index is built
+			// from the archive and has no batch entry to fall back on.
+			name: "a record without a modified timestamp",
+			record: `{"id":"GHSA-no-modified","summary":"no modified field",
+				"published":"2026-01-02T03:04:05Z",
+				"affected":[{"package":{"name":"p","ecosystem":"npm"},
+				"ranges":[{"type":"SEMVER","events":[{"introduced":"0"}]}]}]}`,
+			check: func(t *testing.T, got []advisory.Advisory) {
+				t.Helper()
+				if len(got) != 1 {
+					t.Fatalf("advisories = %v, want one", got)
+				}
+				if !got[0].Modified.IsZero() {
+					t.Errorf("Modified = %v, want the zero time: the record carried none", got[0].Modified)
+				}
+			},
+		},
+		{
+			// OSV filters withdrawn records out of the query API today, so this
+			// record only reaches the online path if that changes. The index has
+			// always dropped them, and the two must not disagree.
+			name: "a withdrawn advisory",
+			record: `{"id":"GHSA-withdrawn","summary":"raised against the wrong package",
+				"published":"2026-01-02T03:04:05Z","modified":"2026-03-04T05:06:07Z",
+				"withdrawn":"2026-03-04T05:06:07Z","database_specific":{"severity":"HIGH"},
+				"affected":[{"package":{"name":"p","ecosystem":"npm"},
+				"ranges":[{"type":"SEMVER","events":[{"introduced":"0"}]}]}]}`,
+			check: func(t *testing.T, got []advisory.Advisory) {
+				t.Helper()
+				if len(got) != 0 {
+					t.Errorf("advisories = %v, want none: the advisory was withdrawn", got)
+				}
+			},
+		},
+	}
+
+	ref := model.PackageRef{Ecosystem: model.NPM, Name: "p", Version: "1.2.3"}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			online, err := onlineAdvisories(t, ref, tt.record)
+			if err != nil {
+				t.Fatalf("online: %v", err)
+			}
+			offline, err := offlineAdvisories(t, ref, tt.record)
+			if err != nil {
+				t.Fatalf("offline: %v", err)
+			}
+			if !reflect.DeepEqual(online, offline) {
+				t.Fatalf("the two paths disagree\nonline:  %+v\noffline: %+v", online, offline)
+			}
+			t.Run("online", func(t *testing.T) { tt.check(t, online) })
+			t.Run("offline", func(t *testing.T) { tt.check(t, offline) })
+		})
 	}
 }

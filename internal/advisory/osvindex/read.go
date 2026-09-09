@@ -35,8 +35,10 @@ type Reader struct {
 // Open reads the metadata of every indexed ecosystem under a cache directory.
 // It returns ErrNoIndex when nothing is indexed, so a caller can report the
 // checks as skipped with that reason rather than run them against nothing. An
-// ecosystem whose metadata is unreadable or was written by another schema is
-// left out, which is the same answer as never having downloaded it.
+// ecosystem whose metadata is unreadable, was written by another schema or no
+// longer has the shard files it counts is left out, which is the same answer as
+// never having downloaded it: an index that is half there must say so rather than
+// answer "no advisories" for every package in it.
 func Open(cacheDir string) (*Reader, error) {
 	r := &Reader{
 		dir:    cacheDir,
@@ -173,9 +175,10 @@ func (r *Reader) readShard(eco model.Ecosystem, name string) (map[string]*packag
 }
 
 // Affects reports whether ver is one of the versions the record covers: it is
-// listed explicitly, or it falls in one of the ranges. Versions are compared
-// with the ecosystem's own scheme through internal/model/version, so npm and
-// crates.io ranges are semantic versions and PyPI ranges are PEP 440.
+// listed explicitly, or it falls in one of the ranges. Both comparisons go
+// through the ecosystem's own scheme in internal/model/version, so npm and
+// crates.io versions are semantic versions and PyPI ones are PEP 440, and a
+// listed version is matched by what it means and not by how it is spelled.
 //
 // A range is [Introduced, Fixed) or [Introduced, LastAffected], which is what
 // the OSV schema means by those events, so the fixed version itself is not
@@ -194,7 +197,7 @@ func Affects(eco model.Ecosystem, rec *Record, ver string) bool {
 	if ver == "" {
 		return true
 	}
-	if slices.Contains(rec.Versions, ver) {
+	if listed(eco, rec.Versions, ver) {
 		return true
 	}
 	for i := range rec.Ranges {
@@ -205,23 +208,49 @@ func Affects(eco model.Ecosystem, rec *Record, ver string) bool {
 	return false
 }
 
-// inRange applies one range. A bound that does not parse as a version of this
-// ecosystem cannot be ordered, so the range only matches on an exact spelling
-// match with the introduced version: guessing either way would be worse than
-// saying so, and reporting a vulnerability that does not apply is as damaging
-// here as missing one.
+// listed reports whether ver is one of the versions the record names explicitly.
+// The comparison goes through the ecosystem's scheme, not through byte equality:
+// PEP 440 makes 1.0.0 the same version as a listed 1.0, 2.0 the same as 2.0.0 and
+// 3.0-1 the same as 3.0.post1, and the OSV API reports all three as affected, so
+// an offline run that compared the spellings would miss what an online run finds.
+// A listed version that does not parse is compared as it is written, which is all
+// that can honestly be said about it.
+func listed(eco model.Ecosystem, versions []string, ver string) bool {
+	for _, v := range versions {
+		if v == ver {
+			return true
+		}
+		if cmp, err := version.Compare(eco, ver, v); err == nil && cmp == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// inRange applies one range.
+//
+// A bound that does not parse as a version of this ecosystem cannot be ordered,
+// and the two ends are then treated differently on purpose. An upper bound that
+// cannot be ordered stops the range from matching: dropping it would leave a
+// range that claims every version ever published for the package, including the
+// ones released after the fix. A lower bound that cannot be ordered is dropped
+// instead and the upper bound still applies, because the range stays finite
+// either way and the alternative is what this used to do: an introduced version
+// OSV spelled as 1.0.0.beta hid an advisory whose fixed version said plainly that
+// everything below 2.0.0 was affected, which is a silent false negative and the
+// most damaging answer this package can give.
+//
+// A range with nothing orderable left in it matches only an exact spelling of its
+// introduced version, since that is all it can honestly claim.
 func inRange(eco model.Ecosystem, r *Range, ver string) bool {
 	if r.Introduced == "" && r.Fixed == "" && r.LastAffected == "" {
 		return false
 	}
-	if r.Introduced != "" {
-		cmp, err := version.Compare(eco, ver, r.Introduced)
-		if err != nil {
-			return ver == r.Introduced
-		}
-		if cmp < 0 {
-			return false
-		}
+	if _, err := version.Parse(eco, ver); err != nil {
+		// The version being asked about cannot be ordered against anything, so
+		// the only thing this range can say about it is whether it is spelled
+		// like the version the range starts at.
+		return ver == r.Introduced
 	}
 	if r.Fixed != "" {
 		cmp, err := version.Compare(eco, ver, r.Fixed)
@@ -235,13 +264,33 @@ func inRange(eco model.Ecosystem, r *Range, ver string) bool {
 			return false
 		}
 	}
+	if r.Introduced != "" {
+		cmp, err := version.Compare(eco, ver, r.Introduced)
+		switch {
+		case err == nil && cmp < 0:
+			return false
+		case err != nil && r.Fixed == "" && r.LastAffected == "":
+			// The lower bound is all this range has and it cannot be ordered,
+			// so there is nothing left to compare ver with.
+			return false
+		}
+	}
 	return true
 }
 
-// readMeta reads one ecosystem's meta.json. A missing file, an unreadable one or
-// one written by another schema all return a nil Meta without an error: the
-// answer in each case is that the ecosystem is not indexed, and a refresh fixes
-// it.
+// readMeta reads one ecosystem's meta.json and answers whether the ecosystem is
+// indexed. A missing file, an unreadable one, one written by another schema and
+// one whose shard files are no longer on disk all return a nil Meta without an
+// error: the answer in each case is that the ecosystem is not indexed, and a
+// refresh fixes it.
+//
+// The shard test is here rather than in one caller because every caller needs the
+// same answer. A metadata file whose shards are gone (an interrupted "cache
+// clear" removes the files in directory order, so 00.json through ff.json go
+// before meta.json) would otherwise make Open succeed and every lookup answer
+// "no advisories", which is the one answer a security tool must never invent,
+// while "cache status" called the ecosystem indexed and a refresh revalidated
+// against it and was told 304.
 func readMeta(cacheDir string, eco model.Ecosystem) (*Meta, error) {
 	path := filepath.Join(ecosystemDir(cacheDir, eco), metaName)
 	// #nosec G304 -- the path is <cache>/advisories/osv/<ecosystem>/meta.json,
@@ -260,6 +309,9 @@ func readMeta(cacheDir string, eco model.Ecosystem) (*Meta, error) {
 		// one: the ecosystem is not indexed, and a refresh fixes it. It is not a
 		// failure to report, because there is nothing the caller could do with
 		// it that a refresh would not.
+		return nil, nil
+	}
+	if countShards(ecosystemDir(cacheDir, eco)) != meta.Shards {
 		return nil, nil
 	}
 	return &meta, nil

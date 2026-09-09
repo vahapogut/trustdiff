@@ -30,6 +30,15 @@ var entryFileName = regexp.MustCompile(`^[0-9a-f]{64}\.(json|body)(\.[0-9]+\.tmp
 // after "cache refresh-lists"; every other subdirectory is foreign.
 const ListsSubdir = "lists"
 
+// AdvisorySubdir is the subdirectory internal/advisory/osvindex owns. This
+// package neither writes nor reads it, and names it only so that Clear steps
+// around it instead of refusing the whole directory over it. Its owner clears it
+// first and keeps any file it did not write, and that refusal must not cost the
+// rest of the cache: somebody who asked for the cache to be cleared meant the
+// part that can go. The two spellings are pinned to each other by a test in
+// internal/cli, the one package that imports both.
+const AdvisorySubdir = "advisories"
+
 // listFileName matches the files internal/typosquat writes into ListsSubdir: one
 // <ecosystem>.txt per list and the temporary files WriteLists renames into place
 // (the same os.CreateTemp suffix as above).
@@ -416,6 +425,9 @@ func Clear(dir string) error {
 			if listFiles, err = clearableListFiles(listsDir); err != nil {
 				return err
 			}
+		case e.IsDir() && e.Name() == AdvisorySubdir:
+			// Somebody else's to clear, and by the time this runs they have
+			// either cleared it or kept it on purpose. See AdvisorySubdir.
 		case e.IsDir(), !entryFileName.MatchString(e.Name()):
 			return fmt.Errorf("%w: %s contains %q", ErrForeignFiles, dir, e.Name())
 		}

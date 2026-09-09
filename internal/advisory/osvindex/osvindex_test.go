@@ -3,9 +3,11 @@ package osvindex
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/vahapogut/trustdiff/internal/model"
@@ -60,6 +62,59 @@ func zipFixtureBytes(t *testing.T, eco model.Ecosystem) []byte {
 	return buf.Bytes()
 }
 
+// zipOfRecords renders an archive in memory holding the given OSV records, each
+// member named after the record's id as the real archives name theirs, and writes
+// it where the builder can be pointed at it. It lets a test state the record it is
+// about in the test instead of adding a fixture file for one shape.
+func zipOfRecords(t *testing.T, records ...string) string {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, record := range records {
+		var parsed struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal([]byte(record), &parsed); err != nil {
+			t.Fatalf("test record is not JSON: %v\n%s", err, record)
+		}
+		w, err := zw.Create(parsed.ID + ".json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(record)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return writeZip(t, "all.zip", buf.Bytes())
+}
+
+// readerOfRecords builds one ecosystem's index out of the given records and opens
+// a Reader over it, so a test can ask what a lookup answers for a record it wrote
+// itself.
+func readerOfRecords(t *testing.T, eco model.Ecosystem, records ...string) *Reader {
+	t.Helper()
+	dir := t.TempDir()
+	built, err := BuildFromZip(zipOfRecords(t, records...), eco, Limits{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := WriteShards(dir, built); err != nil {
+		t.Fatal(err)
+	}
+	meta := Meta{Schema: Schema, Ecosystem: eco, OSVEcosystem: OSVEcosystem(eco), Shards: len(built.Shards)}
+	if err := writeMeta(dir, &meta); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
 // writeZip stores raw bytes as a file the builder can be pointed at.
 func writeZip(t *testing.T, name string, data []byte) string {
 	t.Helper()
@@ -103,6 +158,12 @@ func TestLookupKey(t *testing.T) {
 		{eco: model.PyPI, in: "Zope.Interface", want: "zope-interface"},
 		{eco: model.PyPI, in: "zope__interface", want: "zope-interface"},
 		{eco: model.PyPI, in: "Pillow", want: "pillow"},
+		// PEP 503 replaces every run of separators with one hyphen, including a
+		// run at either end: re.sub(r"[-_.]+", "-", "_foo_") is "-foo-".
+		{eco: model.PyPI, in: "_foo_", want: "-foo-"},
+		{eco: model.PyPI, in: ".foo", want: "-foo"},
+		{eco: model.PyPI, in: "foo...", want: "foo-"},
+		{eco: model.PyPI, in: "a._-b", want: "a-b"},
 		{eco: model.Cargo, in: "Serde", want: "serde"},
 		{eco: model.Cargo, in: "rustc-serialize", want: "rustc-serialize"},
 	}
@@ -256,9 +317,63 @@ func TestWriteShardsRemovesStaleShards(t *testing.T) {
 	if written != 0 || removed != len(full.Shards) {
 		t.Fatalf("wrote %d and removed %d, want 0 and %d", written, removed, len(full.Shards))
 	}
-	left, err := countShards(ecosystemDir(dir, model.NPM))
-	if err != nil || left != 0 {
-		t.Fatalf("%d shard files left, %v", left, err)
+	if left := countShards(ecosystemDir(dir, model.NPM)); left != 0 {
+		t.Fatalf("%d shard files left", left)
+	}
+}
+
+// TestBuildKeepsEveryCVSSVector is what makes the offline severity match the
+// online one. The rule in internal/advisory/osv takes the first CVSS_V3 vector
+// that parses and skips the ones that do not, so an index that stored only the
+// first vector would hand it the malformed one and lose a severity the online
+// path finds.
+func TestBuildKeepsEveryCVSSVector(t *testing.T) {
+	const good = "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+	record := `{"id":"GHSA-two-vectors","summary":"a malformed vector in front of a usable one",
+		"severity":[{"type":"CVSS_V3","score":"not-a-vector"},{"type":"CVSS_V3","score":"` + good + `"},
+		{"type":"CVSS_V4","score":"CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"}],
+		"affected":[{"package":{"name":"p","ecosystem":"npm"},
+		"ranges":[{"type":"SEMVER","events":[{"introduced":"0"}]}]}]}`
+	built, err := BuildFromZip(zipOfRecords(t, record), model.NPM, Limits{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := findRecord(t, built, "p", "GHSA-two-vectors")
+	want := []string{"not-a-vector", good}
+	if !slices.Equal(rec.CVSSv3, want) {
+		t.Errorf("CVSSv3 = %q, want %q in the record's order", rec.CVSSv3, want)
+	}
+	if rec.SeverityLabel != "" {
+		t.Errorf("SeverityLabel = %q, want empty", rec.SeverityLabel)
+	}
+}
+
+// TestBuildKeepsTheRecordsAliasOrder pins the other half of the same promise: the
+// aliases are stored as the record spells them, which is what the online path
+// shows, and two builds of one archive still produce the same bytes because that
+// order comes from the record and not from the order blocks were merged in.
+func TestBuildKeepsTheRecordsAliasOrder(t *testing.T) {
+	record := `{"id":"GHSA-aliases","summary":"aliases in the record's order",
+		"aliases":["CVE-2026-2222","CVE-2026-1111","GHSA-old-old-old"],
+		"affected":[{"package":{"name":"p","ecosystem":"npm"},"versions":["1.0.0"]},
+		{"package":{"name":"p","ecosystem":"npm"},"versions":["2.0.0"]}]}`
+	built, err := BuildFromZip(zipOfRecords(t, record), model.NPM, Limits{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := findRecord(t, built, "p", "GHSA-aliases")
+	want := []string{"CVE-2026-2222", "CVE-2026-1111", "GHSA-old-old-old"}
+	if !slices.Equal(rec.Aliases, want) {
+		t.Errorf("Aliases = %q, want %q", rec.Aliases, want)
+	}
+	again, err := BuildFromZip(zipOfRecords(t, record), model.NPM, Limits{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range built.Shards {
+		if !bytes.Equal(data, again.Shards[name]) {
+			t.Errorf("shard %s differs between two builds of the same record", name)
+		}
 	}
 }
 

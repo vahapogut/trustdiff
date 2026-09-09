@@ -174,15 +174,6 @@ func TestCacheDirPrecedence(t *testing.T) {
 	}
 }
 
-func TestCacheStubsStillExit2(t *testing.T) {
-	for _, sub := range []string{"refresh-lists"} {
-		code, _, stderr := run(t, "cache", sub)
-		if code != ExitUsage || !strings.Contains(stderr, "not implemented") {
-			t.Errorf("cache %s: exit %d, stderr %q", sub, code, stderr)
-		}
-	}
-}
-
 func TestFormatHelpers(t *testing.T) {
 	ages := []struct {
 		d    time.Duration
@@ -525,5 +516,151 @@ func TestCacheClearRefusesAForeignIndexDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(keep); err != nil {
 		t.Fatalf("the foreign file was removed: %v", err)
+	}
+}
+
+// TestCacheClearClearsWhatItCanAroundAForeignFile is what "cache clear" owes a
+// person who has one stray file under the index: everything trustdiff wrote goes,
+// the stray file stays, and the answer names it. One file used to abort the whole
+// command, so nothing was removed anywhere, the HTTP cache included; then it cost
+// the HTTP cache alone, because that sweep refused to walk past the index
+// directory the stray file had kept alive.
+func TestCacheClearClearsWhatItCanAroundAForeignFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(httpcache.EnvDir, dir)
+	useArchiveServer(t, advisoryArchives(t).URL)
+	if code, _, stderr := run(t, "cache", "refresh", "--ecosystem", "npm", "--ecosystem", "pypi"); code != ExitOK {
+		t.Fatalf("refresh: exit %d, stderr %q", code, stderr)
+	}
+	fillCache(t, dir, 2)
+	npm := filepath.Join(dir, osvindex.Subdir, "osv", "npm")
+	keep := filepath.Join(npm, "thesis.docx")
+	if err := os.WriteFile(keep, []byte("irreplaceable"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := run(t, "cache", "clear")
+	if code != ExitUsage {
+		t.Fatalf("exit = %d, want %d (stderr %q)", code, ExitUsage, stderr)
+	}
+	if !strings.Contains(stderr, "refusing") || !strings.Contains(stderr, "thesis.docx") {
+		t.Errorf("stderr = %q, want it to name the file that was kept", stderr)
+	}
+	if !strings.Contains(stdout, "Removed") || !strings.Contains(stdout, "advisory index included") {
+		t.Errorf("stdout = %q, want it to report the index that was removed", stdout)
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("the foreign file was removed: %v", err)
+	}
+	// The index files of both ecosystems are gone, the one beside the stray file
+	// included, and the ecosystem that had no stray file lost its directory.
+	if _, err := os.Stat(filepath.Join(npm, "meta.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the index files beside the foreign file survived: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, osvindex.Subdir, "osv", "pypi")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("pypi survived a refusal about npm: %v", err)
+	}
+	index, err := osvindex.Stat(dir)
+	if err != nil || len(index.Ecosystems) != 0 || index.Bytes != 0 {
+		t.Errorf("index after the clear = %+v, %v", index, err)
+	}
+	// The HTTP cache has nothing to do with the stray advisory file and goes with
+	// the rest, which is the whole point of clearing what can be cleared.
+	entries, err := httpcache.Stat(dir)
+	if err != nil || entries.Entries != 0 {
+		t.Fatalf("http cache = %+v, %v; want its entries removed", entries, err)
+	}
+
+	// With the file out of the way the second run takes the directory it was in.
+	if err := os.Remove(keep); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, stderr := run(t, "cache", "clear"); code != ExitOK || stderr != "" {
+		t.Fatalf("second clear: exit %d, stderr %q", code, stderr)
+	}
+	left, err := os.ReadDir(dir)
+	if err != nil || len(left) != 0 {
+		t.Fatalf("after the second clear: %d files, %v", len(left), err)
+	}
+}
+
+// TestTheAdvisoryDirectoryHasOneName pins the two spellings of the advisory
+// subdirectory to each other. internal/httpcache names it so that its own Clear
+// steps around it, and internal/advisory/osvindex names it because it owns it;
+// neither imports the other, so nothing but this would notice them drifting apart
+// until a cache clear started refusing every directory it met.
+func TestTheAdvisoryDirectoryHasOneName(t *testing.T) {
+	if httpcache.AdvisorySubdir != osvindex.Subdir {
+		t.Fatalf("httpcache.AdvisorySubdir = %q, osvindex.Subdir = %q", httpcache.AdvisorySubdir, osvindex.Subdir)
+	}
+}
+
+// TestCacheClearJSONReportsWhatWasRefused checks that the json shape says the
+// same thing as the human line: what went, and what was kept.
+func TestCacheClearJSONReportsWhatWasRefused(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(httpcache.EnvDir, dir)
+	useArchiveServer(t, advisoryArchives(t).URL)
+	if code, _, stderr := run(t, "cache", "refresh", "--ecosystem", "npm"); code != ExitOK {
+		t.Fatalf("refresh: exit %d, stderr %q", code, stderr)
+	}
+	keep := filepath.Join(dir, osvindex.Subdir, "osv", "npm", "thesis.docx")
+	if err := os.WriteFile(keep, []byte("irreplaceable"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, _ := run(t, "--format", "json", "cache", "clear")
+	if code != ExitUsage {
+		t.Fatalf("exit = %d, want %d", code, ExitUsage)
+	}
+	var report struct {
+		Dir               string `json:"dir"`
+		RemovedBytes      int64  `json:"removed_bytes"`
+		RemovedIndexBytes int64  `json:"removed_index_bytes"`
+		Refused           string `json:"refused"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, stdout)
+	}
+	if report.Dir != dir || report.RemovedIndexBytes <= 0 || report.RemovedBytes != report.RemovedIndexBytes {
+		t.Fatalf("report = %+v", report)
+	}
+	if !strings.Contains(report.Refused, "thesis.docx") {
+		t.Errorf("refused = %q, want it to name the file", report.Refused)
+	}
+}
+
+// TestCacheRefreshWarnsWhenNoOtherCommandWillReadTheIndex covers --cache-dir,
+// which belongs to the cache command alone: the other commands take the cache
+// directory from the environment or the platform default, so an index built into
+// a directory of one's own is one that "check --offline" will not find. The
+// refresh still writes where it was told to, and says so.
+func TestCacheRefreshWarnsWhenNoOtherCommandWillReadTheIndex(t *testing.T) {
+	home := t.TempDir()
+	elsewhere := filepath.Join(t.TempDir(), "artifact")
+	t.Setenv(httpcache.EnvDir, home)
+	useArchiveServer(t, advisoryArchives(t).URL)
+
+	code, stdout, stderr := run(t, "cache", "refresh", "--ecosystem", "npm", "--cache-dir", elsewhere)
+	if code != ExitOK {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if !strings.Contains(stdout, osvindex.Dir(elsewhere)) {
+		t.Errorf("stdout = %q, want it to name the directory the index was written to", stdout)
+	}
+	for _, want := range []string{elsewhere, home, httpcache.EnvDir, "check --offline"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr = %q, want it to contain %q", stderr, want)
+		}
+	}
+
+	// The same directory the other commands read is not worth a warning.
+	code, _, stderr = run(t, "cache", "refresh", "--ecosystem", "npm", "--cache-dir", home)
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit %d, stderr %q; want no warning when the directory is the one everything reads", code, stderr)
+	}
+	// Neither is the default, which is what a plain refresh uses.
+	code, _, stderr = run(t, "cache", "refresh", "--ecosystem", "npm")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("exit %d, stderr %q; want no warning without the flag", code, stderr)
 	}
 }

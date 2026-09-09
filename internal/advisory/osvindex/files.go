@@ -73,16 +73,24 @@ func removeIfPresent(path string) (bool, error) {
 	}
 }
 
-// Clear removes the whole advisory index under a cache directory and leaves the
-// cache directory itself alone. It refuses, with ErrForeignFiles, when the index
-// directory holds anything this package would not have written, so a cache
+// Clear removes the advisory index under a cache directory and leaves the cache
+// directory itself alone. It never removes a file this package would not have
+// written: anything else is kept, together with the directories that lead to it,
+// and Clear returns ErrForeignFiles naming every one of them, so a cache
 // directory the user mistyped never loses data.
 //
+// What it can remove, it removes even when it had to keep something else. A
+// person who asks for the cache to be cleared and has one stray file under the
+// index gets the index cleared and the stray file named, not a cache that is
+// still entirely there:
+// refusing the whole operation over one file leaves hundreds of megabytes behind
+// and gives no way forward except deleting the directory by hand. Every file this
+// package owns is one refresh away from coming back, which is what makes removing
+// them the safe half of the answer.
+//
 // "trustdiff cache clear" calls this before internal/httpcache's Clear, which
-// refuses any subdirectory it does not know by name. That ordering means the
-// index is gone even if the httpcache pass then refuses over some other file,
-// which is the right trade: the index is one download away, and the refusal is
-// still reported.
+// refuses any subdirectory it does not know by name and would otherwise report
+// the index directory itself as a foreign file.
 func Clear(cacheDir string) error {
 	root := filepath.Join(cacheDir, Subdir)
 	entries, err := os.ReadDir(root)
@@ -92,62 +100,84 @@ func Clear(cacheDir string) error {
 	if err != nil {
 		return fmt.Errorf("osvindex: reading %s: %w", root, err)
 	}
-	// Everything is checked before anything is removed, so a refusal leaves the
-	// directory exactly as it was.
+	var foreign []string
 	for _, e := range entries {
 		if !e.IsDir() || e.Name() != sourceDir {
-			return fmt.Errorf("%w: %s contains %q", ErrForeignFiles, root, e.Name())
+			foreign = append(foreign, fmt.Sprintf("%s contains %q", root, e.Name()))
 		}
 	}
 	source := filepath.Join(root, sourceDir)
-	ecosystems, err := os.ReadDir(source)
+	kept, err := clearSource(source)
 	if err != nil {
-		return fmt.Errorf("osvindex: reading %s: %w", source, err)
-	}
-	files := make(map[string][]string, len(ecosystems))
-	for _, e := range ecosystems {
-		if !e.IsDir() || !known(e.Name()) {
-			return fmt.Errorf("%w: %s contains %q", ErrForeignFiles, source, e.Name())
-		}
-		dir := filepath.Join(source, e.Name())
-		names, err := clearableFiles(dir)
-		if err != nil {
-			return err
-		}
-		files[dir] = names
-	}
-	for dir, names := range files {
-		for _, name := range names {
-			if _, err := removeIfPresent(filepath.Join(dir, name)); err != nil {
-				return err
-			}
-		}
-		if _, err := removeIfPresent(dir); err != nil {
-			return err
-		}
-	}
-	if _, err := removeIfPresent(source); err != nil {
 		return err
 	}
-	_, err = removeIfPresent(root)
-	return err
+	foreign = append(foreign, kept...)
+	if len(foreign) == 0 {
+		// Both levels are ours and empty now, so the directories go too.
+		if _, err := removeIfPresent(source); err != nil {
+			return err
+		}
+		if _, err := removeIfPresent(root); err != nil {
+			return err
+		}
+		return nil
+	}
+	return fmt.Errorf("%w: %s", ErrForeignFiles, strings.Join(foreign, "; "))
 }
 
-// clearableFiles lists one ecosystem directory, refusing with ErrForeignFiles
-// when it holds anything this package would not have written there.
-func clearableFiles(dir string) ([]string, error) {
+// clearSource empties the OSV level of the index, one ecosystem directory at a
+// time, and returns a description of everything it kept because this package did
+// not write it. A directory that is not an ecosystem is left untouched, contents
+// and all: it is not ours to look inside, let alone to delete.
+func clearSource(source string) ([]string, error) {
+	ecosystems, err := os.ReadDir(source)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("osvindex: reading %s: %w", source, err)
+	}
+	var foreign []string
+	for _, e := range ecosystems {
+		if !e.IsDir() || !known(e.Name()) {
+			foreign = append(foreign, fmt.Sprintf("%s contains %q", source, e.Name()))
+			continue
+		}
+		dir := filepath.Join(source, e.Name())
+		kept, err := clearEcosystem(dir)
+		if err != nil {
+			return nil, err
+		}
+		foreign = append(foreign, kept...)
+	}
+	return foreign, nil
+}
+
+// clearEcosystem removes the index files of one ecosystem directory and returns a
+// description of every entry it kept. The directory itself survives when
+// something was kept, since it is the only thing holding it.
+func clearEcosystem(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("osvindex: reading %s: %w", dir, err)
 	}
-	names := make([]string, 0, len(entries))
+	var foreign []string
 	for _, e := range entries {
 		if e.IsDir() || !indexFileName.MatchString(e.Name()) {
-			return nil, fmt.Errorf("%w: %s contains %q", ErrForeignFiles, dir, e.Name())
+			foreign = append(foreign, fmt.Sprintf("%s contains %q", dir, e.Name()))
+			continue
 		}
-		names = append(names, e.Name())
+		if _, err := removeIfPresent(filepath.Join(dir, e.Name())); err != nil {
+			return nil, err
+		}
 	}
-	return names, nil
+	if len(foreign) > 0 {
+		return foreign, nil
+	}
+	if _, err := removeIfPresent(dir); err != nil {
+		return nil, err
+	}
+	return nil, nil
 }
 
 // known reports whether a directory name is one of the ecosystems this package

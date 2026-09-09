@@ -62,9 +62,17 @@
 // flag is the whole signal and must survive a flaky record. An id the batch
 // listed but the vulns endpoint does not know (404, a record withdrawn between
 // the two requests) is dropped, never reported as an advisory of unknown
-// severity, and an entry without an id is skipped. After maxDetailFailures
-// failed details requests in one call the remaining ids are not requested: an
-// outage is reported once, not once per advisory.
+// severity, and an entry without an id is skipped. A record that arrives with a
+// withdrawn timestamp is dropped as well: OSV filters withdrawn records out of
+// the query API today, so it does not happen, but the offline index drops them
+// and the two paths are not written to disagree about the same advisory. After
+// maxDetailFailures failed details requests in one call the remaining ids are not
+// requested: an outage is reported once, not once per advisory.
+//
+// The offline path answers the same refs from internal/advisory/osvindex through
+// the same rules: the index stores the severity inputs and the timestamps
+// verbatim, in UTC and in the record's own order, and the advisory is assembled
+// here, so an offline run and an online run describe an advisory identically.
 package osv
 
 import (
@@ -208,6 +216,7 @@ type (
 		Details          string                     `json:"details"`
 		Published        string                     `json:"published"`
 		Modified         string                     `json:"modified"`
+		Withdrawn        string                     `json:"withdrawn"`
 		Severity         []vulnSeverity             `json:"severity"`
 		DatabaseSpecific map[string]json.RawMessage `json:"database_specific"`
 	}
@@ -449,10 +458,11 @@ func (c *Client) queryChunk(ctx context.Context, chunk []model.PackageRef, hits 
 
 // detail fetches one advisory record. A nil advisory with a nil error means
 // the id is dropped: the vulns endpoint does not know it (a record withdrawn
-// between the two requests). A MAL- id is never dropped or failed: whatever
-// went wrong, it is answered from the batch entry alone, because the
-// malicious flag it carries is the whole signal. A canceled context is the
-// one error a MAL- id passes on, so the call can stop.
+// between the two requests), or the record says it has been withdrawn. A MAL- id
+// is never failed and is dropped only when it was withdrawn: whatever else went
+// wrong, it is answered from the batch entry alone, because the malicious flag it
+// carries is the whole signal. A canceled context is the one error a MAL- id
+// passes on, so the call can stop.
 func (c *Client) detail(ctx context.Context, id string, listed batchVuln) (*advisory.Advisory, error) {
 	malicious := strings.HasPrefix(id, MaliciousPrefix)
 	u := c.base + "/vulns/" + url.PathEscape(id)
@@ -487,9 +497,22 @@ func (c *Client) detail(ctx context.Context, id string, listed batchVuln) (*advi
 		}
 		return nil, err
 	}
-	if rec.Modified == "" {
-		rec.Modified = listed.Modified
+	if rec.Withdrawn != "" {
+		// A withdrawn advisory is not a finding, which is why the offline index
+		// never returns one either. The query API filters withdrawn records
+		// today, so nothing here reaches this line, and that is exactly why it
+		// has to exist: the day the API stops filtering them, the two paths must
+		// not start disagreeing about the same advisory. A MAL- id is dropped
+		// too, for the same reason the index drops it.
+		c.log.Warn("advisory withdrawn by the source, dropped", "id", id, "withdrawn", rec.Withdrawn)
+		return nil, nil
 	}
+	// The record is the only source of the timestamps, on both paths. The batch
+	// entry carries a modified of its own, but the offline index is built from
+	// the archive alone and has no batch entry to fall back on, and a record that
+	// reads one way online and another way offline is worse than a record with no
+	// modified date. It is still what a MAL- fallback advisory is built from
+	// below, since there the record itself never arrived.
 	a := c.toAdvisory(id, &rec)
 	c.log.Debug("osv advisory", "id", id, "severity", a.Severity, "score", a.Score, "malicious", a.Malicious, "from_cache", resp.FromCache)
 	return &a, nil
@@ -548,8 +571,12 @@ func (c *Client) advisoryFromRecord(r *osvindex.Record) advisory.Advisory {
 			rec.DatabaseSpecific = map[string]json.RawMessage{"severity": label}
 		}
 	}
-	if r.CVSSv3 != "" {
-		rec.Severity = []vulnSeverity{{Type: "CVSS_V3", Score: r.CVSSv3}}
+	// Every stored vector is handed back in the record's order, not just the
+	// first, so that cvss3Score skips an unusable one offline exactly as it does
+	// online. The index keeps the list for this.
+	rec.Severity = make([]vulnSeverity, 0, len(r.CVSSv3))
+	for _, vector := range r.CVSSv3 {
+		rec.Severity = append(rec.Severity, vulnSeverity{Type: "CVSS_V3", Score: vector})
 	}
 	a := c.toAdvisory(r.ID, rec)
 	// The index parsed the timestamps when it was built, so they are not parsed
@@ -646,6 +673,9 @@ func summaryOf(rec *vulnRecord) string {
 
 // parseTime reads an RFC 3339 timestamp (OSV writes UTC with a Z suffix and
 // sometimes fractional seconds). Empty or unparsable values yield the zero time.
+// The result is converted to UTC, which is the instant the record means and the
+// spelling the offline index stores, so that the same advisory carries the same
+// timestamp whichever path answered it.
 func (c *Client) parseTime(id, field, value string) time.Time {
 	if value == "" {
 		return time.Time{}
@@ -655,7 +685,7 @@ func (c *Client) parseTime(id, field, value string) time.Time {
 		c.log.Debug("unparsable timestamp", "id", id, "field", field, "value", value, "error", err)
 		return time.Time{}
 	}
-	return t
+	return t.UTC()
 }
 
 // Ecosystem maps an ecosystem to the OSV ecosystem name, or "" when OSV has
