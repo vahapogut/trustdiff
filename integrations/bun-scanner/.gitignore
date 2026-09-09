@@ -1,0 +1,9 @@
+# The package has no dependencies, so nothing here should ever be installed. These
+# entries exist only so that a local "bun link" experiment or an accidental "bun install"
+# cannot be committed by mistake.
+node_modules/
+bun.lock
+bun.lockb
+
+# Output of "npm pack" or "bun pm pack" while checking what would be published.
+*.tgz

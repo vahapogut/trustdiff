@@ -1,0 +1,43 @@
+{
+  "name": "@trustdiff/bun-scanner",
+  "version": "0.4.0",
+  "description": "Bun security scanner that runs the trustdiff binary over the packages bun install is about to fetch.",
+  "license": "Apache-2.0",
+  "author": "Vahap Ogut <vahapogut@gmail.com>",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src/index.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "homepage": "https://github.com/vahapogut/trustdiff/tree/main/integrations/bun-scanner#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vahapogut/trustdiff.git",
+    "directory": "integrations/bun-scanner"
+  },
+  "bugs": {
+    "url": "https://github.com/vahapogut/trustdiff/issues"
+  },
+  "keywords": [
+    "bun",
+    "bun-security-scanner",
+    "security",
+    "supply-chain",
+    "trustdiff"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "test": "bun test"
+  }
+}
