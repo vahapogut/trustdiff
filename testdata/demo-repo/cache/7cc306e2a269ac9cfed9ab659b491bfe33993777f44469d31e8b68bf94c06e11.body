@@ -1,0 +1,85 @@
+{
+  "_id": "demo-crypto-helper",
+  "_rev": "4-1f0a7d5c6b2e4f8190c3ad5e77b40912",
+  "name": "demo-crypto-helper",
+  "description": "Convenience wrappers around the Node.js crypto module.",
+  "dist-tags": {
+    "latest": "1.0.2"
+  },
+  "versions": {
+    "1.0.2": {
+      "name": "demo-crypto-helper",
+      "version": "1.0.2",
+      "description": "Convenience wrappers around the Node.js crypto module.",
+      "keywords": [
+        "crypto",
+        "hash",
+        "hmac"
+      ],
+      "license": "MIT",
+      "main": "index.js",
+      "scripts": {
+        "postinstall": "node ./scripts/setup.js",
+        "test": "node --test"
+      },
+      "dependencies": {},
+      "engines": {
+        "node": ">=18"
+      },
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/demo-crypto-helper/demo-crypto-helper.git"
+      },
+      "homepage": "https://github.com/demo-crypto-helper/demo-crypto-helper#readme",
+      "bugs": {
+        "url": "https://github.com/demo-crypto-helper/demo-crypto-helper/issues"
+      },
+      "_id": "demo-crypto-helper@1.0.2",
+      "_nodeVersion": "22.11.0",
+      "_npmVersion": "10.9.0",
+      "_npmUser": {
+        "name": "demo-helper-dev",
+        "email": "demo-helper-dev@example.invalid"
+      },
+      "maintainers": [
+        {
+          "name": "demo-helper-dev",
+          "email": "demo-helper-dev@example.invalid"
+        }
+      ],
+      "dist": {
+        "integrity": "sha512-4EWY4VkifoRJYQMsXd4S/9tiOIn147PMDPCxtx4V5LfdL7PYZtneeni5vSVXEePjWE7at8GWkH91mMWXMEqLeQ==",
+        "shasum": "ee89516b3676ecff26bf46e879b971c7e953b393",
+        "tarball": "https://registry.npmjs.org/demo-crypto-helper/-/demo-crypto-helper-1.0.2.tgz",
+        "fileCount": 7,
+        "unpackedSize": 12874
+      },
+      "directories": {},
+      "_hasShrinkwrap": false
+    }
+  },
+  "time": {
+    "created": "2026-09-05T07:41:02.118Z",
+    "1.0.0": "2026-09-05T07:41:02.311Z",
+    "1.0.1": "2026-09-06T18:02:55.640Z",
+    "1.0.2": "2026-09-07T09:12:44.318Z",
+    "modified": "2026-09-07T09:12:44.702Z"
+  },
+  "maintainers": [
+    {
+      "name": "demo-helper-dev",
+      "email": "demo-helper-dev@example.invalid"
+    }
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/demo-crypto-helper/demo-crypto-helper.git"
+  },
+  "homepage": "https://github.com/demo-crypto-helper/demo-crypto-helper#readme",
+  "bugs": {
+    "url": "https://github.com/demo-crypto-helper/demo-crypto-helper/issues"
+  },
+  "readme": "# demo-crypto-helper\n\nConvenience wrappers around the Node.js crypto module.\n",
+  "readmeFilename": "README.md"
+}

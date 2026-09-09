@@ -1,0 +1,21 @@
+{
+  "name": "demo-app",
+  "version": "1.4.0",
+  "private": true,
+  "description": "The manifest the base lockfile was installed from.",
+  "license": "MIT",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "demo-http-client": "^2.3.1",
+    "demo-logger": "^1.8.4"
+  },
+  "devDependencies": {
+    "demo-test-runner": "^4.2.1"
+  },
+  "engines": {
+    "node": ">=20.11"
+  }
+}

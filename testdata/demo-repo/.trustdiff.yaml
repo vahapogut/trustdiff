@@ -1,0 +1,10 @@
+# Policy for the demo repository.
+#
+# It sets nothing but the version on purpose: every level, the cooldown and
+# on_data_unavailable stay at their built-in defaults, which is what the demo is
+# meant to show. Passing it with --policy also keeps the demo reproducible on a
+# machine that has a user-level policy in $XDG_CONFIG_HOME/trustdiff/policy.yaml,
+# which would otherwise be found and applied.
+#
+# Validate with: trustdiff --policy testdata/demo-repo/.trustdiff.yaml policy validate
+version: 1
