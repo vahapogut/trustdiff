@@ -291,7 +291,7 @@ A pattern such as `"cargo:*"` covers every crate when build scripts are not wort
 
 ## TD007 new-dependency-introduced
 
-**Detects.** Every runtime dependency the evaluated version declares and the previous version did not, one finding per new dependency so that a reviewed one can be allowed on its own. Each new dependency is looked up through the registry and deps.dev, and the finding is raised to `block` when the dependency is young (the version a fresh install would take, or the package's first release, is less than 7 days old), has low usage (weekly downloads below `low-usage.min_weekly_downloads`; no escalation on PyPI, which has no counts) or is unknown to deps.dev. A lookup error never escalates; the explanation says what could not be checked. Skipped without a previous version. Applies to every ecosystem.
+**Detects.** Every runtime dependency the evaluated version declares and the previous version did not, one finding per new dependency so that a reviewed one can be allowed on its own. A dependency a plain install does not pull in is reported but never escalated, and the evidence marks it `optional`: a PyPI requirement behind an extra (`pip install pkg[socks]` and nothing else installs it) is the case this covers. Each new dependency is looked up through the registry and deps.dev, and the finding is raised to `block` when the dependency is young (its newest stable version, or the package's first release, is less than 7 days old), has low usage (weekly downloads below `low-usage.min_weekly_downloads`; no escalation on PyPI, which has no counts) or is unknown to deps.dev. The lookup reports the newest stable version rather than the one the requirement would resolve to: resolving a range needs the whole solver, so the explanation says what it actually looked at. A lookup error never escalates; the explanation says what could not be checked. Skipped without a previous version. Applies to every ecosystem.
 
 **Why it matters.** This is the pattern of the axios compromise of 31 March 2026: `axios@1.14.1` and `0.30.4` differed from the previous releases by one new dependency, `plain-crypto-js@4.2.1`, a package created for the attack that carried the remote access trojan ([axios post mortem](https://github.com/axios/axios/issues/10636)). It is also the event-stream pattern of 2018: `event-stream@3.3.6` added `flatmap-stream`, a package with no history and no users ([Snyk post mortem](https://snyk.io/blog/a-post-mortem-of-the-malicious-event-stream-backdoor/)). In both cases the new dependency was days old and had almost no downloads, which is what the escalation looks for.
 
@@ -302,10 +302,11 @@ A pattern such as `"cargo:*"` covers every crate when build scripts are not wort
 | `previous_version` | the previous release compared with |
 | `dependency` | the new dependency's name |
 | `requirement` | the version requirement the evaluated version declares |
+| `optional` | true when a plain install does not pull the dependency in, which also means no escalation |
 | `new_dependencies` | every dependency the evaluated version added, sorted |
 | `escalated` | whether the level was raised to block |
 | `escalation_reasons` | `young`, `low-usage` and `unknown-to-deps.dev`, those that apply |
-| `resolved_version` | the version a fresh install would take (when resolved) |
+| `resolved_version` | the pinned version, or the newest stable one otherwise (when resolved) |
 | `published_at` | its RFC 3339 publish time (when known) |
 | `first_published_at` | RFC 3339 time of the package's first release (when known) |
 | `weekly_downloads` | the dependency's weekly downloads (when the registry has them) |
@@ -540,12 +541,12 @@ Arrives in 0.2.0 with the `diff` and `scan` commands. It will report a lockfile 
 
 **Detects.** A version number that does not fit the package's history. Two signals, each its own finding, both `info` by default:
 
-- `jump`: the major component exceeds the previous release's by more than one, or the minor jumps by more than ten while the major is unchanged (1.4.2 to 9.9.9). The explanation states the cadence observed over the earlier releases.
-- `out-of-order`: the version sorts below a release that was published earlier, so the registry's newest upload is not its highest version (1.2.3 uploaded after 2.0.0).
+- `jump`: the step from the previous release is far beyond the package's own cadence. The major must exceed the previous release's by more than one, or the minor by more than ten while the major is unchanged (1.4.2 to 9.9.9), and the step must also exceed the largest step between consecutive earlier releases, so a package that has jumped before is not reported for doing it again. Calendar versioning, recognized by a leading component that reads as a year, is judged against the calendar instead: a major step no larger than the years between the two publish dates, or a minor step no larger than the months elapsed inside one year, is the scheme at work rather than a jump.
+- `out-of-order`: the version sorts below a release of its own line that was published earlier, so the upload is not the newest of that line (1.2.5 after 1.4.2). The line is the major, or the major and minor together while the major is 0. A maintenance release on an older line, which is the normal shape of a maintained project, is not reported.
 
 Prereleases, yanked versions, versions without a publish time and versions that do not parse (semver for npm and crates.io, PEP 440 for PyPI) are left out of the comparison. Skipped without a version list, when the evaluated version is missing from it, does not parse or has no publish time, and when there is no earlier release. Applies to every ecosystem.
 
-**Why it matters.** This is a consistency check, not a detector, and none of the incidents cited in this document would have tripped the `jump` rule on its own: the sabotaged `colors@1.4.1` and `faker@6.6.6` of January 2022 ([Snyk](https://snyk.io/blog/open-source-npm-packages-colors-faker/)) kept to ordinary steps, and so did every hijacked release above. The `out-of-order` signal fires on legitimate backports at least as often as on anything else; the fix releases for the ua-parser-js hijack, `0.7.30` and `0.8.1`, were themselves published after `1.0.0` ([issue #538](https://github.com/faisalman/ua-parser-js/issues/538)). That is why the level is `info`: the finding adds context to a card, it is not meant to fail a build.
+**Why it matters.** This is a consistency check, not a detector, and none of the incidents cited in this document would have tripped it on its own: the sabotaged `colors@1.4.1` and `faker@6.6.6` of January 2022 ([Snyk](https://snyk.io/blog/open-source-npm-packages-colors-faker/)) kept to ordinary steps, and so did every hijacked release above. What both signals are for is the version number that does not match how the package has behaved until now, which is worth a line on the card when something else on the same card looks wrong. Both rules are deliberately narrow, because the obvious forms fire constantly on healthy projects: parallel release lines (the ua-parser-js fixes `0.7.30` and `0.8.1` were published after `1.0.0`, [issue #538](https://github.com/faisalman/ua-parser-js/issues/538)) and calendar versioning would otherwise produce a finding on every release. That is also why the level is `info`: the finding adds context, it is not meant to fail a build.
 
 **Evidence.**
 
@@ -561,28 +562,32 @@ Prereleases, yanked versions, versions without a publish time and versions that 
 | `earlier_releases` | how many earlier releases the cadence was read from (jump only) |
 | `max_major_step` | the largest major increase between consecutive earlier releases (jump only) |
 | `max_minor_step` | the largest minor increase between consecutive earlier releases that share a major (jump only) |
-| `earlier_version` | the highest earlier-published release the version sorts below (out-of-order only) |
+| `calendar` | true when the version numbers were read as calendar versioning (jump only) |
+| `earlier_version` | the highest earlier-published release of the same line the version sorts below (out-of-order only) |
 | `earlier_published` | its publish time, RFC 3339 (out-of-order only) |
-| `earlier_above` | how many earlier-published releases sort above the version (out-of-order only) |
+| `earlier_above` | how many earlier-published releases of the same line sort above the version (out-of-order only) |
 
-**Example.** The `rand_core` backport from TD004:
+**Example.** Constructed, since a package that trips either rule is rare by design. A 1.x line that has moved in steps of five publishes 1.20.5 after 1.30.0:
 
 ```
-cargo:rand_core@0.4.3  BLOCK
+npm:example@1.20.5  OK
   info
-    TD015 version-anomaly: 0.4.3 published after 0.10.1, which sorts above it
-      cargo:rand_core@0.4.3 was published on 2026-09-02 but sorts below 0.10.1, published on
-      2026-04-13; 13 earlier releases sort above it, so this upload is not the package's newest
-      version
+    TD015 version-anomaly: minor version jumps from 1.1.0 to 1.20.5
+      npm:example@1.20.5 (published 2026-09-09) raises the minor from 1 to 20 within major 1 from
+      the previous release 1.1.0 (published 2026-09-04); across the 8 earlier releases, consecutive
+      releases raised the major by at most 0 and the minor by at most 5
+    TD015 version-anomaly: 1.20.5 published after 1.30.0, which sorts above it
+      npm:example@1.20.5 was published on 2026-09-09 but sorts below 1.30.0, published on
+      2026-08-30; 2 earlier releases sort above it, so this upload is not the newest of its line
 ```
 
-**Fix.** Nothing to fix. Make sure the version you are installing is the one you meant; an out-of-order upload is often a backport you did not know existed.
+**Fix.** Nothing to fix. Make sure the version you are installing is the one you meant; an out-of-order upload inside one line is often a maintenance release you did not know existed.
 
-**Allow.** `version-anomaly: off` in the policy, or an allow entry for a package that publishes several release lines:
+**Allow.** `version-anomaly: off` in the policy, or an allow entry for a package whose numbering the rules keep misreading:
 
 ```yaml
 allow:
   - check: version-anomaly
-    package: "cargo:rand_core"
-    reason: "maintains the 0.4, 0.6 and 0.10 lines in parallel"
+    package: "npm:example"
+    reason: "renumbered the 1.x line after the 2.0 release was withdrawn"
 ```
