@@ -1,0 +1,80 @@
+name: Feature request
+description: Propose a new check, ecosystem, lockfile parser, doctor rule or a change in behavior.
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please look at [docs/PLAN.md](https://github.com/vahapogut/trustdiff/blob/main/docs/PLAN.md) first. The roadmap through v0.4.0 is written down there; if your request is already planned, say which task it belongs to so the discussion lands in the right place.
+  - type: dropdown
+    id: ecosystem
+    attributes:
+      label: Ecosystem
+      description: Which ecosystem the request is about. Pick more than one where it applies.
+      multiple: true
+      options:
+        - npm (npm, pnpm, yarn, bun)
+        - PyPI (pip, uv, poetry)
+        - crates.io (cargo)
+        - Deno and JSR
+        - All ecosystems
+        - Not ecosystem specific
+    validations:
+      required: true
+  - type: dropdown
+    id: check
+    attributes:
+      label: Related check
+      description: The check this request relates to. Ids and names are listed in the README, and from v0.1.0 in docs/checks.md.
+      options:
+        - Not related to a check
+        - A new check
+        - A doctor rule
+        - TD001 young-version
+        - TD002 publisher-changed
+        - TD003 maintainers-changed
+        - TD004 trust-downgrade
+        - TD005 install-script-introduced
+        - TD006 install-script-present
+        - TD007 new-dependency-introduced
+        - TD008 typosquat-suspect
+        - TD009 malicious-advisory
+        - TD010 vulnerability
+        - TD011 deprecated-or-yanked
+        - TD012 low-usage
+        - TD013 exotic-source
+        - TD014 integrity-missing
+        - TD015 version-anomaly
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What you are trying to do and what stops you today. If a real incident motivates the request, link to it.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What trustdiff should do, with the command, flags or policy keys you have in mind and an example of the output.
+    validations:
+      required: true
+  - type: textarea
+    id: data
+    attributes:
+      label: Data source
+      description: For a new check or ecosystem, which registry or advisory endpoint exposes the signal, with a link to its documentation. trustdiff does not invent registry fields.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Other tools, settings or workarounds you considered, and why they are not enough.
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to implement this myself, following CONTRIBUTING.md.

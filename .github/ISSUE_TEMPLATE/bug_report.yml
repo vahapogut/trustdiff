@@ -1,0 +1,61 @@
+name: Bug report
+description: trustdiff crashes, reports something wrong, or behaves differently from its documentation.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. If you suspect a security problem, do not use this form: see [SECURITY.md](https://github.com/vahapogut/trustdiff/blob/main/SECURITY.md) for private reporting.
+  - type: textarea
+    id: version
+    attributes:
+      label: Version
+      description: Paste the output of `trustdiff version`. If you built from source, give the commit.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system and shell
+      placeholder: "Ubuntu 24.04, bash"
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The exact command line, including flags. If a policy file was used, paste it too, with any secrets removed.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected trustdiff to print or do, and the exit code you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead. Paste the output including stderr, and the exit code (`echo $?` in a POSIX shell, `$LASTEXITCODE` in PowerShell). Re-running with `-v` adds diagnostics.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: A package ref, a lockfile, a policy file or a repository layout that shows the problem. Smaller is better.
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues for this problem.
+          required: true
+        - label: This is not a security vulnerability. Those go through SECURITY.md.
+          required: true
