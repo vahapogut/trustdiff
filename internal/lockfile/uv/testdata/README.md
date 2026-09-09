@@ -22,3 +22,4 @@ uv output:
 | --- | --- |
 | `sources.uv.lock` | every source kind, artifacts with no hash, the `[manifest]` table, workspace members, a package locked at two versions |
 | `broken.uv.lock` | tables the parser has to drop, followed by a package it can still read |
+| `dynamic-version.uv.lock` | a project and a workspace member whose versions are dynamic, which uv writes with no `version` key; their dependency lists are what makes the rest of the file direct |

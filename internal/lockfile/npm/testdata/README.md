@@ -17,7 +17,9 @@ What each one is here for:
   measured. It is a real npm workspace monorepo, so it carries the cases a small
   file cannot: 25 `"link": true` entries pointing at workspace members, workspace
   members of their own with a `name` that differs from their directory, 1071
-  nested `node_modules` duplicates, a `devOptional` entry, an install resolved
+  nested `node_modules` duplicates, eight aliased dependencies (`d3v3`,
+  `string-width-cjs` and the rest, whose key is the alias and whose `name` is the
+  package that is really installed), a `devOptional` entry, an install resolved
   from git and one resolved from a tarball URL that is not a registry.
 - **minimatch** is lockfileVersion 2, which carries both the `packages` map and
   the lockfileVersion 1 `dependencies` tree that npm 6 reads. It proves the
@@ -30,8 +32,12 @@ What each one is here for:
 test suite and describes no real package: it collects the cases the recordings do
 not all hold at once, in the shape npm writes them, so one table test can cover a
 scoped name, a nested duplicate, a git dependency, a tarball URL, a `file:` path,
-a workspace link, a bundled entry with no integrity, an extraneous entry, and the
-`dev`, `optional` and `devOptional` flags.
+a workspace link, a bundled entry with no integrity, an extraneous entry, an
+aliased dependency (`"widgets-v1": "npm:@acme/widgets@^1"`, whose key is the alias
+and whose `name` is what is installed), a dependency declared by the workspace
+member rather than by the root, and the `dev`, `optional` and `devOptional` flags.
+Its `integrity` values are the sha512 of `<name>@<version>`, so a new entry's hash
+is `printf '%s' '<name>@<version>' | openssl dgst -sha512 -binary | openssl base64 -A`.
 
 To record another file, download it at a fixed commit and add a row above:
 

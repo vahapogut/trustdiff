@@ -16,18 +16,26 @@
 //   - The "" entry is the project, not a package. Its "dependencies",
 //     "devDependencies" and "optionalDependencies" name the packages the project
 //     asks for itself, which is how a top level "node_modules/<name>" entry earns
-//     Direct. A dependency declared by a workspace member is not counted, and
-//     neither is a peer dependency of the project, because npm installs those
-//     through the package that asks for them.
+//     Direct. A workspace member's entry, whose key holds no "node_modules/",
+//     carries the same three maps and is read the same way, because a member's
+//     package.json is a file of the repository like the root's and the other three
+//     parsers count a member's dependencies as direct. A peer dependency of the
+//     project is not counted, because npm installs those through the package that
+//     asks for them.
 //   - An entry with "link": true is a symbolic link into the workspace rather
 //     than an install, and an entry with no version has nothing to evaluate.
 //     Both are dropped with a reason, so a partial parse stays visible.
-//   - The name is the part of the key after the last "node_modules/", which
-//     gives the right name for a nested entry and keeps a scoped name's slash and
-//     its case. npm names are case sensitive (JSONStream and jsonstream are two
-//     packages), so the name is recorded as written. A workspace member's key
-//     holds no "node_modules/", and there the entry's own "name" field, which npm
-//     writes when the directory differs from the package name, is used instead.
+//   - The name is the entry's own "name" field when it has one, and otherwise the
+//     part of the key after the last "node_modules/", which gives the right name
+//     for a nested entry and keeps a scoped name's slash and its case. npm names
+//     are case sensitive (JSONStream and jsonstream are two packages), so the name
+//     is recorded as written. npm writes "name" for exactly the two cases where
+//     the key is not the name: a workspace member installed in a directory of its
+//     own, and an alias ("d3v3": "npm:d3@^3"), where the key is the alias and the
+//     name is the package that is really installed. The ref carries the installed
+//     name, because that is what a registry, an advisory database or a typosquat
+//     neighbor is looked up under; Direct is still decided by the alias, which is
+//     how the dependency maps spell it.
 //   - A workspace member stays in the entries, with SourcePath, because the link
 //     entry that points at it was dropped and it would otherwise disappear from a
 //     monorepo's lockfile entirely.
@@ -63,17 +71,6 @@ const formatName = "package-lock.json"
 // nodeModules is the path segment that separates the install path from the name.
 const nodeModules = "node_modules/"
 
-// registryHosts are the hosts whose tarball URLs mean "installed from a
-// registry" even though their layout is not the usual one. Every other npm
-// registry and mirror serves tarballs as <name>/-/<file>.tgz, which
-// registryTarball recognizes without a list to maintain. Verified 2026-09-09.
-var registryHosts = map[string]bool{
-	// The public registry npm installs from by default.
-	"registry.npmjs.org": true,
-	// GitHub Packages, whose tarball path is /download/<name>/<version>/<sha>.
-	"npm.pkg.github.com": true,
-}
-
 func init() { lockfile.Register(parser{}) }
 
 // parser reads package-lock.json.
@@ -87,8 +84,9 @@ func (parser) Detect(base string) bool { return strings.EqualFold(base, formatNa
 
 // jsonPackage is the part of one "packages" entry the checks need.
 type jsonPackage struct {
-	// Name is written when the key is a path whose last segment is not the
-	// package name, which is how a workspace member carries its scoped name.
+	// Name is written when the key is not the package name: a workspace member
+	// installed in a directory of its own, and an alias, where the key is the
+	// alias and this is the package that is really installed.
 	Name        string `json:"name"`
 	Version     string `json:"version"`
 	Resolved    string `json:"resolved"`
@@ -97,14 +95,27 @@ type jsonPackage struct {
 	Optional    bool   `json:"optional"`
 	DevOptional bool   `json:"devOptional"`
 	Link        bool   `json:"link"`
+	// InBundle marks a dependency whose bytes ship inside its parent's tarball,
+	// which is why it has neither a "resolved" nor an "integrity" of its own.
+	InBundle bool `json:"inBundle"`
 }
 
-// jsonRoot is the "" entry, the project itself. Only the names in its dependency
-// maps matter, so the values stay raw and are never decoded.
+// jsonRoot is what a manifest asks for: the "" entry, the project itself, and a
+// workspace member's entry, which npm writes the same three maps on. Only the
+// names matter, so the values stay raw and are never decoded.
 type jsonRoot struct {
 	Dependencies         map[string]json.RawMessage `json:"dependencies"`
 	DevDependencies      map[string]json.RawMessage `json:"devDependencies"`
 	OptionalDependencies map[string]json.RawMessage `json:"optionalDependencies"`
+}
+
+// jsonMember is a workspace member's entry: an install like any other, plus the
+// dependency maps it declares. Only the entries whose key holds no "node_modules/"
+// are decoded into this, because the dependency map of an installed package is
+// large, is not read, and would cost as much memory again on a big lockfile.
+type jsonMember struct {
+	jsonPackage
+	jsonRoot
 }
 
 // locked is one entry as read, with the line its key sits on. The entries are
@@ -114,6 +125,8 @@ type locked struct {
 	key  string
 	line int
 	pkg  jsonPackage
+	// asks is what a workspace member declares, empty for an installed package.
+	asks jsonRoot
 }
 
 // Parse reads the lockfile. path names the file in messages only.
@@ -167,9 +180,10 @@ func (parser) Parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 		return nil, noPackagesError(version)
 	}
 
-	direct := directNames(root)
+	direct := directNames(root, locks)
+	hosts := countRegistryHosts(locks)
 	for i := range locks {
-		addEntry(lf, &locks[i], direct)
+		addEntry(lf, &locks[i], direct, hosts)
 	}
 	return lf, nil
 }
@@ -205,8 +219,18 @@ func decodePackages(dec *json.Decoder, lines *lockfile.LineIndex, lf *lockfile.L
 			}
 			continue
 		}
-		var pkg jsonPackage
-		if err := dec.Decode(&pkg); err != nil {
+		entry := locked{key: key, line: line}
+		if strings.Contains(key, nodeModules) {
+			err = dec.Decode(&entry.pkg)
+		} else {
+			// A workspace member: its dependency maps are read as well, because
+			// what a member asks for the project asks for.
+			var member jsonMember
+			if err = dec.Decode(&member); err == nil {
+				entry.pkg, entry.asks = member.jsonPackage, member.jsonRoot
+			}
+		}
+		if err != nil {
 			var typeErr *json.UnmarshalTypeError
 			if errors.As(err, &typeErr) {
 				lf.Drop("%s: entry is %s, not an object", key, typeErr.Value)
@@ -214,7 +238,7 @@ func decodePackages(dec *json.Decoder, lines *lockfile.LineIndex, lf *lockfile.L
 			}
 			return nil, root, fmt.Errorf("%s: %w", key, err)
 		}
-		locks = append(locks, locked{key: key, line: line, pkg: pkg})
+		locks = append(locks, entry)
 	}
 	if err := closeObject(dec, `"packages"`); err != nil {
 		return nil, root, err
@@ -223,7 +247,7 @@ func decodePackages(dec *json.Decoder, lines *lockfile.LineIndex, lf *lockfile.L
 }
 
 // addEntry turns one read entry into a lockfile entry, or drops it with a reason.
-func addEntry(lf *lockfile.Lockfile, l *locked, direct map[string]bool) {
+func addEntry(lf *lockfile.Lockfile, l *locked, direct map[string]bool, hosts *lockfile.RegistryHosts) {
 	switch {
 	case l.pkg.Link:
 		target := l.pkg.Resolved
@@ -236,8 +260,16 @@ func addEntry(lf *lockfile.Lockfile, l *locked, direct map[string]bool) {
 		lf.Drop("%s: no version, nothing to evaluate", l.key)
 		return
 	}
-	name := packageName(l.key, l.pkg.Name)
-	if name == "" {
+	// The key names the dependency as the manifests spell it, which for an alias
+	// is the alias; the entry's "name" names the package that is really installed.
+	// Every lookup wants the installed name, and Direct wants the spelling the
+	// dependency maps use.
+	asked := installPath(l.key)
+	installed := asked
+	if l.pkg.Name != "" {
+		installed = l.pkg.Name
+	}
+	if installed == "" {
 		lf.Drop("%s: no package name in the path and none declared", l.key)
 		return
 	}
@@ -246,28 +278,27 @@ func addEntry(lf *lockfile.Lockfile, l *locked, direct map[string]bool) {
 	lf.Add(lockfile.Entry{
 		Ref: model.PackageRef{
 			Ecosystem: model.NPM,
-			Name:      model.NormalizeName(model.NPM, name),
+			Name:      model.NormalizeName(model.NPM, installed),
 			Version:   l.pkg.Version,
 		},
-		Source:    sourceOf(l.key, l.pkg.Resolved),
+		Source:    sourceOf(l.key, l.pkg.Resolved, hosts),
 		Resolved:  l.pkg.Resolved,
 		Integrity: l.pkg.Integrity,
-		Direct:    topLevel(l.key) && direct[name],
+		Direct:    topLevel(l.key) && direct[asked],
 		Dev:       l.pkg.Dev || l.pkg.DevOptional,
 		Optional:  l.pkg.Optional || l.pkg.DevOptional,
+		Bundled:   l.pkg.InBundle,
 		Line:      l.line,
 	})
 }
 
-// packageName is the part of the install path after the last "node_modules/".
-// A key that holds none is a workspace member, where npm writes the name in the
-// entry and the directory is the fallback.
-func packageName(key, declared string) string {
+// installPath is the part of the install path after the last "node_modules/",
+// which is the name the manifest that asked for the entry wrote: the package name,
+// or the alias for an aliased dependency. A key that holds no "node_modules/" is a
+// workspace member, whose directory is the fallback.
+func installPath(key string) string {
 	if i := strings.LastIndex(key, nodeModules); i >= 0 {
 		return key[i+len(nodeModules):]
-	}
-	if declared != "" {
-		return declared
 	}
 	if i := strings.LastIndex(key, "/"); i >= 0 {
 		return key[i+1:]
@@ -281,22 +312,46 @@ func topLevel(key string) bool {
 	return strings.HasPrefix(key, nodeModules) && strings.Count(key, nodeModules) == 1
 }
 
-// directNames collects the names the project itself asks for.
-func directNames(root jsonRoot) map[string]bool {
+// directNames collects the names the project asks for: the root entry's own
+// dependency maps and those of every workspace member, keyed the way the manifests
+// spell them, which for an aliased dependency is the alias.
+func directNames(root jsonRoot, locks []locked) map[string]bool {
 	names := make(map[string]bool, len(root.Dependencies)+len(root.DevDependencies)+len(root.OptionalDependencies))
-	for _, m := range []map[string]json.RawMessage{root.Dependencies, root.DevDependencies, root.OptionalDependencies} {
-		for name := range m {
-			names[name] = true
+	add := func(r jsonRoot) {
+		for _, m := range []map[string]json.RawMessage{r.Dependencies, r.DevDependencies, r.OptionalDependencies} {
+			for name := range m {
+				names[name] = true
+			}
 		}
 	}
+	add(root)
+	for i := range locks {
+		add(locks[i].asks)
+	}
 	return names
+}
+
+// countRegistryHosts weighs the hosts the file downloads from, so that the host a
+// project installs through can be told from a host one entry points at alone. Only
+// the URLs that have the registry layout are counted: any other URL is reported as
+// a URL whatever its host serves.
+func countRegistryHosts(locks []locked) *lockfile.RegistryHosts {
+	hosts := lockfile.NPMRegistryHosts()
+	for i := range locks {
+		u, err := url.Parse(locks[i].pkg.Resolved)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || !registryLayout(u) {
+			continue
+		}
+		hosts.Count(u.Hostname())
+	}
+	return hosts
 }
 
 // sourceOf reads where the entry came from. An entry with no "resolved" is a
 // bundled dependency, which the file does not say where to get, unless its key
 // is a path outside node_modules, which is a workspace member living at that
 // path in the repository.
-func sourceOf(key, resolved string) lockfile.Source {
+func sourceOf(key, resolved string, hosts *lockfile.RegistryHosts) lockfile.Source {
 	switch {
 	case resolved == "":
 		if strings.Contains(key, nodeModules) {
@@ -314,7 +369,7 @@ func sourceOf(key, resolved string) lockfile.Source {
 	}
 	switch u.Scheme {
 	case "http", "https":
-		if registryURL(u) {
+		if registryURL(u, hosts) {
 			return lockfile.SourceRegistry
 		}
 		return lockfile.SourceURL
@@ -342,14 +397,22 @@ func gitURL(resolved string) bool {
 	return strings.HasSuffix(path, ".git")
 }
 
-// registryURL reports whether the tarball comes from a package registry rather
-// than from somewhere on the web. Registries other than the public one are
-// recognized by the tarball layout they all serve, so that a project installing
-// through a mirror or a private registry is not reported as exotic.
-func registryURL(u *url.URL) bool {
-	if registryHosts[strings.ToLower(u.Hostname())] {
-		return true
-	}
+// registryURL reports whether the tarball comes from the registry this project
+// installs from rather than from somewhere on the web. The layout alone does not
+// answer it: anybody can serve <name>/-/<name>-<version>.tgz, and a pull request
+// that repoints one entry at such a host would otherwise read as a registry
+// install and pass every check silently. So a host counts as the registry when it
+// is a known one or when the rest of the file agrees with it, which is what
+// lockfile.RegistryHosts decides. A project installing through a mirror or a
+// private registry keeps every entry, and a lone outlier is reported as a URL.
+func registryURL(u *url.URL, hosts *lockfile.RegistryHosts) bool {
+	host := u.Hostname()
+	return hosts.Known(host) || (registryLayout(u) && hosts.Serves(host))
+}
+
+// registryLayout reports whether the path is the tarball layout every npm registry
+// and mirror serves, "<name>/-/<name>-<version>.tgz".
+func registryLayout(u *url.URL) bool {
 	return strings.Contains(u.Path, "/-/") && strings.HasSuffix(u.Path, ".tgz")
 }
 

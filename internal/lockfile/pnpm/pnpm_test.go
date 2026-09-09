@@ -180,6 +180,125 @@ func TestGitProtocolDependency(t *testing.T) {
 	}
 }
 
+// TestTarballResolutions reads the shapes a tarball URL comes in. pnpm keeps the
+// URL for a registry whose downloads are not spelled the canonical way, so the URL
+// on its own says nothing about whether the package came from a registry.
+func TestTarballResolutions(t *testing.T) {
+	const (
+		privateHash  = "sha512-cKzhP2wNG7zxQLojnrk6C/XFNg9pZJv4gl9zUzuvTKT0Fs5MbdiMdQ9Qq/bZTDoJdIyeFRBCwMtBlgmTZNiIkA=="
+		internalHash = "sha512-C1370w9qs5Q/IX1ie/L00fkGaOs8nR9zzDO9xpzek1rnHDd6G0fTN1EbBbwa1WkuMrht6MjmySw2wchBullz6Q=="
+		otherHash    = "sha512-v1O+3o0jBO4Ibhkhzz7mu7zwF3a0RsSM7ca5WEwo1Ta9T7aO1xu8yH4jxAszn82gcCbJoRlBVggBrEE+QOvIvg=="
+		thirdHash    = "sha512-eeOVZ2p75ui7sgbPDWZt7/MWZQ0UgDEvt/JZfJsQQHetuUvzACPTpzuz1RZA110Fv746aUm2Vz7WAV0cWrvb8g=="
+		otherHostSum = "sha512-Ze9uGlqiIPdi6kdRZcntZlYYF6cy7DKleq+64+YMDHSF5777i8zP5njUxRRQYdFK2zn+ECsxE1DHLW1a6NtiIA=="
+		aliasedHash  = "sha512-1ENBGgRTnPy3uNVU4KVjKBsTr2HXa9dVPJJTazXy8R1QLm3QNozSTWzO9nxVvgEAT2pD69Bbl5jA/2kBE0t2Hg=="
+
+		privateTarball  = "https://npm.pkg.github.com/download/@scope/private/1.0.0/0f1e2d"
+		internalTarball = "https://npm.example.test/api/npm/npm-all/internal-tool/-/internal-tool-2.0.0.tgz"
+		otherTarball    = "https://npm.example.test/api/npm/npm-all/other-tool/-/other-tool-3.0.0.tgz"
+		thirdTarball    = "https://npm.example.test/api/npm/npm-all/third-tool/-/third-tool-4.0.0.tgz"
+		elsewhere       = "https://elsewhere.example.test/substituted/-/substituted-1.2.3.tgz"
+		plainTarball    = "https://files.example.test/plain-tarball-0.1.0.tgz"
+		aliasedTarball  = "https://codeload.github.com/example/aliased/tar.gz/0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c"
+	)
+	checkEntries(t, parseFile(t, "tarballs-v9.yaml"), []lockfile.Entry{
+		// GitHub Packages: a registry install whose download URL is its own shape.
+		{Ref: ref("@scope/private", "1.0.0"), Source: lockfile.SourceRegistry, Resolved: privateTarball, Integrity: privateHash, Direct: true, Line: 27},
+		// The registry this project installs through, written on every entry.
+		{Ref: ref("internal-tool", "2.0.0"), Source: lockfile.SourceRegistry, Resolved: internalTarball, Integrity: internalHash, Direct: true, Line: 32},
+		{Ref: ref("other-tool", "3.0.0"), Source: lockfile.SourceRegistry, Resolved: otherTarball, Integrity: otherHash, Line: 35},
+		{Ref: ref("third-tool", "4.0.0"), Source: lockfile.SourceRegistry, Resolved: thirdTarball, Integrity: thirdHash, Line: 38},
+		// The same layout on a host the rest of the file does not install from.
+		{Ref: ref("substituted", "1.2.3"), Source: lockfile.SourceURL, Resolved: elsewhere, Integrity: otherHostSum, Line: 43},
+		// The key states the URL where a version would be.
+		{Ref: ref("plain-tarball", "0.1.0"), Source: lockfile.SourceURL, Resolved: plainTarball, Line: 47},
+		// A git forge's archive, and the same resolution reached through a yaml
+		// alias: both have to read as what the anchor says.
+		{Ref: ref("aliased-anchor", "1.0.0"), Source: lockfile.SourceURL, Resolved: aliasedTarball, Integrity: aliasedHash, Line: 55},
+		{Ref: ref("aliased-copy", "1.0.0"), Source: lockfile.SourceURL, Resolved: aliasedTarball, Integrity: aliasedHash, Line: 58},
+	})
+}
+
+// TestParseReadsEveryDocument reads the two document form a current pnpm writes:
+// a lockfile for the package manager the project pins, then the project's own.
+// Reading only the first would report nine entries and drop the rest in silence.
+func TestParseReadsEveryDocument(t *testing.T) {
+	lf := parseFile(t, "h3-v9.yaml")
+	if lf.Version != "9.0" {
+		t.Errorf("Version = %q, want 9.0", lf.Version)
+	}
+	if want := 437; len(lf.Entries) != want {
+		t.Fatalf("got %d entries, want %d", len(lf.Entries), want)
+	}
+	// The first document locks the package manager itself: nine entries, the pnpm
+	// binary for each platform and pnpm itself.
+	var first, second int
+	for _, e := range lf.Entries {
+		if e.Line < 101 {
+			first++
+		} else {
+			second++
+		}
+	}
+	if first != 9 || second != 428 {
+		t.Errorf("%d entries from the first document and %d from the second, want 9 and 428", first, second)
+	}
+	if got := lf.Entries[0]; got.Ref.Name != "@pnpm/exe.darwin-arm64" || got.Line != 15 {
+		t.Errorf("first entry = %+v, want the package manager's own on line 15", got)
+	}
+	last := lf.Entries[len(lf.Entries)-1]
+	if last.Ref.Name != "zod" || last.Line != 2458 {
+		t.Errorf("last entry = %+v, want zod on line 2458", last)
+	}
+	// Line numbers are counted across the whole stream, so an entry of the second
+	// document points at the line it really sits on.
+	if !strings.Contains(fileLine(t, "h3-v9.yaml", last.Line), last.Ref.Name+"@"+last.Ref.Version) {
+		t.Errorf("line %d of the file is not %s", last.Line, last.Ref)
+	}
+	direct := 0
+	for _, e := range lf.Entries {
+		if e.Direct {
+			direct++
+		}
+	}
+	if want := 42; direct != want {
+		t.Errorf("got %d direct dependencies, want %d", direct, want)
+	}
+}
+
+// fileLine returns one line of a fixture, 1-based.
+func fileLine(t *testing.T, name string, line int) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("testdata", name)) // #nosec G304 -- the path is a fixture name from the test itself
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	lines := strings.Split(string(data), "\n")
+	if line < 1 || line > len(lines) {
+		t.Fatalf("line %d is outside %s", line, name)
+	}
+	return lines[line-1]
+}
+
+// TestParseKeepsTheEntriesOfEveryDocumentApart checks the shape by hand, so the
+// behavior is pinned without a large fixture: an env document that locks the
+// package manager, then the project's lockfile.
+func TestParseKeepsTheEntriesOfEveryDocument(t *testing.T) {
+	lf, err := parser{}.Parse("pnpm-lock.yaml", strings.NewReader(
+		"---\nlockfileVersion: '9.0'\n\n"+
+			"importers:\n\n  .:\n    packageManagerDependencies:\n      pnpm:\n        specifier: 12.3.4\n        version: 12.3.4\n\n"+
+			"packages:\n\n  pnpm@12.3.4:\n    resolution: {integrity: sha512-manager}\n"+
+			"---\nlockfileVersion: '9.0'\n\n"+
+			"importers:\n\n  .:\n    dependencies:\n      is-positive:\n        specifier: ^1.0.0\n        version: 1.0.0\n\n"+
+			"packages:\n\n  is-positive@1.0.0:\n    resolution: {integrity: sha512-project}\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	checkEntries(t, lf, []lockfile.Entry{
+		{Ref: ref("pnpm", "12.3.4"), Source: lockfile.SourceRegistry, Integrity: "sha512-manager", Direct: true, Line: 14},
+		{Ref: ref("is-positive", "1.0.0"), Source: lockfile.SourceRegistry, Integrity: "sha512-project", Direct: true, Line: 29},
+	})
+}
+
 // TestRealLockfiles reads the same project's lockfile in both formats and asserts
 // the whole-file counts and the line of individual entries against the committed
 // files, so that a change in either format is caught here.
@@ -414,6 +533,22 @@ func TestParseDropsUnreadableEntriesAndKeepsTheRest(t *testing.T) {
 			body: "lockfileVersion: '9.0'\npackages:\n  mystery@1.0.0: {}\n",
 			want: []lockfile.Entry{
 				{Ref: ref("mystery", "1.0.0"), Source: lockfile.SourceUnknown, Line: 3},
+			},
+		},
+		{
+			name: "a second document that is not yaml",
+			body: "lockfileVersion: '9.0'\n" +
+				"packages:\n" +
+				"  is-positive@3.1.0:\n" +
+				"    resolution: {integrity: sha512-x}\n" +
+				"---\n" +
+				"lockfileVersion: '9.0'\n" +
+				"\tpackages:\n",
+			want: []lockfile.Entry{
+				{Ref: ref("is-positive", "3.1.0"), Source: lockfile.SourceRegistry, Integrity: "sha512-x", Line: 3},
+			},
+			dropped: []string{
+				"the file stops being valid yaml after one document",
 			},
 		},
 		{

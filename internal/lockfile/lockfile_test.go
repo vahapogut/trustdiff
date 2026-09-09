@@ -162,36 +162,181 @@ func TestLineOf(t *testing.T) {
 	}
 }
 
-func TestLineFinderScansForwardAndWraps(t *testing.T) {
+func TestTableFinderWalksForwardAndDoesNotWrap(t *testing.T) {
 	data := []byte("[[package]]\nname = \"a\"\n\n[[package]]\nname = \"b\"\n\n[[package]]\nname = \"c\"\n")
-	f := NewLineFinder(data)
+	f := NewTableFinder(data, "[[package]]")
 	// In file order the finder walks forward, so repeated headers resolve to
 	// successive occurrences rather than always the first.
-	for i, want := range []int{1, 4, 7} {
-		if got := f.Find("[[package]]"); got != want {
-			t.Errorf("Find #%d = %d, want %d", i+1, got, want)
+	for i, tt := range []struct {
+		name string
+		want int
+	}{{name: "a", want: 1}, {name: "b", want: 4}, {name: "c", want: 7}} {
+		if got := f.Next(tt.name); got != tt.want {
+			t.Errorf("Next(%q) #%d = %d, want %d", tt.name, i+1, got, tt.want)
 		}
 	}
-	// Past the last occurrence it wraps once.
-	if got := f.Find("[[package]]"); got != 1 {
-		t.Errorf("Find after the last = %d, want the wrap to 1", got)
+	// Past the last header it says it cannot place the table rather than wrapping
+	// round to the top and pointing at another package's line.
+	if got := f.Next("d"); got != 0 {
+		t.Errorf("Next after the last header = %d, want 0", got)
 	}
-	f.Reset()
-	if got := f.Find(`name = "a"`); got != 2 {
-		t.Errorf("Find(name a) = %d, want 2", got)
-	}
-	if got := f.Find("nowhere"); got != 0 {
-		t.Errorf("Find(nowhere) = %d, want 0", got)
-	}
-	var nilFinder *LineFinder
-	if got := nilFinder.Find("x"); got != 0 {
-		t.Errorf("nil finder Find() = %d, want 0", got)
+	var nilFinder *TableFinder
+	if got := nilFinder.Next("a"); got != 0 {
+		t.Errorf("nil finder Next() = %d, want 0", got)
 	}
 }
 
-func TestLineFinderHandlesCRLF(t *testing.T) {
-	f := NewLineFinder([]byte("one\r\n[table]\r\n"))
-	if got := f.Find("[table]"); got != 2 {
-		t.Errorf("Find in a CRLF file = %d, want 2", got)
+func TestTableFinderIgnoresHeadersInsideStrings(t *testing.T) {
+	// The notes value of the first package spells a header and a name; neither may
+	// count, or every entry after it is placed on somebody else's line.
+	data := []byte(strings.Join([]string{
+		`[[package]]`,       // 1
+		`name = "innocent"`, // 2
+		`notes = """`,       // 3
+		`[[package]]`,       // 4
+		`name = "evil"`,     // 5
+		`"""`,               // 6
+		``,                  // 7
+		`[[package]]`,       // 8
+		`name = "evil"`,     // 9
+		`version = "6.6.6"`, // 10
+		``,                  // 11
+		`[[package]]`,       // 12
+		`literal = '''`,     // 13
+		`[[package]]`,       // 14
+		`'''`,               // 15
+		`name = "last"`,     // 16
+	}, "\n"))
+	f := NewTableFinder(data, "[[package]]")
+	for _, tt := range []struct {
+		name string
+		want int
+	}{{name: "innocent", want: 1}, {name: "evil", want: 8}, {name: "last", want: 12}} {
+		if got := f.Next(tt.name); got != tt.want {
+			t.Errorf("Next(%q) = %d, want %d", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestTableFinderResyncsAndGivesUp(t *testing.T) {
+	data := []byte("[[package]]\nname = \"a\"\n\n[[package]]\nname = \"b\"\n")
+	// A table the decoder read but whose header is not the next one moves the
+	// finder forward rather than taking the header it is standing on.
+	f := NewTableFinder(data, "[[package]]")
+	if got := f.Next("b"); got != 4 {
+		t.Errorf("Next(b) = %d, want 4", got)
+	}
+	// A name no header declares places nothing and leaves the finder where it was.
+	f = NewTableFinder(data, "[[package]]")
+	if got := f.Next("nowhere"); got != 0 {
+		t.Errorf("Next(nowhere) = %d, want 0", got)
+	}
+	if got := f.Next("a"); got != 1 {
+		t.Errorf("Next(a) after a miss = %d, want 1", got)
+	}
+	// An empty name is a table the decoder could not read: it takes the next
+	// header as it comes, so the tables after it keep their places.
+	f = NewTableFinder(data, "[[package]]")
+	if got := f.Next(""); got != 1 {
+		t.Errorf("Next(unnamed) = %d, want 1", got)
+	}
+	if got := f.Next("b"); got != 4 {
+		t.Errorf("Next(b) after an unnamed table = %d, want 4", got)
+	}
+}
+
+func TestTableFinderHandlesCRLFAndQuoting(t *testing.T) {
+	f := NewTableFinder([]byte("one\r\n[table]\r\nname   =   'x'  # a comment\r\n"), "[table]")
+	if got := f.Next("x"); got != 2 {
+		t.Errorf("Next in a CRLF file = %d, want 2", got)
+	}
+	f = NewTableFinder([]byte("[table]\n\"name\" = \"y\"\n"), "[table]")
+	if got := f.Next("y"); got != 1 {
+		t.Errorf("Next with a quoted key = %d, want 1", got)
+	}
+}
+
+func TestRegistryHostsWeighTheFileAgainstAnOutlier(t *testing.T) {
+	hosts := NPMRegistryHosts()
+	// A file that installs everything through one private registry, with a single
+	// entry pointing somewhere else.
+	for range 3 {
+		hosts.Count("Artifacts.Example.Com")
+	}
+	hosts.Count("evil.example.com")
+
+	if !hosts.Known("registry.npmjs.org") || !hosts.Known("npm.pkg.github.com") {
+		t.Error("the public registry and GitHub Packages are not known hosts")
+	}
+	if hosts.Known("artifacts.example.com") {
+		t.Error("a host nobody listed is known")
+	}
+	// The host is compared without regard to case, as host names are.
+	if !hosts.Serves("artifacts.example.com") {
+		t.Error("the host three quarters of the file installs from is not a registry")
+	}
+	if hosts.Serves("evil.example.com") {
+		t.Error("a host one entry names on its own reads as the project's registry")
+	}
+	if hosts.Serves("nowhere.example.com") {
+		t.Error("a host the file never names reads as the project's registry")
+	}
+	// A file of one package cannot tell an outlier from a registry, and says so
+	// the way that keeps a one-package private lockfile readable.
+	single := NewRegistryHosts(nil)
+	single.Count("only.example.com")
+	if !single.Serves("only.example.com") {
+		t.Error("the only host of a one-entry file is not its registry")
+	}
+	// An empty host is not a count.
+	empty := NewRegistryHosts(nil)
+	empty.Count("")
+	if empty.Serves("") {
+		t.Error("an empty host reads as a registry")
+	}
+	// The substitution this exists to catch, in the smallest file it fits in: two
+	// packages, one of them repointed. A share alone would call the outlier half
+	// the project's downloads and let it through.
+	small := NPMRegistryHosts()
+	small.Count("registry.npmjs.org")
+	small.Count("evil.example.com")
+	if !small.Known("registry.npmjs.org") {
+		t.Error("the public registry is not a registry in a two-entry file")
+	}
+	if small.Serves("evil.example.com") {
+		t.Error("half of a two-entry file reads as the project's registry")
+	}
+	// A file wholly on a private registry keeps reading as one however large it
+	// grows, and the one entry pointed elsewhere is still the outlier.
+	private := NPMRegistryHosts()
+	for range 300 {
+		private.Count("artifacts.example.com")
+	}
+	private.Count("evil.example.com")
+	if !private.Serves("artifacts.example.com") {
+		t.Error("the host a whole private file installs from is not a registry")
+	}
+	if private.Serves("evil.example.com") {
+		t.Error("one entry of 301 reads as the project's registry")
+	}
+	// Two registries side by side, which is a project mirroring part of its tree.
+	both := NPMRegistryHosts()
+	for range 200 {
+		both.Count("artifacts.example.com")
+	}
+	for range 300 {
+		both.Count("registry.npmjs.org")
+	}
+	if !both.Serves("artifacts.example.com") {
+		t.Error("a host serving two fifths of the file is not a registry")
+	}
+}
+
+func TestAtNamesALineOrSaysItHasNone(t *testing.T) {
+	if got := At(12); got != "line 12" {
+		t.Errorf("At(12) = %q", got)
+	}
+	if got := At(0); got != "an unplaced table" {
+		t.Errorf("At(0) = %q", got)
 	}
 }

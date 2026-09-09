@@ -22,6 +22,13 @@
 // can act on. A source spelled some other way is an origin this parser does not
 // know, and the entry says so rather than claiming the registry.
 //
+// uv writes no "version" for a project or a workspace member whose version is
+// dynamic, computed by the build backend from a tag or a file. Such a table is read
+// like any other, because it is where the project's own dependencies are written
+// and therefore what decides Direct for the rest of the file; it then leaves the
+// entries with a reason of its own, since a package with no version has nothing to
+// evaluate. Any other table without a version is dropped as before.
+//
 // Integrity and Resolved come from the artifact the entry pins: the [package.sdist]
 // table when the package has one, otherwise the first of the wheels. Both carry a
 // "url" (or a "path", for an artifact already on the machine) and a "hash" that uv
@@ -51,7 +58,10 @@
 // same way.
 //
 // The TOML decoder reports no positions, so an entry is placed by its
-// "[[package]]" header, matched in file order.
+// "[[package]]" header, matched in file order and confirmed against the name the
+// table declares, which is what lockfile.TableFinder does. A header spelled inside
+// a string value is neither counted nor matched, and an entry the finder cannot
+// place carries no line rather than another package's.
 package uv
 
 import (
@@ -105,12 +115,23 @@ func (Parser) Parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 		Ecosystem: model.PyPI,
 		Version:   formatVersion(raw.Version),
 	}
-	packages := decodePackages(&md, raw.Packages, data, lf)
-	asked := requested(&raw.Manifest, packages)
+	members := normalizedMembers(raw.Manifest.Members)
+	packages := decodePackages(&md, raw.Packages, data, lf, members)
+	asked := requested(&raw.Manifest, packages, members)
 	for i := range packages {
 		p := &packages[i]
-		if p.Source.Virtual != "" {
-			lf.Drop("line %d: %q is the project itself (%s), not an installed package", p.line, p.Name, p.Source.describe())
+		switch {
+		case p.Source.Virtual != "":
+			lf.Drop("%s: %q is the project itself (%s), not an installed package", lockfile.At(p.line), p.Name, p.Source.describe())
+			continue
+		case p.Version == "" && p.project(members):
+			// The project and its workspace members state no version when it is
+			// dynamic. There is nothing to evaluate, and their dependency lists are
+			// what made the entries above direct.
+			lf.Drop("%s: %q states no version (%s), so only its dependencies are read", lockfile.At(p.line), p.Name, p.Source.describe())
+			continue
+		case p.Version == "":
+			lf.Drop("%s: package %q without a version", lockfile.At(p.line), p.Name)
 			continue
 		}
 		kind, location := p.Source.kind()
@@ -198,23 +219,29 @@ type decodedPackage struct {
 // decodePackages reads the package tables in file order, recording the ones it has
 // to drop on the lockfile. Names come back normalized, so every later comparison is
 // between normalized names.
-func decodePackages(md *toml.MetaData, primitives []toml.Primitive, data []byte, lf *lockfile.Lockfile) []decodedPackage {
-	finder := lockfile.NewLineFinder(data)
+func decodePackages(md *toml.MetaData, primitives []toml.Primitive, data []byte, lf *lockfile.Lockfile, members map[string]bool) []decodedPackage {
+	finder := lockfile.NewTableFinder(data, packageHeader)
 	packages := make([]decodedPackage, 0, len(primitives))
 	for i := range primitives {
-		line := finder.Find(packageHeader)
 		var table packageTable
 		if err := md.PrimitiveDecode(primitives[i], &table); err != nil {
-			lf.Drop("line %d: unreadable [[package]] table: %v", line, err)
+			lf.Drop("%s: unreadable [[package]] table: %v", lockfile.At(finder.Next("")), err)
 			continue
 		}
+		// The finder confirms a header against the name the table writes, so the
+		// name is read before it is normalized and the entry is placed on the
+		// header of its own table.
+		line := finder.Next(table.Name)
 		table.Name = model.NormalizeName(model.PyPI, table.Name)
 		switch {
 		case table.Name == "":
-			lf.Drop("line %d: [[package]] without a name", line)
-		case table.Version == "":
-			lf.Drop("line %d: package %q without a version", line, table.Name)
+			lf.Drop("%s: [[package]] without a name", lockfile.At(line))
+		case table.Version == "" && !isProject(&table, members):
+			lf.Drop("%s: package %q without a version", lockfile.At(line), table.Name)
 		default:
+			// A project or a workspace member whose version is dynamic is kept
+			// without one: Parse leaves it out of the entries, but its dependency
+			// lists are what the project asks for and decide Direct.
 			packages = append(packages, decodedPackage{packageTable: table, line: line})
 		}
 	}
@@ -257,23 +284,39 @@ func (s *source) kind() (kind lockfile.Source, location string) {
 	}
 }
 
-// describe names the source the way the file spells it, for a dropped entry's
-// reason.
+// describe names the source the way the file spells it, key and all, for a dropped
+// entry's reason: a reader looking for the table finds it by what it says.
 func (s *source) describe() string {
-	if s.Virtual != "" {
-		return "virtual = " + strconv.Quote(s.Virtual)
+	for _, written := range []struct{ key, location string }{
+		{"virtual", s.Virtual},
+		{"editable", s.Editable},
+		{"directory", s.Directory},
+		{"path", s.Path},
+		{"registry", s.Registry},
+		{"git", s.Git},
+		{"url", s.URL},
+	} {
+		if written.location != "" {
+			return written.key + " = " + strconv.Quote(written.location)
+		}
 	}
-	kind, location := s.kind()
-	if location == "" {
-		return string(kind)
-	}
-	return string(kind) + " = " + strconv.Quote(location)
+	kind, _ := s.kind()
+	return string(kind)
 }
 
 // project reports whether the package is the project uv locked or one of its
 // workspace members, whose dependencies are the project's own.
 func (p *decodedPackage) project(members map[string]bool) bool {
 	return p.Source.Virtual != "" || p.Source.Editable != "" || members[p.Name]
+}
+
+// isProject is project() for a table whose name is not normalized yet, which is
+// what decodePackages has when it decides whether to keep a table with no version.
+// It is the wider test of the two: a directory or a path source is where a
+// workspace member that [manifest] does not list can still sit.
+func isProject(t *packageTable, members map[string]bool) bool {
+	return t.Source.Virtual != "" || t.Source.Editable != "" || t.Source.Directory != "" ||
+		t.Source.Path != "" || members[model.NormalizeName(model.PyPI, t.Name)]
 }
 
 // artifact returns the location and hash of what the entry pins: the sdist when the
@@ -301,17 +344,23 @@ type selection struct {
 	dev      dependencySet
 }
 
+// normalizedMembers indexes the [manifest] members by their normalized name, so
+// that every comparison against a package name is between normalized names.
+func normalizedMembers(names []string) map[string]bool {
+	members := make(map[string]bool, len(names))
+	for _, name := range names {
+		members[model.NormalizeName(model.PyPI, name)] = true
+	}
+	return members
+}
+
 // requested reads the project's own dependencies, from the [manifest] table and
 // from the packages that are the project or one of its workspace members.
-func requested(m *manifest, packages []decodedPackage) *selection {
+func requested(m *manifest, packages []decodedPackage, members map[string]bool) *selection {
 	s := &selection{runtime: dependencySet{}, optional: dependencySet{}, dev: dependencySet{}}
 	s.runtime.addAll(m.Requirements)
 	s.dev.addGroups(m.DependencyGroups)
 
-	members := make(map[string]bool, len(m.Members))
-	for _, name := range m.Members {
-		members[model.NormalizeName(model.PyPI, name)] = true
-	}
 	for i := range packages {
 		p := &packages[i]
 		if !p.project(members) {

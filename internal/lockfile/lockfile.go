@@ -57,13 +57,19 @@ type Entry struct {
 	// empty when the entry carries none.
 	Integrity string
 	// Direct is true when the project itself depends on the package, as opposed to
-	// a dependency pulled in by another. A parser that cannot tell leaves it false
-	// and says so in Notes.
+	// a dependency pulled in by another. "The project" is the whole workspace: a
+	// dependency a workspace member declares is direct too, because a member's
+	// manifest is a file of the repository like the root's, and every parser here
+	// reads it that way. A parser that cannot tell leaves it false and says so.
 	Direct bool
 	// Dev is true when the entry is only needed to develop or test the project.
 	Dev bool
 	// Optional is true when an install may leave the entry out.
 	Optional bool
+	// Bundled is true when the entry ships inside another package's archive, so it
+	// has no artifact of its own: nothing is fetched for it and the parent's hash
+	// is what guards its bytes.
+	Bundled bool
 	// Line is the 1-based line the entry starts on, for the SARIF location. Zero
 	// when the parser could not place it.
 	Line int

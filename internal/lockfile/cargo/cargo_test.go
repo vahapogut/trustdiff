@@ -421,6 +421,40 @@ func TestParseDropsTablesItCannotRead(t *testing.T) {
 	}
 }
 
+// TestParseIsNotFooledByAHeaderInsideAValue places entries against a file that
+// spells a table header inside a string. A Cargo.lock in a pull request is text
+// the author chose, and a finding that moved onto an innocent package's line would
+// point a reviewer at the wrong crate.
+func TestParseIsNotFooledByAHeaderInsideAValue(t *testing.T) {
+	lf, err := Parser{}.Parse("Cargo.lock", strings.NewReader(`version = 4
+
+[[package]]
+name = "innocent"
+version = "1.0.0"
+description = """
+[[package]]
+name = "evil"
+"""
+
+[[package]]
+name = "evil"
+version = "6.6.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	want := map[string]int{"cargo:innocent@1.0.0": 3, "cargo:evil@6.6.6": 11}
+	if len(lf.Entries) != len(want) {
+		t.Fatalf("entries = %+v, want %d", lf.Entries, len(want))
+	}
+	for _, e := range lf.Entries {
+		if line, ok := want[e.Ref.String()]; !ok || e.Line != line {
+			t.Errorf("%s is on line %d, want %d", e.Ref, e.Line, line)
+		}
+	}
+}
+
 func TestParseRejectsAFileThatIsNotTOML(t *testing.T) {
 	_, err := Parser{}.Parse("Cargo.lock", strings.NewReader("this is not = [ TOML"))
 	if err == nil {

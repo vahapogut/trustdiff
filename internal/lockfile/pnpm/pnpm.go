@@ -29,13 +29,36 @@
 // are read. An importer entry resolved to "link:..." names a directory rather than
 // a package version and has no entry in "packages", so it is skipped.
 //
+// A current pnpm writes the file as more than one yaml document: a lockfile for
+// the package manager the project pins, then the project's own lockfile, joined by
+// a "---" separator. Every document is read and its entries are kept, because the
+// package manager's own downloads are code the repository installs too, and
+// because reading only the first would report those nine entries and silently drop
+// the thousands the project locks. The version the entry set reports is the one the
+// last document declares, which is the project's.
+//
+// Where an entry came from is read from its resolution, with one case that needs
+// care: a tarball URL is not by itself a package from outside the registry. pnpm
+// keeps the URL whenever the registry's download URL is not the canonical
+// <registry>/<name>/-/<file>.tgz, which is the case for GitHub Packages and npm
+// Enterprise, and for every package when lockfile-include-tarball-url is set. Such
+// an entry is a registry install and is recorded as one, with the URL as its
+// resolved location; what makes a tarball a URL dependency is the key stating the
+// URL instead of a version, a resolution pnpm flagged as hosted by a git forge, or
+// a host the rest of the file does not install from.
+//
 // Line numbers come from the yaml node of each "packages" key, which is what the
-// node API reports, so a finding points at the line the entry starts on.
+// node API reports, so a finding points at the line the entry starts on. yaml.v3
+// counts lines across the whole stream, so an entry in the second document carries
+// the line it really sits on.
 package pnpm
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -70,35 +93,110 @@ func (parser) Parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", formatName, err)
 	}
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("%s is not valid yaml: %w", formatName, err)
-	}
-	root := documentRoot(&doc)
-	if root == nil || root.Kind != yaml.MappingNode {
-		return nil, fmt.Errorf("%s: want a mapping of lockfileVersion, importers and packages at the top level", formatName)
-	}
-
-	lf := &lockfile.Lockfile{Path: path, Format: formatName, Ecosystem: model.NPM}
-	lf.Version = scalar(root, "lockfileVersion")
-	if err := checkVersion(lf.Version); err != nil {
+	roots, err := documents(data)
+	if err != nil && len(roots) == 0 {
 		return nil, err
 	}
 
-	direct := collectImporters(root)
-	packages := mapValue(root, "packages")
-	switch {
-	case packages == nil:
-		// A project that locks no dependency at all writes no packages map.
-		return lf, nil
-	case packages.Kind != yaml.MappingNode:
-		lf.Drop("packages on line %d is not a mapping, no entry was read", packages.Line)
-		return lf, nil
+	lf := &lockfile.Lockfile{Path: path, Format: formatName, Ecosystem: model.NPM}
+	if err != nil {
+		// One document read and the next one unreadable: the documents already
+		// read are still worth evaluating, and the rest is said out loud.
+		lf.Drop("the file stops being valid yaml after %s, so the rest of it was not read: %v", documentCount(len(roots)), err)
 	}
-	for _, pkg := range fields(packages) {
-		addPackage(lf, direct, pkg)
+	mappings := make([]*yaml.Node, 0, len(roots))
+	for _, root := range roots {
+		if root.Kind != yaml.MappingNode {
+			lf.Drop("the document on line %d is not a mapping, nothing was read from it", root.Line)
+			continue
+		}
+		mappings = append(mappings, root)
+	}
+	if len(mappings) == 0 {
+		return nil, fmt.Errorf("%s: want a mapping of lockfileVersion, importers and packages at the top level", formatName)
+	}
+
+	hosts := countRegistryHosts(mappings)
+	for _, root := range mappings {
+		// Every document states its own version, and the project's is the last, so
+		// the one the entry set reports is the one the entries came from.
+		if version := scalar(root, "lockfileVersion"); version != "" {
+			if err := checkVersion(version); err != nil {
+				return nil, err
+			}
+			lf.Version = version
+		}
+		direct := collectImporters(root)
+		packages := mapValue(root, "packages")
+		switch {
+		case packages == nil:
+			// A project that locks no dependency at all writes no packages map.
+			continue
+		case packages.Kind != yaml.MappingNode:
+			lf.Drop("packages on line %d is not a mapping, no entry was read", packages.Line)
+			continue
+		}
+		for _, pkg := range fields(packages) {
+			addPackage(lf, direct, pkg, hosts)
+		}
 	}
 	return lf, nil
+}
+
+// documents returns the root node of every yaml document in the file. pnpm writes
+// more than one: a lockfile of its own for the package manager the project pins,
+// then the project's lockfile, joined by a document separator. Reading only the
+// first would report the nine entries of the package manager and silently drop the
+// several thousand the project locks.
+//
+// A stream that stops being yaml part way through returns the documents read so
+// far together with the error, so that the caller can keep what it has and say
+// what it could not read.
+func documents(data []byte) ([]*yaml.Node, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	var roots []*yaml.Node
+	for {
+		var doc yaml.Node
+		err := dec.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			return roots, nil
+		}
+		if err != nil {
+			return roots, fmt.Errorf("%s is not valid yaml: %w", formatName, err)
+		}
+		if root := documentRoot(&doc); root != nil {
+			roots = append(roots, root)
+		}
+	}
+}
+
+// documentCount words a number of yaml documents for a dropped reason.
+func documentCount(n int) string {
+	if n == 1 {
+		return "one document"
+	}
+	return strconv.Itoa(n) + " documents"
+}
+
+// countRegistryHosts weighs the hosts the file downloads from, so that the registry
+// a project installs through can be told from a host one entry points at alone. A
+// tarball that is a URL dependency in its own right is not counted, because it says
+// nothing about where the project's packages come from.
+func countRegistryHosts(roots []*yaml.Node) *lockfile.RegistryHosts {
+	hosts := lockfile.NPMRegistryHosts()
+	for _, root := range roots {
+		for _, pkg := range fields(mapValue(root, "packages")) {
+			resolution := mapValue(pkg.val, "resolution")
+			tarball := scalar(resolution, "tarball")
+			if tarball == "" || fetchedByURL(pkg.key.Value, tarball, resolution) {
+				continue
+			}
+			if u, err := url.Parse(tarball); err == nil {
+				hosts.Count(u.Hostname())
+			}
+		}
+	}
+	return hosts
 }
 
 // checkVersion rejects a format older than this parser reads. A file that declares
@@ -112,7 +210,7 @@ func checkVersion(version string) error {
 }
 
 // addPackage reads one entry of the packages map onto the lockfile.
-func addPackage(lf *lockfile.Lockfile, direct map[string]*importerRef, pkg field) {
+func addPackage(lf *lockfile.Lockfile, direct map[string]*importerRef, pkg field, hosts *lockfile.RegistryHosts) {
 	key := pkg.key.Value
 	if pkg.val.Kind != yaml.MappingNode {
 		lf.Drop("package %q on line %d has no metadata", key, pkg.key.Line)
@@ -135,7 +233,7 @@ func addPackage(lf *lockfile.Lockfile, direct map[string]*importerRef, pkg field
 	}
 
 	resolution := mapValue(pkg.val, "resolution")
-	source, resolved := classify(resolution)
+	source, resolved := classify(key, resolution, hosts)
 	entry := lockfile.Entry{
 		Ref: model.PackageRef{
 			Ecosystem: model.NPM,
@@ -166,11 +264,12 @@ func addPackage(lf *lockfile.Lockfile, direct map[string]*importerRef, pkg field
 // carries the integrity hash alone. An entry with no resolution at all states no
 // origin, which is not the same as coming from the registry and is not reported as
 // one.
-func classify(resolution *yaml.Node) (lockfile.Source, string) {
+func classify(key string, resolution *yaml.Node, hosts *lockfile.RegistryHosts) (lockfile.Source, string) {
 	if resolution == nil {
 		return lockfile.SourceUnknown, ""
 	}
 	kind := scalar(resolution, "type")
+	tarball := scalar(resolution, "tarball")
 	switch {
 	case kind == "directory" || scalar(resolution, "directory") != "":
 		return lockfile.SourcePath, scalar(resolution, "directory")
@@ -180,16 +279,88 @@ func classify(resolution *yaml.Node) (lockfile.Source, string) {
 			repo += "#" + commit
 		}
 		return lockfile.SourceGit, repo
-	case scalar(resolution, "tarball") != "":
-		// A dependency written as "github:owner/repo#ref" resolves to a tarball on
-		// the git host rather than to a git checkout, and pnpm flags it gitHosted.
-		return lockfile.SourceURL, scalar(resolution, "tarball")
+	case strings.HasPrefix(tarball, "file:"):
+		// A tarball already on the machine, which is a path and not a download.
+		return lockfile.SourcePath, tarball
+	case tarball != "":
+		if fetchedByURL(key, tarball, resolution) || !registryHost(tarball, hosts) {
+			return lockfile.SourceURL, tarball
+		}
+		// A registry whose download URL is not the canonical one, which is why
+		// pnpm wrote the URL down. The entry records it, so that TD014 can see a
+		// registry reached over plain http.
+		return lockfile.SourceRegistry, tarball
 	default:
 		// The registry resolution is the one that names nothing but its hash, and
 		// pnpm records no URL for it because the registry is a setting, not a fact
 		// about the package. A missing hash here is what TD014 reports.
 		return lockfile.SourceRegistry, ""
 	}
+}
+
+// fetchedByURL reports whether a resolution that carries a tarball is a dependency
+// on that URL rather than an install from a registry that spells its downloads
+// unusually. pnpm keeps the tarball URL for GitHub Packages and npm Enterprise,
+// whose paths are not the canonical <registry>/<name>/-/<file>.tgz, and for every
+// package when lockfile-include-tarball-url is set, so the URL alone says nothing.
+// What marks a real URL dependency is the key, which states the URL where a version
+// would be, or a resolution pnpm flagged as hosted by a git forge, which is what
+// "github:owner/repo#ref" resolves to.
+func fetchedByURL(key, tarball string, resolution *yaml.Node) bool {
+	return boolean(resolution, "gitHosted") || gitHostTarball(tarball) || statesURL(key)
+}
+
+// gitHostTarball reports whether the URL is a git forge's source archive: GitHub's
+// codeload, a GitLab repository archive or a Bitbucket "get" archive. An older pnpm
+// wrote these without the gitHosted flag.
+func gitHostTarball(tarball string) bool {
+	u, err := url.Parse(tarball)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	switch {
+	case host == "codeload.github.com":
+		return true
+	case host == "github.com" && (strings.Contains(u.Path, "/archive/") || strings.Contains(u.Path, "/tarball/")):
+		return true
+	case strings.Contains(u.Path, "/repository/archive.tar"):
+		return true
+	case strings.Contains(host, "bitbucket") && strings.Contains(u.Path, "/get/"):
+		return true
+	default:
+		return false
+	}
+}
+
+// statesURL reports whether the packages key states where the package came from
+// instead of a version, which is how pnpm keys a dependency on a URL. Version 9
+// writes "name@<url>" and version 6 writes the URL alone, so both halves are asked.
+func statesURL(key string) bool {
+	k := normalizeKey(key)
+	if isURL(k) {
+		return true
+	}
+	_, version := splitKey(key)
+	return isURL(version)
+}
+
+// isURL reports whether the text names a host over a scheme, which no version does.
+func isURL(s string) bool {
+	u, err := url.Parse(s)
+	return err == nil && u.Scheme != "" && u.Host != ""
+}
+
+// registryHost reports whether the tarball's host is the registry this project
+// installs from: a known one, or one the rest of the file agrees on. A host a
+// single entry names on its own is not, so a pull request cannot turn a package
+// into a download from somewhere else and still read as a registry install.
+func registryHost(tarball string, hosts *lockfile.RegistryHosts) bool {
+	u, err := url.Parse(tarball)
+	if err != nil {
+		return false
+	}
+	return hosts.Known(u.Hostname()) || hosts.Serves(u.Hostname())
 }
 
 // importerRef is how the importers name one package: how many sections name it at
@@ -220,6 +391,10 @@ func addImporter(direct map[string]*importerRef, block *yaml.Node) {
 	addSection(direct, mapValue(block, "dependencies"), false, false)
 	addSection(direct, mapValue(block, "devDependencies"), true, false)
 	addSection(direct, mapValue(block, "optionalDependencies"), false, true)
+	// The package manager the project pins in package.json's "packageManager"
+	// field, which a current pnpm locks in a document of its own. The repository
+	// asks for it by name like any other dependency.
+	addSection(direct, mapValue(block, "packageManagerDependencies"), false, false)
 }
 
 func addSection(direct map[string]*importerRef, section *yaml.Node, dev, optional bool) {
@@ -302,16 +477,37 @@ type field struct {
 }
 
 // fields returns the pairs of a mapping in file order. Anything that is not a
-// mapping has none, which lets a caller walk a node it did not check.
+// mapping has none, which lets a caller walk a node it did not check. Values are
+// dereferenced, so an alias reads as what it points at.
 func fields(n *yaml.Node) []field {
+	n = deref(n)
 	if n == nil || n.Kind != yaml.MappingNode {
 		return nil
 	}
 	out := make([]field, 0, len(n.Content)/2)
 	for i := 0; i+1 < len(n.Content); i += 2 {
-		out = append(out, field{key: n.Content[i], val: n.Content[i+1]})
+		out = append(out, field{key: n.Content[i], val: deref(n.Content[i+1])})
 	}
 	return out
+}
+
+// maxAliasDepth bounds how far deref follows a chain of aliases, so that a file
+// whose anchor points at itself costs a dropped entry rather than the process.
+const maxAliasDepth = 100
+
+// deref follows yaml aliases to the node they name. yaml.v3 leaves them unresolved
+// when a document is decoded into a yaml.Node, so a resolution written as "*tar"
+// would otherwise read as an empty mapping and the entry would be called a registry
+// install with no hash and no location, hiding what the alias says. A chain that
+// does not end is no node at all, which reads as a missing field.
+func deref(n *yaml.Node) *yaml.Node {
+	for range maxAliasDepth {
+		if n == nil || n.Kind != yaml.AliasNode {
+			return n
+		}
+		n = n.Alias
+	}
+	return nil
 }
 
 // mapValue returns the value of one key of a mapping, or nil.
@@ -328,7 +524,7 @@ func mapValue(n *yaml.Node, key string) *yaml.Node {
 // or not a scalar. The text is what the file wrote, so a quoted "9.0" and a bare
 // 9.0 read the same.
 func scalar(n *yaml.Node, key string) string {
-	v := mapValue(n, key)
+	v := deref(mapValue(n, key))
 	if v == nil || v.Kind != yaml.ScalarNode || v.Tag == "!!null" {
 		return ""
 	}

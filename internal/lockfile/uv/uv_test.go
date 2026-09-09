@@ -435,6 +435,81 @@ func TestParseDropsTablesItCannotRead(t *testing.T) {
 	}
 }
 
+// TestParseReadsAProjectWithADynamicVersion covers the shape a project whose
+// version the build backend computes writes: uv leaves the "version" key out of
+// the project's own table and out of every workspace member's. Those tables are
+// where the project states what it depends on, so dropping them before they are
+// read leaves nothing in the file direct.
+func TestParseReadsAProjectWithADynamicVersion(t *testing.T) {
+	lf := parseFixture(t, "dynamic-version.uv.lock")
+
+	if len(lf.Entries) != 4 {
+		t.Fatalf("entries = %+v, want the four installed packages", lf.Entries)
+	}
+	direct := map[string]bool{
+		"pypi:project-dependency@1.0.0": true,
+		"pypi:member-dependency@2.0.0":  true,
+		"pypi:dev-dependency@0.1.0":     true,
+	}
+	for _, e := range lf.Entries {
+		if e.Direct != direct[e.Ref.String()] {
+			t.Errorf("%s: Direct = %v, want %v", e.Ref, e.Direct, direct[e.Ref.String()])
+		}
+	}
+	if dev := entryOf(t, lf, "pypi:dev-dependency@0.1.0"); !dev.Dev {
+		t.Errorf("dev-dependency = %+v, want a development dependency", dev)
+	}
+	// The two version-less tables leave the entries, but with a reason that says
+	// what they are rather than calling them packages without a version.
+	want := []string{
+		`line 23: "dynamic-member" states no version (editable = "packages/member"), so only its dependencies are read`,
+		`line 30: "dynamic-project" states no version (editable = "."), so only its dependencies are read`,
+	}
+	if len(lf.Dropped) != len(want) {
+		t.Fatalf("dropped %v, want %v", lf.Dropped, want)
+	}
+	for i, w := range want {
+		if lf.Dropped[i] != w {
+			t.Errorf("drop %d = %q, want %q", i, lf.Dropped[i], w)
+		}
+	}
+}
+
+// TestParseIsNotFooledByAHeaderInsideAValue places entries against a file that
+// spells a table header inside a string. A uv.lock in a pull request is text the
+// author chose, and a finding that moved onto an innocent package's line would
+// point a reviewer at the wrong package.
+func TestParseIsNotFooledByAHeaderInsideAValue(t *testing.T) {
+	lf, err := Parser{}.Parse("uv.lock", strings.NewReader(`version = 1
+
+[[package]]
+name = "innocent"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+summary = """
+[[package]]
+name = "evil"
+"""
+
+[[package]]
+name = "evil"
+version = "6.6.6"
+source = { registry = "https://pypi.org/simple" }
+`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	want := map[string]int{"pypi:innocent@1.0.0": 3, "pypi:evil@6.6.6": 12}
+	if len(lf.Entries) != len(want) {
+		t.Fatalf("entries = %+v, want %d", lf.Entries, len(want))
+	}
+	for _, e := range lf.Entries {
+		if line, ok := want[e.Ref.String()]; !ok || e.Line != line {
+			t.Errorf("%s is on line %d, want %d", e.Ref, e.Line, line)
+		}
+	}
+}
+
 func TestParseRejectsAFileThatIsNotTOML(t *testing.T) {
 	_, err := Parser{}.Parse("uv.lock", strings.NewReader("this is not = [ TOML"))
 	if err == nil {

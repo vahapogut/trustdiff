@@ -1,0 +1,59 @@
+# Written by hand, not produced by pnpm. Every package is invented, every host is
+# under .test (RFC 6761 reserves it and it can never resolve) except the GitHub
+# Packages one, and the integrity hashes are the sha512 of the package key rather
+# than of any tarball. It collects the tarball shapes a project on a private
+# registry writes, which no healthy public lockfile carries all at once.
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@scope/private':
+        specifier: ^1.0.0
+        version: 1.0.0
+      internal-tool:
+        specifier: ^2.0.0
+        version: 2.0.0
+
+packages:
+
+  # GitHub Packages: the tarball URL is kept because /download/<name>/<version>/<sha>
+  # is not the layout every other registry serves. It is a registry install.
+  '@scope/private@1.0.0':
+    resolution: {integrity: sha512-cKzhP2wNG7zxQLojnrk6C/XFNg9pZJv4gl9zUzuvTKT0Fs5MbdiMdQ9Qq/bZTDoJdIyeFRBCwMtBlgmTZNiIkA==, tarball: https://npm.pkg.github.com/download/@scope/private/1.0.0/0f1e2d}
+
+  # What lockfile-include-tarball-url writes: the registry the project installs
+  # through, on every entry.
+  internal-tool@2.0.0:
+    resolution: {integrity: sha512-C1370w9qs5Q/IX1ie/L00fkGaOs8nR9zzDO9xpzek1rnHDd6G0fTN1EbBbwa1WkuMrht6MjmySw2wchBullz6Q==, tarball: https://npm.example.test/api/npm/npm-all/internal-tool/-/internal-tool-2.0.0.tgz}
+
+  other-tool@3.0.0:
+    resolution: {integrity: sha512-v1O+3o0jBO4Ibhkhzz7mu7zwF3a0RsSM7ca5WEwo1Ta9T7aO1xu8yH4jxAszn82gcCbJoRlBVggBrEE+QOvIvg==, tarball: https://npm.example.test/api/npm/npm-all/other-tool/-/other-tool-3.0.0.tgz}
+
+  third-tool@4.0.0:
+    resolution: {integrity: sha512-eeOVZ2p75ui7sgbPDWZt7/MWZQ0UgDEvt/JZfJsQQHetuUvzACPTpzuz1RZA110Fv746aUm2Vz7WAV0cWrvb8g==, tarball: https://npm.example.test/api/npm/npm-all/third-tool/-/third-tool-4.0.0.tgz}
+
+  # The same layout on a host nothing else in the file installs from, which is what
+  # one entry repointed at somewhere else looks like.
+  substituted@1.2.3:
+    resolution: {integrity: sha512-Ze9uGlqiIPdi6kdRZcntZlYYF6cy7DKleq+64+YMDHSF5777i8zP5njUxRRQYdFK2zn+ECsxE1DHLW1a6NtiIA==, tarball: https://elsewhere.example.test/substituted/-/substituted-1.2.3.tgz}
+
+  # A dependency on a URL: the key states it where a version would be.
+  'https://files.example.test/plain-tarball-0.1.0.tgz':
+    resolution: {tarball: https://files.example.test/plain-tarball-0.1.0.tgz}
+    name: plain-tarball
+    version: 0.1.0
+
+  # A resolution written once and referred to by a yaml alias. pnpm does not write
+  # one, but a lockfile in a pull request is text somebody chose, and an alias the
+  # parser did not follow would read as a registry install with no hash at all.
+  aliased-anchor@1.0.0:
+    resolution: &shared-resolution {integrity: sha512-1ENBGgRTnPy3uNVU4KVjKBsTr2HXa9dVPJJTazXy8R1QLm3QNozSTWzO9nxVvgEAT2pD69Bbl5jA/2kBE0t2Hg==, tarball: https://codeload.github.com/example/aliased/tar.gz/0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c}
+
+  aliased-copy@1.0.0:
+    resolution: *shared-resolution

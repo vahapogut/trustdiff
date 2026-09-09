@@ -1,0 +1,67 @@
+# Hand written for the parser tests: a project and a workspace member whose
+# versions are dynamic, which uv writes without a "version" key. Their dependency
+# lists are the project's own, so they decide which entries are direct even though
+# neither is an installed package. uv did not write this file.
+version = 1
+revision = 3
+requires-python = ">=3.11"
+
+[manifest]
+members = [
+    "dynamic-member",
+    "dynamic-project",
+]
+
+[[package]]
+name = "dev-dependency"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0a/1b/dev_dependency-0.1.0-py3-none-any.whl", hash = "sha256:1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809", size = 2048 },
+]
+
+[[package]]
+name = "dynamic-member"
+source = { editable = "packages/member" }
+dependencies = [
+    { name = "member-dependency" },
+]
+
+[[package]]
+name = "dynamic-project"
+source = { editable = "." }
+dependencies = [
+    { name = "project-dependency" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "dev-dependency" },
+]
+
+[[package]]
+name = "member-dependency"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2c/3d/member_dependency-2.0.0-py3-none-any.whl", hash = "sha256:2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a", size = 4096 },
+]
+
+[[package]]
+name = "project-dependency"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "transitive-dependency" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4e/5f/project_dependency-1.0.0-py3-none-any.whl", hash = "sha256:3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b", size = 8192 },
+]
+
+[[package]]
+name = "transitive-dependency"
+version = "3.0.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/60/71/transitive_dependency-3.0.0-py3-none-any.whl", hash = "sha256:4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c", size = 1024 },
+]

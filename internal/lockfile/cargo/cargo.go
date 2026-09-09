@@ -28,7 +28,10 @@
 // even when a crate is only ever built for tests.
 //
 // The TOML decoder reports no positions, so an entry is placed by its
-// "[[package]]" header, matched in file order.
+// "[[package]]" header, matched in file order and confirmed against the name the
+// table declares, which is what lockfile.TableFinder does. A header spelled inside
+// a string value is neither counted nor matched, and an entry the finder cannot
+// place carries no line rather than another package's.
 package cargo
 
 import (
@@ -131,20 +134,22 @@ type decodedPackage struct {
 // decodePackages reads the package tables in file order, recording the ones it has
 // to drop on the lockfile.
 func decodePackages(md *toml.MetaData, primitives []toml.Primitive, data []byte, lf *lockfile.Lockfile) []decodedPackage {
-	finder := lockfile.NewLineFinder(data)
+	finder := lockfile.NewTableFinder(data, packageHeader)
 	packages := make([]decodedPackage, 0, len(primitives))
 	for i := range primitives {
-		line := finder.Find(packageHeader)
 		var table packageTable
 		if err := md.PrimitiveDecode(primitives[i], &table); err != nil {
-			lf.Drop("line %d: unreadable [[package]] table: %v", line, err)
+			lf.Drop("%s: unreadable [[package]] table: %v", lockfile.At(finder.Next("")), err)
 			continue
 		}
+		// The name is what the finder confirms a header with, so the entry is
+		// placed on the header of its own table and not on a header a value spells.
+		line := finder.Next(table.Name)
 		switch {
 		case table.Name == "":
-			lf.Drop("line %d: [[package]] without a name", line)
+			lf.Drop("%s: [[package]] without a name", lockfile.At(line))
 		case table.Version == "":
-			lf.Drop("line %d: package %q without a version", line, table.Name)
+			lf.Drop("%s: package %q without a version", lockfile.At(line), table.Name)
 		default:
 			packages = append(packages, decodedPackage{packageTable: table, line: line})
 		}
