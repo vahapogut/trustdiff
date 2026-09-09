@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.0.1] - 2026-09-09
+
+Project skeleton, published as a prerelease so that the release pipeline (checksums, SBOM, signatures, provenance) is exercised before the first usable version. Nothing evaluates packages yet; `check` arrives in 0.1.0.
+
 ### Added
 
 - Command line skeleton with every command registered: `check`, `diff`, `scan`, `doctor`, `baseline`, `hook install|uninstall`, `cache status|clear|refresh-lists|refresh`, `policy init|validate` and `version`. Commands that a later milestone implements exit with code 2 and say which version they are missing from.
@@ -18,3 +22,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Signed releases: reproducible builds for Linux, macOS and Windows on amd64 and arm64, `checksums.txt`, an SBOM, cosign keyless signatures and GitHub build provenance. `SECURITY.md` explains how to verify a download.
 
 [Unreleased]: https://github.com/vahapogut/trustdiff/compare/v0.0.1...HEAD
+[0.0.1]: https://github.com/vahapogut/trustdiff/releases/tag/v0.0.1
