@@ -115,7 +115,7 @@ If any step fails, do not run the binary; [SECURITY.md](SECURITY.md) says where 
 
 ### 1. About to add a dependency
 
-`trustdiff check <ecosystem>:<name>[@<version>]` prints one card per package: age, publisher continuity, maintainers, provenance, install scripts, dependencies added since the previous version, look-alike names, advisories, downloads. Without a version the latest non-prerelease version is evaluated. This is the 2018 handover of event-stream as the registry still records it:
+`trustdiff check <ecosystem>:<name>[@<version>]` prints one card per package: age, publisher continuity, maintainers, provenance, install scripts, dependencies added since the previous version, look-alike names, advisories, downloads. Without a version the latest non-prerelease version is evaluated. The ecosystems are `npm`, `pypi`, `cargo` and `jsr`. A `deno:` ref is accepted and every check reports itself as skipped: Deno packages live on JSR, and deno.land/x exposes none of the publisher, provenance or download data these checks read. This is the 2018 handover of event-stream as the registry still records it:
 
 ```
 $ trustdiff check npm:event-stream@3.3.5
