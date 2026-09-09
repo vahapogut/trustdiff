@@ -1,0 +1,57 @@
+# trustdiff policy. Schema: https://raw.githubusercontent.com/vahapogut/trustdiff/main/schema/policy.v1.json
+# Every key is optional except version; a missing key keeps the built-in default shown
+# here. Unknown keys are errors, so a typo cannot silently disable a rule.
+# Validate with: trustdiff policy validate
+version: 1
+
+# A version younger than this is reported by young-version (TD001).
+# Accepted spellings: 12h, 3d, 1w, 3d12h, or ISO 8601 such as P3D and PT12H.
+cooldown: 3d
+
+# Packages exempt from the cooldown, for example your own organization's packages.
+# A pattern is [<ecosystem>:]<name>[@<version>]; "*" matches any run of characters
+# except "/", so "npm:@myorg/*" covers every package in the scope. Without an
+# ecosystem prefix a pattern applies to every ecosystem.
+cooldown_exclude:
+  - "npm:@myorg/*"
+  - "pypi:myorg-*"
+
+# How many previous versions publisher-changed (TD002) looks back at.
+previous_versions_window: 5
+
+# Level of each check: block (exit code 1), warn, info or off.
+# A check can also take an object with options, see vulnerability and low-usage.
+checks:
+  young-version: warn                # TD001 published less than `cooldown` ago
+  publisher-changed: block           # TD002 publisher not seen in the previous versions
+  maintainers-changed: warn          # TD003 maintainer or owner set changed
+  trust-downgrade: block             # TD004 provenance weaker than the previous version
+  install-script-introduced: block   # TD005 install script where the previous version had none
+  install-script-present: warn       # TD006 runs code at install time at all
+  new-dependency-introduced: warn    # TD007 new runtime dependency (escalates when it is young or unknown)
+  typosquat-suspect: block           # TD008 name close to a popular package
+  malicious-advisory: block          # TD009 OSV MAL-* or deps.dev MALICIOUS
+  vulnerability: { level: block, min_severity: high }   # TD010 min_severity: low, medium, high or critical
+  deprecated-or-yanked: warn         # TD011 deprecated, yanked or archived
+  low-usage: { level: info, min_weekly_downloads: 500 } # TD012 below this many weekly downloads
+  exotic-source: block               # TD013 lockfile entry resolved from git, tarball or http
+  integrity-missing: warn            # TD014 lockfile entry without a hash, or fetched over plain http
+  version-anomaly: info              # TD015 version number far outside the package's cadence
+
+# Reviewed exceptions. Each needs the check, the package pattern and a reason; an
+# expiry date is strongly recommended. An expired entry stops applying and is itself
+# reported as a warning until it is renewed or removed. Review this list like code.
+allow:
+  - check: install-script-present
+    package: "npm:esbuild"
+    reason: "downloads a native binary; reviewed by @vahap 2026-09-08"
+    expires: 2027-03-01
+
+# What happens when a registry or advisory source cannot be reached:
+# warn keeps the exit code and lists the checks as skipped; fail exits with code 3.
+on_data_unavailable: warn
+
+# Per-ecosystem overrides for cooldown and checks. Ecosystems: npm, pypi, cargo, deno, jsr.
+ecosystems:
+  cargo:
+    cooldown: 7d
