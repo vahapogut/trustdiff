@@ -18,6 +18,7 @@ import (
 	"github.com/vahapogut/trustdiff/internal/advisory"
 	"github.com/vahapogut/trustdiff/internal/advisory/depsdev"
 	"github.com/vahapogut/trustdiff/internal/advisory/osv"
+	"github.com/vahapogut/trustdiff/internal/lockfile"
 	"github.com/vahapogut/trustdiff/internal/model"
 	"github.com/vahapogut/trustdiff/internal/policy"
 	"github.com/vahapogut/trustdiff/internal/registry"
@@ -74,6 +75,11 @@ type Subject struct {
 	// ResolvedLatest is true when the ref had no version and the runner picked the
 	// latest stable one; the report says so.
 	ResolvedLatest bool
+
+	// Lock is the lockfile entry the subject came from, nil for a ref named on the
+	// command line. The checks that judge the lockfile rather than the registry
+	// (exotic-source, integrity-missing) read it and skip themselves without it.
+	Lock *lockfile.Entry
 
 	// Version is the evaluated version in full detail.
 	Version *model.VersionInfo
