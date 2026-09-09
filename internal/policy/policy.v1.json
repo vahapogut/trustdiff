@@ -67,7 +67,8 @@
         "deno": { "$ref": "#/definitions/override" },
         "jsr": { "$ref": "#/definitions/override" }
       }
-    }
+    },
+    "doctor": { "$ref": "#/definitions/doctor" }
   },
   "definitions": {
     "duration": {
@@ -173,6 +174,38 @@
         "cooldown": { "$ref": "#/definitions/duration" },
         "checks": { "$ref": "#/definitions/checks" }
       }
+    },
+    "doctor": {
+      "description": "Settings for \"trustdiff doctor\", which reads the hardening settings the repository's package managers support. Every key is optional, and so is the section: leaving it out reports every rule at the level the rule itself carries.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ci_min_severity": {
+          "description": "The lowest level a missing or wrong setting has to reach for \"doctor --ci\" to exit 1. Default: warn.",
+          "type": "string",
+          "enum": ["block", "warn", "info"]
+        },
+        "rules": { "$ref": "#/definitions/doctorRules" },
+        "pin_exceptions": {
+          "description": "Workflow references a project has decided may stay on a tag, as globs over owner/repo. Default: none, and the SLSA generator is known to the tool and needs no entry.",
+          "type": "array",
+          "items": { "$ref": "#/definitions/pinException" }
+        }
+      }
+    },
+    "doctorRules": {
+      "description": "The level of each doctor rule, by rule name such as npm-min-release-age. Default: the level the rule itself carries; off turns the rule off.",
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[a-z0-9]+(-[a-z0-9]+)*$": { "$ref": "#/definitions/level" }
+      }
+    },
+    "pinException": {
+      "description": "A glob over owner/repo, such as myorg/* or myorg/actions.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\s]+$"
     }
   }
 }

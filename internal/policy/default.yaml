@@ -55,3 +55,28 @@ on_data_unavailable: warn
 ecosystems:
   cargo:
     cooldown: 7d
+
+# Settings for `trustdiff doctor`, which reads the hardening your package managers
+# already support (a minimum release age, no install scripts, workflow references
+# pinned to a commit) and says which of them this repository is missing. Every rule
+# comes with a level, so this whole section is only needed where you disagree with
+# one of them. Uncomment what you change.
+# doctor:
+#   # How bad a missing or wrong setting has to be before `doctor --ci` exits 1.
+#   # Start at warn, and raise it to block once the easy rows are green so a new
+#   # repository cannot quietly arrive without them.
+#   ci_min_severity: warn
+#
+#   # Turn a rule off, or report it at another level. The keys are rule names as
+#   # `trustdiff doctor` prints them, and off is for a rule your project has decided
+#   # against on purpose: write down why here, the way you would for an allow entry.
+#   rules:
+#     actions-sha-pin: off
+#     npm-strict-npmrc: info
+#
+#   # Workflow references allowed to keep a tag, as globs over owner/repo. A tag can
+#   # be moved to another commit without your workflow changing, so every entry here
+#   # is a job you have decided to trust; keep the list short. The SLSA generator is
+#   # the one workflow that cannot be pinned at all, and doctor already knows it.
+#   pin_exceptions:
+#     - "myorg/*"

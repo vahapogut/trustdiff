@@ -80,6 +80,7 @@ type Policy struct {
 	Allow                  []AllowEntry                          `yaml:"allow,omitempty"`
 	OnDataUnavailable      OnDataUnavailable                     `yaml:"on_data_unavailable,omitempty"`
 	Ecosystems             map[model.Ecosystem]EcosystemOverride `yaml:"ecosystems,omitempty"`
+	Doctor                 *DoctorConfig                         `yaml:"doctor,omitempty"`
 }
 
 // CheckConfig is one entry of the checks map. In YAML it is either a bare level
@@ -291,8 +292,8 @@ func Default() *Policy {
 }
 
 // Validate checks everything the YAML types cannot: the version, check names, option
-// placement and values, allow entries, on_data_unavailable and ecosystem overrides.
-// Every problem is reported, joined into one error.
+// placement and values, allow entries, on_data_unavailable, ecosystem overrides and
+// the doctor section. Every problem is reported, joined into one error.
 func (p *Policy) Validate() error {
 	var errs []error
 	if p.Version != 1 {
@@ -322,6 +323,9 @@ func (p *Policy) Validate() error {
 			continue
 		}
 		errs = append(errs, validateChecks("ecosystems."+string(eco)+".checks", p.Ecosystems[eco].Checks)...)
+	}
+	if p.Doctor != nil {
+		errs = append(errs, p.Doctor.validate()...)
 	}
 	return errors.Join(errs...)
 }
