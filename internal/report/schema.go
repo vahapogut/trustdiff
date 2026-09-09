@@ -10,7 +10,7 @@ import _ "embed"
 // The schema uses the draft-07 dialect; its $schema value is the meta-schema id
 // http://json-schema.org/draft-07/schema#, checked against the live meta-schema on
 // 2026-09-09. Only the keywords internal/jsonschema implements are used: type, enum,
-// const, required, properties, additionalProperties, items, pattern and local $ref
+// const, required, properties, additionalProperties, items, pattern, minimum and local $ref
 // into definitions.
 //
 //go:embed report.v1.json

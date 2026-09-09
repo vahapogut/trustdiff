@@ -113,7 +113,8 @@
         },
         "line": {
           "description": "One-based line of the entry in the lockfile. Absent when the parser could not attribute the entry to a line.",
-          "type": "integer"
+          "type": "integer",
+          "minimum": 1
         }
       }
     },
@@ -229,7 +230,8 @@
       "properties": {
         "subjects": {
           "description": "Number of entries in subjects.",
-          "type": "integer"
+          "type": "integer",
+          "minimum": 0
         },
         "findings": {
           "description": "Number of findings per level over all subjects. Every key is present even when its count is zero.",
@@ -238,19 +240,23 @@
           "additionalProperties": false,
           "properties": {
             "block": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 0
             },
             "warn": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 0
             },
             "info": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 0
             }
           }
         },
         "skipped": {
           "description": "Number of skipped checks over all subjects.",
-          "type": "integer"
+          "type": "integer",
+          "minimum": 0
         },
         "exit_code": {
           "description": "The process exit code: 0 no finding at or above fail_on, 1 at least one finding at or above fail_on, 3 a required data source was unavailable and the policy says on_data_unavailable: fail. Exit code 2 (usage or configuration error) is never accompanied by a document.",
