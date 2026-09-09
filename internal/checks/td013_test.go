@@ -329,3 +329,24 @@ func TestPinnedCommit(t *testing.T) {
 		})
 	}
 }
+
+// A bundled dependency has no source and no hash of its own: its bytes ship inside
+// the archive of the package that carries it, which the lockfile states outright
+// with inBundle. Reporting it is reporting the same artifact twice, and npm's own
+// lockfile bundles two thirds of its entries.
+func TestTD013AndTD014SayNothingAboutABundledEntry(t *testing.T) {
+	s := subjectA(model.NPM, "inner", "1.0.0")
+	s.Lock = &lockfile.Entry{
+		Ref:     s.Ref,
+		Source:  lockfile.SourceUnknown,
+		Bundled: true,
+	}
+	s.Location = &model.Location{Path: "package-lock.json", Line: 42}
+	runA(t, "TD013", s, outcomeA{})
+	runA(t, "TD014", s, outcomeA{})
+
+	// The same entry without the flag is the case both checks exist for.
+	s.Lock.Bundled = false
+	runA(t, "TD013", s, outcomeA{findings: 1})
+	runA(t, "TD014", s, outcomeA{findings: 1})
+}

@@ -28,14 +28,19 @@ import (
 // pins a branch or a tag instead is reported, and its explanation states the rule it
 // missed.
 //
-// Two more entries have a hash somewhere other than in the entry, and the
-// explanation says so rather than claiming that nothing guards them: a local
-// directory, which has no artifact to hash at all, and an npm dependency bundled
-// inside another package's archive, which the lockfile writes without a location and
-// without a hash because the package that carries it covers both. Neither is
-// exempted, because the lockfile does not mark either one and an entry that states
-// no origin is worth a maintainer's glance in a pull request; the source evidence
-// key is there so that telling them apart does not mean opening the lockfile.
+// A bundled entry is exempt too, and this one the lockfile states outright. npm
+// writes "inBundle": true for a dependency whose bytes ship inside the archive of
+// the package that carries it: there is nothing separate to fetch, and the parent's
+// own hash covers those bytes. Reporting it would be reporting the same artifact
+// twice, and it is not a rare shape. npm's own lockfile bundles 677 of its 1009
+// entries, which is 677 warnings about hashes that are exactly where they belong.
+//
+// A local directory is not exempt: it has no artifact to hash either, but nothing in
+// the lockfile says the bytes are covered by something else, and a workspace member
+// is the shape a repository can silence with an allow entry. The explanation says
+// which case it is rather than claiming that nothing guards it, and the source
+// evidence key is there so that telling them apart does not mean opening the
+// lockfile.
 //
 // Evidence keys:
 //
@@ -77,6 +82,11 @@ func (c integrityMissing) Run(_ context.Context, s *Subject) Result {
 // pins a full commit sha.
 func (c integrityMissing) missingHash(s *Subject) (model.Finding, bool) {
 	if strings.TrimSpace(s.Lock.Integrity) != "" {
+		return model.Finding{}, false
+	}
+	if s.Lock.Bundled {
+		// The lockfile says these bytes ship inside another package's archive, so
+		// the hash that guards them is that package's, and its own entry carries it.
 		return model.Finding{}, false
 	}
 	source := entrySource(s.Lock)

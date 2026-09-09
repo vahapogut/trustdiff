@@ -24,6 +24,12 @@ import (
 // git reference that pins no commit sha, and any URL, can serve different bytes
 // tomorrow without the lockfile changing.
 //
+// A bundled entry is not reported at all. npm writes "inBundle": true for a
+// dependency whose bytes ship inside the archive of the package that carries it, so
+// it has no source of its own and the question belongs to that package's entry.
+// npm's own lockfile bundles 677 of its 1009 entries, and a line for each would bury
+// everything else in the report.
+//
 // A directory and an unstated origin are reported at info instead, whatever level
 // the policy sets for the check. Neither is the signal this check exists for. A path
 // entry is what a monorepo writes for its own packages: ripgrep 14.1.1's Cargo.lock
@@ -60,6 +66,13 @@ func (exoticSource) Ecosystems() []model.Ecosystem { return nil }
 func (c exoticSource) Run(_ context.Context, s *Subject) Result {
 	if s.Lock == nil {
 		return Skip(c.ID(), lockEntryMissing(s))
+	}
+	if s.Lock.Bundled {
+		// A bundled dependency has no source of its own: its bytes travel inside the
+		// archive of the package that carries it, and that package's entry is where
+		// the question belongs. npm's own lockfile bundles two thirds of its
+		// entries, and a line for each of them would bury everything else.
+		return Result{}
 	}
 	source := entrySource(s.Lock)
 	if source == lockfile.SourceRegistry {
