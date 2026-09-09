@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,11 +51,22 @@ func TestPolicyInitAndValidate(t *testing.T) {
 		t.Fatalf("second policy init exit = %d, stderr = %q", code, stderr)
 	}
 
-	// --output writes elsewhere, and validate honors --policy.
+	// --output writes elsewhere, init honors --format json like validate does, and
+	// validate honors --policy.
 	other := filepath.Join(dir, "policies", "team.yaml")
-	code, _, stderr = run(t, "policy", "init", "--output", other)
+	code, stdout, stderr = run(t, "--format", "json", "policy", "init", "--output", other)
 	if code != ExitOK {
 		t.Fatalf("policy init --output exit = %d, stderr = %q", code, stderr)
+	}
+	var written struct {
+		Path    string `json:"path"`
+		Written bool   `json:"written"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &written); err != nil {
+		t.Fatalf("policy init --format json stdout is not a JSON object: %v\n%s", err, stdout)
+	}
+	if !written.Written || written.Path != other {
+		t.Fatalf("policy init --format json = %+v, want written true and path %q", written, other)
 	}
 	code, stdout, _ = run(t, "--policy", other, "policy", "validate")
 	if code != ExitOK || !strings.Contains(stdout, other) {

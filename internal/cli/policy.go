@@ -42,6 +42,11 @@ in the working directory (or to --output). An existing file is never overwritten
 			if err != nil {
 				abs = path
 			}
+			if a.Opts.Format == "json" {
+				enc := json.NewEncoder(a.Stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(map[string]any{"path": abs, "written": true})
+			}
 			_, err = fmt.Fprintf(a.Stdout, "wrote %s\n", abs)
 			return err
 		},

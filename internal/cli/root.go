@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/vahapogut/trustdiff/internal/policy"
 	"github.com/vahapogut/trustdiff/internal/version"
 )
 
@@ -127,6 +128,17 @@ func (a *App) prepare(cmd *cobra.Command) error {
 	}
 	if o.Jobs < 1 {
 		return Usagef("--jobs must be at least 1, got %d", o.Jobs)
+	}
+	if o.Cooldown != "" {
+		// Validated here, before any policy is loaded, so a typo in the override
+		// exits 2 like the other flags instead of surfacing when a command uses it.
+		d, err := policy.ParseDuration(o.Cooldown)
+		if err != nil {
+			return Usagef("--cooldown: %v", err)
+		}
+		if d <= 0 {
+			return Usagef("--cooldown must be positive, got %q", o.Cooldown)
+		}
 	}
 	if o.Offline && o.NoCache {
 		return Usagef("--offline and --no-cache cannot be combined: offline mode has nothing but the cache to read from")
