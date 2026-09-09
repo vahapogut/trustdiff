@@ -1,0 +1,181 @@
+# Continuous integration for trustdiff.
+#
+# Every "uses:" reference is pinned to a full commit SHA and the trailing comment names the
+# tag. Pins and tool versions were verified on 2026-09-09 against the GitHub API and the Go
+# module proxy:
+#   actions/checkout v7.0.1               3d3c42e5aac5ba805825da76410c181273ba90b1
+#   actions/setup-go v7.0.0               b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+#   golangci/golangci-lint-action v9.3.0  ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a
+#   golangci-lint v2.13.2, govulncheck v1.8.0, gosec v2.29.0 (the versions in tools.mk)
+# To bump a pin, resolve the tag with
+#   gh api repos/<owner>/<repo>/git/ref/tags/<tag> --jq '.object | "\(.type) \(.sha)"'
+# and, when the type is "tag" (an annotated tag, as golangci-lint-action uses), dereference it
+#   gh api repos/<owner>/<repo>/git/tags/<sha> --jq .object.sha
+# so the workflow pins the commit and not the tag object.
+#
+# Jobs: lint, test (Go 1.26 and 1.27 on Linux, macOS and Windows), vulncheck, gosec, budgets
+# (the binary size and direct dependency limits from docs/PLAN.md task 0.10) and integration.
+# The integration job talks to live registries, so it runs only on the weekly schedule and on
+# manual dispatch, never for a push or a pull request, and it is not required for merge.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Mondays at 06:17 UTC. The integration job is exclusive to this trigger and to
+    # workflow_dispatch; the other jobs run as well, which catches new advisories and
+    # toolchain drift between commits.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run per event kind and ref; a newer run for the same ref cancels the older one. The event
+# name is part of the group so a scheduled run never cancels a push run on main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CGO_ENABLED: "0"
+  # Use exactly the Go version the job installed; never let the go command download another
+  # one, so the matrix tests what it claims to test.
+  GOTOOLCHAIN: local
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          # setup-go v7 honors the toolchain directive in go.mod when one is present.
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.13.2
+
+  test:
+    name: test (go ${{ matrix.go }} on ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # Stable minus one and stable, see docs/PLAN.md section 12. "1.26.x" resolves to the
+        # newest 1.26 patch release that setup-go knows about.
+        go: ["1.26.x", "1.27.x"]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test ./...
+
+  vulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install govulncheck
+        # Installed from the module proxy; the GitHub releases of x/vuln are stale.
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+      - name: govulncheck
+        run: govulncheck ./...
+
+  gosec:
+    name: gosec
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
+      - name: gosec
+        run: gosec -quiet ./...
+
+  budgets:
+    name: budgets (binary size, direct dependencies)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Build the release-style linux/amd64 binary
+        env:
+          GOOS: linux
+          GOARCH: amd64
+        run: go build -trimpath -ldflags "-s -w" -o trustdiff ./cmd/trustdiff
+      - name: Binary size budget (under 15 MB)
+        run: |
+          # 15 MB is read as 15 000 000 bytes, the stricter of the two possible readings.
+          limit=15000000
+          size=$(stat -c %s trustdiff)
+          echo "trustdiff linux/amd64 is ${size} bytes (budget: under ${limit})"
+          if [ "${size}" -ge "${limit}" ]; then
+            echo "::error::binary is ${size} bytes, at or above the ${limit} byte budget"
+            exit 1
+          fi
+      - name: Direct dependency budget (at most 6)
+        run: |
+          # go list runs on its own line so a failure there stops the step; grep -c prints 0
+          # and exits 1 when the list is empty, which is why its exit status is ignored.
+          direct=$(go list -m -f '{{if and (not .Main) (not .Indirect)}}{{.Path}}{{end}}' all)
+          count=$(printf '%s\n' "${direct}" | grep -c . || true)
+          echo "direct dependencies: ${count} (budget: at most 6)"
+          printf '%s\n' "${direct}"
+          if [ "${count}" -gt 6 ]; then
+            echo "::error::${count} direct dependencies exceed the budget of 6"
+            exit 1
+          fi
+
+  integration:
+    name: integration (live registries)
+    # Weekly schedule and manual dispatch only; the job never runs for a push or a pull
+    # request. Real integration tests arrive with docs/PLAN.md task 1.8.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: go test -tags integration
+        run: go test -tags integration ./...

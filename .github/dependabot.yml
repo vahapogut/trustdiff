@@ -1,0 +1,45 @@
+# Dependabot version updates for Go modules and GitHub Actions.
+#
+# Keys verified on 2026-09-09 against the options reference:
+# https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+# "cooldown.default-days" delays every update by that many days after the upstream release
+# (the reference states that Dependabot applies 3 days when the key is absent). Minor and patch
+# updates are grouped into one pull request per ecosystem; major updates arrive on their own.
+# Commit prefixes follow the conventional commit types used in this repository.
+
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      go-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "build(deps)"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      actions-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "ci(deps)"
