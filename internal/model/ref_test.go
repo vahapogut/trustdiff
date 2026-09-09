@@ -15,7 +15,9 @@ func TestParseRef(t *testing.T) {
 		{in: "npm:express", want: PackageRef{NPM, "express", ""}},
 		{in: "npm:@types/node@20.0.0", want: PackageRef{NPM, "@types/node", "20.0.0"}},
 		{in: "npm:@types/node", want: PackageRef{NPM, "@types/node", ""}},
-		{in: "NPM:Express", want: PackageRef{NPM, "express", ""}},
+		// npm names keep their case: JSONStream and jsonstream are different packages.
+		{in: "NPM:Express", want: PackageRef{NPM, "Express", ""}},
+		{in: "npm:JSONStream@1.3.5", want: PackageRef{NPM, "JSONStream", "1.3.5"}},
 		{in: "pypi:requests@2.32.3", want: PackageRef{PyPI, "requests", "2.32.3"}},
 		{in: "pypi:Typing_Extensions", want: PackageRef{PyPI, "typing-extensions", ""}},
 		{in: "pypi:zope.interface@6.0", want: PackageRef{PyPI, "zope-interface", "6.0"}},
@@ -103,7 +105,8 @@ func TestNormalizeName(t *testing.T) {
 		{PyPI, "typing_extensions", "typing-extensions"},
 		{PyPI, "zope.interface", "zope-interface"},
 		{PyPI, "A__b-.-C", "a-b-c"},
-		{NPM, "@Scope/Name", "@scope/name"},
+		{NPM, "@Scope/Name", "@Scope/Name"},
+		{NPM, "JSONStream", "JSONStream"},
 		{Cargo, "Serde_Json", "Serde_Json"},
 		{JSR, "@std/Path", "@std/Path"},
 	}

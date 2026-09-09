@@ -238,14 +238,21 @@ func TestVersionsMapsTheCrateDocument(t *testing.T) {
 			wantCount:  42,
 			versions: []versionWant{
 				{
-					// Trusted publishing: trustpub_data present and published_by null.
-					num: "0.10.1", publishedAt: at("2026-04-13T15:26:43.049921Z"),
+					// Trusted publishing: trustpub_data present and published_by null,
+					// so the provider repository is the publisher TD002 compares.
+					num: "0.10.1", publishedAt: at("2026-04-13T15:26:43.049921Z"), publisher: "github:rust-random/rand_core",
 					integrity:  "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69",
 					provenance: model.Provenance{Kind: model.ProvenanceTrustedPublisher, Verified: true, Identity: "github:rust-random/rand_core"},
 				},
 				{
-					num: "0.10.0-rc-6", prerelease: true,
+					num: "0.10.0-rc-6", prerelease: true, publisher: "github:rust-random/rand_core",
 					provenance: model.Provenance{Kind: model.ProvenanceTrustedPublisher, Verified: true, Identity: "github:rust-random/rand_core"},
+				},
+				{
+					// The repository moved between release candidates, which reads as
+					// a different publisher.
+					num: "0.10.0-rc-2", prerelease: true, publisher: "github:rust-random/core",
+					provenance: model.Provenance{Kind: model.ProvenanceTrustedPublisher, Verified: true, Identity: "github:rust-random/core"},
 				},
 				{
 					// A token publish after the crate moved to trusted publishing.
@@ -468,18 +475,22 @@ func TestVersionInfo(t *testing.T) {
 		wantDeps  map[string]string
 		wantS     map[string]string
 		publisher string
+		// wantUnknown is the text expected under Unknown[scripts]; empty means
+		// the archive was inspected and nothing is unknown.
+		wantUnknown string
 		// wantErr is checked with errors.Is; wantInfo says whether a value comes with it.
 		wantErr  error
 		wantInfo bool
 	}{
 		{
 			// No archive fixture: the static host answers 403 like S3 does for a
-			// missing file, so the metadata comes back with ErrNotInspected.
-			ref:       cargoRef("serde", "1.0.229"),
-			wantDeps:  map[string]string{"serde_core": "=1.0.229", "serde_derive": "^1"},
-			publisher: "dtolnay",
-			wantErr:   ErrNotInspected,
-			wantInfo:  true,
+			// missing file, so the metadata comes back with Scripts unknown and
+			// no error, and only the install-script checks have to skip.
+			ref:         cargoRef("serde", "1.0.229"),
+			wantDeps:    map[string]string{"serde_core": "=1.0.229", "serde_derive": "^1"},
+			publisher:   "dtolnay",
+			wantUnknown: ErrNotInspected.Error(),
+			wantInfo:    true,
 		},
 		{
 			// build.rs in the archive, no build key in the normalized manifest;
@@ -539,6 +550,13 @@ func TestVersionInfo(t *testing.T) {
 			if info.HasInstallScript() != (len(tt.wantS) > 0) {
 				t.Errorf("HasInstallScript = %v", info.HasInstallScript())
 			}
+			reason, unknown := info.Unknown[model.FacetScripts]
+			if unknown != (tt.wantUnknown != "") || !strings.Contains(reason, tt.wantUnknown) {
+				t.Errorf("Unknown[scripts] = %q (%v), want %q", reason, unknown, tt.wantUnknown)
+			}
+			if unknown && !strings.Contains(reason, tt.ref.String()) {
+				t.Errorf("Unknown[scripts] = %q, want it to name %s", reason, tt.ref)
+			}
 		})
 	}
 }
@@ -577,7 +595,7 @@ func TestVersionInfoPrefersUntargetedAndRequiredDependencies(t *testing.T) {
 	routes["/api/v1/crates/serde/1.0.229/dependencies"] = response{status: http.StatusOK, body: []byte(deps)}
 	c := newClient(t, newServer(t, routes), t.TempDir(), false)
 	info, err := c.VersionInfo(context.Background(), cargoRef("serde", "1.0.229"))
-	if !errors.Is(err, ErrNotInspected) || info == nil {
+	if err != nil || info == nil {
 		t.Fatalf("VersionInfo = %+v, %v", info, err)
 	}
 	want := map[string]string{"serde_derive": "^1", "libc": "^0.2.100", "winapi": "^0.3"}
@@ -605,14 +623,15 @@ func TestVersionInfoChecksumMismatchIsNeverInspected(t *testing.T) {
 	routes["/crates/paste/paste-1.0.15.crate"] = response{status: http.StatusOK, body: tampered}
 	c := newClient(t, newServer(t, routes), t.TempDir(), false)
 	info, err := c.VersionInfo(context.Background(), cargoRef("paste", "1.0.15"))
-	if !errors.Is(err, ErrNotInspected) || !errors.Is(err, ErrChecksumMismatch) {
-		t.Fatalf("error = %v, want ErrNotInspected wrapping ErrChecksumMismatch", err)
+	if err != nil || info == nil || info.Scripts != nil {
+		t.Fatalf("VersionInfo = %+v, %v; want the metadata with empty Scripts and no error", info, err)
 	}
-	if info == nil || info.Scripts != nil {
-		t.Fatalf("info = %+v, want the metadata with empty Scripts", info)
+	reason := info.Unknown[model.FacetScripts]
+	if !strings.Contains(reason, ErrNotInspected.Error()) || !strings.Contains(reason, ErrChecksumMismatch.Error()) {
+		t.Fatalf("Unknown[scripts] = %q, want the not-inspected reason with the checksum mismatch", reason)
 	}
-	if !strings.Contains(err.Error(), "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a") {
-		t.Errorf("error should name the registry checksum: %v", err)
+	if !strings.Contains(reason, "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a") {
+		t.Errorf("Unknown[scripts] should name the registry checksum: %q", reason)
 	}
 }
 
@@ -637,11 +656,11 @@ func TestVersionInfoArchiveSizeCap(t *testing.T) {
 			c := newClient(t, srv, t.TempDir(), false)
 			c.maxArchive = tt.maxArchive
 			info, err := c.VersionInfo(context.Background(), cargoRef("memoffset", "0.9.1"))
-			if !errors.Is(err, ErrNotInspected) || !errors.Is(err, ErrArchiveTooLarge) {
-				t.Fatalf("error = %v, want ErrNotInspected wrapping ErrArchiveTooLarge", err)
+			if err != nil || info == nil || info.Scripts != nil {
+				t.Fatalf("VersionInfo = %+v, %v; want the metadata with empty Scripts and no error", info, err)
 			}
-			if info == nil || info.Scripts != nil {
-				t.Fatalf("info = %+v, want the metadata with empty Scripts", info)
+			if reason := info.Unknown[model.FacetScripts]; !strings.Contains(reason, ErrNotInspected.Error()) || !strings.Contains(reason, ErrArchiveTooLarge.Error()) {
+				t.Fatalf("Unknown[scripts] = %q, want the not-inspected reason with the size cap", reason)
 			}
 			if got := srv.requests("/crates/memoffset/memoffset-0.9.1.crate") > 0; got != tt.wantDownload {
 				t.Errorf("archive downloaded = %v, want %v", got, tt.wantDownload)
@@ -673,14 +692,15 @@ func TestVersionInfoArchiveDownloadFailures(t *testing.T) {
 			routes["/crates/memoffset/memoffset-0.9.1.crate"] = response{status: tt.status, body: body}
 			c := newClient(t, newServer(t, routes), t.TempDir(), false)
 			info, err := c.VersionInfo(context.Background(), cargoRef("memoffset", "0.9.1"))
-			if !errors.Is(err, ErrNotInspected) {
-				t.Fatalf("error = %v, want ErrNotInspected", err)
+			if err != nil || info == nil || info.Scripts != nil || info.Publisher == nil {
+				t.Fatalf("VersionInfo = %+v, %v; want the metadata with empty Scripts and no error", info, err)
 			}
-			if errors.Is(err, ErrArchiveTooLarge) || errors.Is(err, ErrChecksumMismatch) {
-				t.Errorf("error = %v, wrong cause", err)
+			reason := info.Unknown[model.FacetScripts]
+			if !strings.Contains(reason, ErrNotInspected.Error()) {
+				t.Fatalf("Unknown[scripts] = %q, want the not-inspected reason", reason)
 			}
-			if info == nil || info.Scripts != nil || info.Publisher == nil {
-				t.Fatalf("info = %+v, want the metadata with empty Scripts", info)
+			if strings.Contains(reason, ErrArchiveTooLarge.Error()) || strings.Contains(reason, ErrChecksumMismatch.Error()) {
+				t.Errorf("Unknown[scripts] = %q, wrong cause", reason)
 			}
 		})
 	}
@@ -714,11 +734,11 @@ func TestOffline(t *testing.T) {
 	t.Run("metadata cached, archive not", func(t *testing.T) {
 		c := newClient(t, srv, dir, true)
 		info, err := c.VersionInfo(context.Background(), cargoRef("memoffset", "0.9.1"))
-		if !errors.Is(err, ErrNotInspected) || !errors.Is(err, httpcache.ErrOffline) {
-			t.Fatalf("error = %v, want ErrNotInspected wrapping ErrOffline", err)
+		if err != nil || info == nil || info.Scripts != nil || info.Publisher == nil {
+			t.Fatalf("VersionInfo = %+v, %v; want the cached metadata with empty Scripts and no error", info, err)
 		}
-		if info == nil || info.Scripts != nil || info.Publisher == nil {
-			t.Fatalf("info = %+v, want the cached metadata with empty Scripts", info)
+		if reason := info.Unknown[model.FacetScripts]; !strings.Contains(reason, ErrNotInspected.Error()) || !strings.Contains(reason, httpcache.ErrOffline.Error()) {
+			t.Fatalf("Unknown[scripts] = %q, want the not-inspected reason naming the offline cache", reason)
 		}
 	})
 
@@ -738,6 +758,51 @@ func TestOffline(t *testing.T) {
 	})
 	if n := srv.requests("/crates/memoffset/memoffset-0.9.1.crate"); n != 1 {
 		t.Errorf("archive fetched %d times, want 1", n)
+	}
+}
+
+func TestNamesAreTheRegistrySpelling(t *testing.T) {
+	// crates.io answers a case or separator variant with the registered crate's
+	// document (verified 2026-09-09: serde-json and Serde both serve serde_json).
+	// The list, every ref and the version detail carry that spelling, so that
+	// OSV and deps.dev are asked about a crate that exists.
+	routes := fixtureRoutes(t)
+	routes["/api/v1/crates/Serde"] = routes["/api/v1/crates/serde"]
+	routes["/api/v1/crates/rand-core"] = routes["/api/v1/crates/rand_core"]
+	c := newClient(t, newServer(t, routes), t.TempDir(), false)
+	ctx := context.Background()
+
+	tests := []struct{ asked, registered string }{
+		{"Serde", "serde"},
+		{"rand-core", "rand_core"},
+		{"serde", "serde"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.asked, func(t *testing.T) {
+			list, err := c.Versions(ctx, tt.asked)
+			if err != nil {
+				t.Fatalf("Versions(%s): %v", tt.asked, err)
+			}
+			if list.Name != tt.registered {
+				t.Errorf("Name = %q, want %q", list.Name, tt.registered)
+			}
+			for i := range list.Versions {
+				if ref := list.Versions[i].Ref; ref.Ecosystem != model.Cargo || ref.Name != tt.registered {
+					t.Fatalf("Versions[%d].Ref = %v, want cargo:%s", i, ref, tt.registered)
+				}
+			}
+		})
+	}
+
+	info, err := c.VersionInfo(ctx, cargoRef("Serde", "1.0.229"))
+	if err != nil {
+		t.Fatalf("VersionInfo(Serde): %v", err)
+	}
+	if want := cargoRef("serde", "1.0.229"); info.Ref != want {
+		t.Errorf("VersionInfo(Serde).Ref = %v, want %v", info.Ref, want)
+	}
+	if info.Publisher == nil || info.Publisher.Name != "dtolnay" || len(info.Dependencies) == 0 {
+		t.Errorf("VersionInfo(Serde) = publisher %+v, %d dependencies; want dtolnay with dependencies", info.Publisher, len(info.Dependencies))
 	}
 }
 

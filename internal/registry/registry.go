@@ -27,7 +27,13 @@ var ErrUnsupported = errors.New("not provided by this registry")
 // per-version details that need extra requests come from VersionInfo.
 type VersionList struct {
 	Ecosystem model.Ecosystem
-	Name      string
+	// Name is the registry's canonical spelling of the package, which is also
+	// the Name of every Ref in Versions. It can differ from what the caller asked
+	// for where the registry answers aliases: crates.io serves serde_json for
+	// serde-json and Serde, so a caller that goes on to ask other sources (OSV,
+	// deps.dev) about the package adopts this spelling first. PyPI names are
+	// PEP 503 normalized and npm names are case-sensitive as given.
+	Name string
 	// Latest is the registry's own idea of the current version (npm dist-tags.latest,
 	// PyPI info.version, crates.io max_stable_version); empty when it has none.
 	Latest string
@@ -50,7 +56,11 @@ type Source interface {
 	// Versions returns the package with every version the registry lists.
 	Versions(ctx context.Context, name string) (*VersionList, error)
 	// VersionInfo returns the full detail of one version, including anything that
-	// needs a separate request (dependencies, provenance, install scripts).
+	// needs a separate request (dependencies, provenance, install scripts). A
+	// facet that could not be gathered while the version itself was (a crate
+	// archive that was not inspected, a PyPI integrity lookup that failed) does
+	// not fail the call: the version comes back with that facet at its zero
+	// value and named in VersionInfo.Unknown with the reason.
 	VersionInfo(ctx context.Context, ref model.PackageRef) (*model.VersionInfo, error)
 	// Owners returns the current maintainer or owner set.
 	Owners(ctx context.Context, name string) ([]model.Publisher, error)

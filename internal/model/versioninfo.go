@@ -53,6 +53,20 @@ func (p Provenance) Strength() int {
 	return base * 2
 }
 
+// Facets are the parts of a VersionInfo that a registry client gathers with a
+// request of their own and may therefore fail to gather while the rest of the
+// version is fine. They are the keys of VersionInfo.Unknown.
+const (
+	// FacetScripts is Scripts; crates.io leaves it unknown when the .crate
+	// archive was not inspected (too large, offline, checksum mismatch, missing).
+	FacetScripts = "scripts"
+	// FacetProvenance is Provenance; PyPI leaves it unknown when the integrity
+	// API failed with anything but a 404.
+	FacetProvenance = "provenance"
+	// FacetDependencies is Dependencies and OptionalDependencies.
+	FacetDependencies = "dependencies"
+)
+
 // VersionInfo is what a registry knows about one published version. Registry clients
 // fill the fields they can; checks treat zero values as unknown, not as absent.
 type VersionInfo struct {
@@ -74,8 +88,15 @@ type VersionInfo struct {
 	// (preinstall, install, postinstall, prepare for npm). For crates.io the keys
 	// are build.rs and proc-macro; for a PyPI sdist-only release the key is setup.py.
 	Scripts map[string]string `json:"scripts,omitempty"`
-	// Dependencies are the runtime dependencies declared by the version: name to requirement.
+	// Dependencies are the runtime dependencies declared by the version: name to
+	// requirement, the ones a plain install of the version pulls in.
 	Dependencies map[string]string `json:"dependencies,omitempty"`
+	// OptionalDependencies are declared dependencies a plain install does not
+	// pull in: PyPI requirements guarded by an extra marker ("h2<5,>=4; extra ==
+	// 'h2'" is installed only by "pip install pkg[h2]"), keyed like Dependencies
+	// with the requirement and marker as written. npm's optionalDependencies are
+	// attempted on every install and stay in Dependencies.
+	OptionalDependencies map[string]string `json:"optional_dependencies,omitempty"`
 
 	Provenance Provenance `json:"provenance"`
 
@@ -83,7 +104,26 @@ type VersionInfo struct {
 	Integrity string `json:"integrity,omitempty"`
 	// WeeklyDownloads is the most recent weekly download count, or -1 when unknown.
 	WeeklyDownloads int64 `json:"weekly_downloads"`
+
+	// Unknown names the facets the registry could not gather for this version,
+	// keyed by facet (FacetScripts, FacetProvenance, FacetDependencies) with a
+	// reason in plain words, for example a crate archive that was not inspected
+	// or a PyPI integrity lookup that failed. The facet's field is then at its
+	// zero value and means "not known", not "none": a check that needs the facet
+	// reports itself as skipped with the reason instead of reading the zero value
+	// as a fact. Nil when everything the client fills was gathered.
+	Unknown map[string]string `json:"unknown,omitempty"`
 }
 
-// HasInstallScript reports whether the version runs code at install time.
+// HasInstallScript reports whether the version runs code at install time. It is
+// false when Scripts is unknown (see Unknown); callers check the facet first.
 func (v *VersionInfo) HasInstallScript() bool { return len(v.Scripts) > 0 }
+
+// SetUnknown records that a facet could not be gathered, with the reason a check
+// can show. Unknown is allocated on first use.
+func (v *VersionInfo) SetUnknown(facet, reason string) {
+	if v.Unknown == nil {
+		v.Unknown = make(map[string]string, 1)
+	}
+	v.Unknown[facet] = reason
+}

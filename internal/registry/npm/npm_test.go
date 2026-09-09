@@ -35,6 +35,7 @@ var fixtureRoutes = map[string]string{
 	"/event-stream":                      "event-stream.json",
 	"/parcel-bundler":                    "parcel-bundler.json",
 	"/flatmap-stream":                    "flatmap-stream.json",
+	"/JSONStream":                        "JSONStream.json",
 	"/downloads/point/last-week/isarray": "downloads-isarray.json",
 	"/downloads/point/last-week/@sigstore/bundle":                    "downloads-sigstore-bundle.json",
 	"/downloads/point/last-week/isarray,event-stream," + unknownName: "downloads-bulk.json",
@@ -227,8 +228,8 @@ func TestScopedPackageWithAttestations(t *testing.T) {
 	c := newClient(t, fs, t.TempDir(), false)
 	ctx := context.Background()
 
-	// Mixed case is normalized before the request; the slash is percent encoded.
-	list, err := c.Versions(ctx, "@Sigstore/Bundle")
+	// The slash of a scoped name is percent encoded; the spelling is sent as given.
+	list, err := c.Versions(ctx, "@sigstore/bundle")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,8 +250,9 @@ func TestScopedPackageWithAttestations(t *testing.T) {
 	want := &model.VersionInfo{
 		Ref:         npmRef("@sigstore/bundle", "5.0.0"),
 		PublishedAt: ts(t, "2026-06-01T21:02:52.349Z"),
-		// Trusted publishing from GitHub Actions shows up as this synthetic user.
-		Publisher:       &model.Publisher{Name: "GitHub Actions", Email: "npm-oidc-no-reply@github.com"},
+		// Trusted publishing: _npmUser is the synthetic GitHub Actions account,
+		// and the publisher identity is the trusted publisher configuration.
+		Publisher:       &model.Publisher{Name: "github-trusted-publisher:oidc:87d8bb4c-c894-403c-af7e-0d34d7e7327a", Email: "npm-oidc-no-reply@github.com"},
 		Maintainers:     []model.Publisher{{Name: "bdehamer", Email: "brian@dehamer.com"}},
 		Dependencies:    map[string]string{"@sigstore/protobuf-specs": "^0.5.0"},
 		Provenance:      model.Provenance{Kind: model.ProvenanceAttestation, Verified: false},
@@ -282,10 +284,13 @@ func TestScopedPackageWithAttestations(t *testing.T) {
 	if older.Provenance.Strength() != latest.Provenance.Strength() {
 		t.Errorf("3.1.0 strength %d differs from 5.0.0 strength %d although both carry an attestation", older.Provenance.Strength(), latest.Provenance.Strength())
 	}
+	// Both trusted publishing releases went through the same configuration, so
+	// they carry the same identity and TD002 sees no change between them.
+	const trusted = "github-trusted-publisher:oidc:87d8bb4c-c894-403c-af7e-0d34d7e7327a"
 	for _, ver := range []string{"4.0.0", "5.0.0"} {
 		info := registry.Find(list, ver)
-		if info.Publisher == nil || info.Publisher.Name != "GitHub Actions" {
-			t.Errorf("%s publisher = %+v, want the GitHub Actions account of trusted publishing", ver, info.Publisher)
+		if info.Publisher == nil || info.Publisher.Name != trusted {
+			t.Errorf("%s publisher = %+v, want the trusted publisher identity %s", ver, info.Publisher, trusted)
 		}
 	}
 	// The per-version maintainer set shrinks from two to one at 5.0.0.
@@ -535,10 +540,13 @@ func TestSecurityHoldingPlaceholder(t *testing.T) {
 	}
 	only := list.Versions[0]
 	if !only.Prerelease {
-		t.Error("0.0.1-security should count as a prerelease, so no stable version resolves")
+		t.Error("0.0.1-security should count as a prerelease")
 	}
-	if registry.LatestStable(list) != nil {
-		t.Error("LatestStable should be nil for a placeholder")
+	// No stable version exists, so a bare ref resolves to the placeholder the
+	// registry points at: that is what npm install fetches and the only place
+	// the holding note can reach the checks.
+	if resolved := registry.LatestStable(list); resolved == nil || resolved.Ref.Version != "0.0.1-security" {
+		t.Errorf("LatestStable = %+v, want the placeholder 0.0.1-security", resolved)
 	}
 	if only.Publisher == nil || only.Publisher.Name != "elizposadas" {
 		t.Errorf("placeholder publisher = %+v, want elizposadas", only.Publisher)
@@ -583,10 +591,10 @@ func TestBulkDownloads(t *testing.T) {
 	c := newClient(t, fs, t.TempDir(), false)
 	ctx := context.Background()
 
-	// Unscoped names share one bulk request in first-seen order, case and
-	// duplicates are normalized away, the scoped name goes through the point
-	// endpoint and the unknown name (null in the bulk answer) is left out.
-	got, err := c.BulkDownloads(ctx, []string{"isarray", "Event-Stream", unknownName, "@sigstore/bundle", "isarray"})
+	// Unscoped names share one bulk request in first-seen order, duplicates are
+	// asked once, the scoped name goes through the point endpoint and the
+	// unknown name (null in the bulk answer) is left out.
+	got, err := c.BulkDownloads(ctx, []string{"isarray", "event-stream", unknownName, "@sigstore/bundle", "isarray"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -858,9 +866,11 @@ func TestCanonicalName(t *testing.T) {
 		wantErr bool
 	}{
 		{"express", "express", false},
-		{"Express", "express", false},
+		// Case is kept: the registry serves legacy mixed-case names as packages of their own.
+		{"Express", "Express", false},
+		{"JSONStream", "JSONStream", false},
 		{"  isarray ", "isarray", false},
-		{"@Types/Node", "@types/node", false},
+		{"@Types/Node", "@Types/Node", false},
 		{"", "", true},
 		{"@types", "", true},
 		{"a/b", "", true},
@@ -876,6 +886,45 @@ func TestCanonicalName(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("canonicalName(%q) = %q, want %q", tt.name, got, tt.want)
 		}
+	}
+}
+
+func TestMixedCaseNamesAreDistinctPackages(t *testing.T) {
+	fs := newFixtureServer(t)
+	c := newClient(t, fs, t.TempDir(), false)
+	ctx := context.Background()
+
+	// JSONStream is requested with its own spelling and answered with its own
+	// packument; the fixture server, like the registry, knows nothing under the
+	// lowercase path.
+	list, err := c.Versions(ctx, "JSONStream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := fs.requests("/JSONStream"); n != 1 {
+		t.Fatalf("packument path /JSONStream requested %d times, want 1; paths: %v", n, fs.seen())
+	}
+	if list.Name != "JSONStream" || list.Latest != "1.3.5" || len(list.Versions) != 54 {
+		t.Errorf("list = %s latest %s with %d versions, want JSONStream 1.3.5 with 54", list.Name, list.Latest, len(list.Versions))
+	}
+	info, err := c.VersionInfo(ctx, model.MustParseRef("npm:JSONStream@1.3.5"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Ref.Name != "JSONStream" || info.Publisher == nil || info.Publisher.Name != "dominictarr" {
+		t.Errorf("1.3.5 = ref %s publisher %+v, want JSONStream by dominictarr", info.Ref, info.Publisher)
+	}
+	if want := map[string]string{"through": ">=2.2.7 <3", "jsonparse": "^1.2.0"}; !reflect.DeepEqual(info.Dependencies, want) {
+		t.Errorf("1.3.5 dependencies = %v, want %v", info.Dependencies, want)
+	}
+
+	// The lowercase spelling is a different package, here one the fixture server
+	// does not have, and the answer is never taken from the mixed-case memo.
+	if _, err := c.Versions(ctx, "jsonstream"); !errors.Is(err, registry.ErrNotFound) {
+		t.Errorf("Versions(jsonstream) error = %v, want ErrNotFound", err)
+	}
+	if n := fs.requests("/jsonstream"); n != 1 {
+		t.Errorf("packument path /jsonstream requested %d times, want 1; paths: %v", n, fs.seen())
 	}
 }
 
@@ -942,6 +991,42 @@ func TestParseTolerantFields(t *testing.T) {
 			name: "maintainers that is not an array is ignored, nameless entries dropped",
 			doc:  `{"maintainers":"alice <a@example.com>","_npmUser":{"email":"nobody@example.com"}}`,
 			want: model.VersionInfo{},
+		},
+		{
+			// The shape observed on @sigstore/bundle 4.0.0 and 5.0.0 (2026-09-09).
+			name: "trusted publisher configuration is the publisher identity",
+			doc:  `{"_npmUser":{"name":"GitHub Actions","email":"npm-oidc-no-reply@github.com","trustedPublisher":{"id":"github","oidcConfigId":"oidc:87d8bb4c-c894-403c-af7e-0d34d7e7327a"}}}`,
+			want: model.VersionInfo{Publisher: &model.Publisher{Name: "github-trusted-publisher:oidc:87d8bb4c-c894-403c-af7e-0d34d7e7327a", Email: "npm-oidc-no-reply@github.com"}},
+		},
+		{
+			name: "trusted publisher without a configuration id keeps the account name",
+			doc:  `{"_npmUser":{"name":"GitHub Actions","email":"npm-oidc-no-reply@github.com","trustedPublisher":{"id":"github"}}}`,
+			want: model.VersionInfo{Publisher: &model.Publisher{Name: "GitHub Actions", Email: "npm-oidc-no-reply@github.com"}},
+		},
+		{
+			name: "trusted publisher of another shape is ignored",
+			doc:  `{"_npmUser":{"name":"GitHub Actions","trustedPublisher":"github"}}`,
+			want: model.VersionInfo{Publisher: &model.Publisher{Name: "GitHub Actions"}},
+		},
+		{
+			name: "gypfile without an install script is the implicit node-gyp rebuild",
+			doc:  `{"gypfile":true,"scripts":{"test":"node test.js"}}`,
+			want: model.VersionInfo{Scripts: map[string]string{"install": implicitInstallScript}},
+		},
+		{
+			name: "gypfile with a declared install script keeps the declared one",
+			doc:  `{"gypfile":true,"scripts":{"install":"node-gyp rebuild --release"}}`,
+			want: model.VersionInfo{Scripts: map[string]string{"install": "node-gyp rebuild --release"}},
+		},
+		{
+			name: "gypfile with a preinstall script gets no default install",
+			doc:  `{"gypfile":true,"scripts":{"preinstall":"node check.js"}}`,
+			want: model.VersionInfo{Scripts: map[string]string{"preinstall": "node check.js"}},
+		},
+		{
+			name: "gypfile that is not a boolean is not set",
+			doc:  `{"gypfile":"yes","scripts":{"postinstall":"node x.js"}}`,
+			want: model.VersionInfo{Scripts: map[string]string{"postinstall": "node x.js"}},
 		},
 		{
 			name: "maintainer entries that are not objects are dropped",

@@ -47,24 +47,97 @@ func TestSplitRequirement(t *testing.T) {
 	}
 }
 
+func TestSplitMarker(t *testing.T) {
+	tests := []struct {
+		rest       string
+		wantSpec   string
+		wantMarker string
+	}{
+		{"", "", ""},
+		{"<4,>=2", "<4,>=2", ""},
+		{`; extra == "dev"`, "", `extra == "dev"`},
+		{"<5,>=4; extra == 'h2'", "<5,>=4", "extra == 'h2'"},
+		{`>=1.0; python_version < "3.8"`, ">=1.0", `python_version < "3.8"`},
+		{"(>=0.6) ; extra == 'standard'", "(>=0.6)", "extra == 'standard'"},
+		{"@ https://example.com/a.zip#sha1=abc;x=1", "@ https://example.com/a.zip#sha1=abc;x=1", ""},
+		{"@ https://example.com/a.zip#sha1=abc;x=1 ; extra == 'x'", "@ https://example.com/a.zip#sha1=abc;x=1", "extra == 'x'"},
+		{"[security] >=2.8.1", "[security] >=2.8.1", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.rest, func(t *testing.T) {
+			spec, marker := splitMarker(tc.rest)
+			if spec != tc.wantSpec || marker != tc.wantMarker {
+				t.Errorf("splitMarker = (%q, %q), want (%q, %q)", spec, marker, tc.wantSpec, tc.wantMarker)
+			}
+		})
+	}
+}
+
+func TestIsExtra(t *testing.T) {
+	tests := []struct {
+		marker string
+		want   bool
+	}{
+		{"", false},
+		{`extra == "dev"`, true},
+		{"extra=='h2'", true},
+		{"'socks' == extra", true},
+		{`python_version < "3.8"`, false},
+		{`python_version < "3.8" and extra == "dev"`, true},
+		{`sys_platform == "win32"`, false},
+		// A marker variable that merely contains the word is not the extra marker.
+		{`myextra == "x"`, false},
+		{`extra_thing == "x"`, false},
+	}
+	for _, tc := range tests {
+		if got := isExtra(tc.marker); got != tc.want {
+			t.Errorf("isExtra(%q) = %v, want %v", tc.marker, got, tc.want)
+		}
+	}
+}
+
 func TestDependencies(t *testing.T) {
 	tests := []struct {
-		name     string
-		requires []string
-		want     map[string]string
-		wantLog  string
+		name         string
+		requires     []string
+		want         map[string]string
+		wantOptional map[string]string
+		wantLog      string
 	}{
 		{name: "nil", requires: nil, want: nil},
 		{name: "empty", requires: []string{}, want: nil},
 		{
-			name:     "fixture shape",
-			requires: []string{"peppercorn", `check-manifest; extra == "dev"`, `coverage; extra == "test"`},
-			want:     map[string]string{"peppercorn": "", "check-manifest": `; extra == "dev"`, "coverage": `; extra == "test"`},
+			// sampleproject 4.0.0: the two extras are not runtime dependencies.
+			name:         "fixture shape",
+			requires:     []string{"peppercorn", `check-manifest; extra == "dev"`, `coverage; extra == "test"`},
+			want:         map[string]string{"peppercorn": ""},
+			wantOptional: map[string]string{"check-manifest": `; extra == "dev"`, "coverage": `; extra == "test"`},
+		},
+		{
+			// urllib3 2.2.0 added h2 under an extra (verified live 2026-09-09);
+			// a python_version marker keeps a requirement at runtime.
+			name:         "extra marker versus python_version marker",
+			requires:     []string{"h2<5,>=4; extra == 'h2'", `importlib-metadata>=1.0; python_version < "3.8"`},
+			want:         map[string]string{"importlib-metadata": `>=1.0; python_version < "3.8"`},
+			wantOptional: map[string]string{"h2": "<5,>=4; extra == 'h2'"},
+		},
+		{
+			name:         "only extras",
+			requires:     []string{"watchfiles (>=0.13) ; extra == 'standard'", "'socks' == extra"},
+			want:         nil,
+			wantOptional: map[string]string{"watchfiles": "(>=0.13) ; extra == 'standard'"},
+			wantLog:      "requirement without a project name dropped",
 		},
 		{
 			name:     "same project under two markers",
 			requires: []string{`foo>=1; python_version < "3.8"`, `foo>=2; python_version >= "3.8"`},
 			want:     map[string]string{"foo": `>=1; python_version < "3.8" || >=2; python_version >= "3.8"`},
+		},
+		{
+			name:         "same project at runtime and under an extra",
+			requires:     []string{"foo>=1", `foo[fast]>=2; extra == "fast"`},
+			want:         map[string]string{"foo": ">=1"},
+			wantOptional: map[string]string{"foo": `[fast]>=2; extra == "fast"`},
 		},
 		{
 			name:     "spelling variants collapse",
@@ -88,9 +161,12 @@ func TestDependencies(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf strings.Builder
 			logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-			got := dependencies(tc.requires, logger)
+			got, optional := dependencies(tc.requires, logger)
 			if (got == nil) != (tc.want == nil) || !equalMaps(got, tc.want) {
 				t.Errorf("dependencies = %#v, want %#v", got, tc.want)
+			}
+			if (optional == nil) != (tc.wantOptional == nil) || !equalMaps(optional, tc.wantOptional) {
+				t.Errorf("optional dependencies = %#v, want %#v", optional, tc.wantOptional)
 			}
 			if tc.wantLog != "" && !strings.Contains(buf.String(), tc.wantLog) {
 				t.Errorf("log = %q, want %q", buf.String(), tc.wantLog)

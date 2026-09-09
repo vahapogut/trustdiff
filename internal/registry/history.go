@@ -59,12 +59,19 @@ func Window(list *VersionList, ref model.PackageRef, n int) []model.VersionInfo 
 
 // LatestStable returns the version a bare ref resolves to: the registry's own
 // latest when it is a stable, non-yanked version, otherwise the highest stable
-// non-yanked version by version order. nil when the package has no stable release.
+// non-yanked version by version order. When the package has no such version but
+// the registry still names a non-yanked Latest, that entry is returned even
+// though it is a prerelease: it is what an install of the bare name fetches,
+// and it is the only version a security holding placeholder has (npm leaves
+// 0.0.1-security after removing a package for malware), so the facts recorded
+// on it, the holding note above all, must reach the checks. nil when there is
+// nothing to resolve to.
 func LatestStable(list *VersionList) *model.VersionInfo {
 	if list == nil {
 		return nil
 	}
-	if latest := Find(list, list.Latest); latest != nil && !latest.Prerelease && !latest.Yanked {
+	latest := Find(list, list.Latest)
+	if latest != nil && !latest.Prerelease && !latest.Yanked {
 		return latest
 	}
 	var candidates []string
@@ -77,9 +84,11 @@ func LatestStable(list *VersionList) *model.VersionInfo {
 		candidates = append(candidates, v.Ref.Version)
 		byVersion[v.Ref.Version] = v
 	}
-	best, ok := version.LatestStable(list.Ecosystem, candidates)
-	if !ok {
-		return nil
+	if best, ok := version.LatestStable(list.Ecosystem, candidates); ok {
+		return byVersion[best]
 	}
-	return byVersion[best]
+	if latest != nil && !latest.Yanked {
+		return latest
+	}
+	return nil
 }

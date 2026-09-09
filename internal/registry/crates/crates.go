@@ -197,9 +197,13 @@ type dependenciesResponse struct {
 // Versions implements registry.Source from the crate document alone: no extra
 // request per version. Latest is max_stable_version, Created and Modified the
 // crate timestamps. Each version carries its publish time, yank state (with the
-// yank message as Deprecated), prerelease flag, publisher login, checksum and
-// provenance. Maintainers stays empty because owners cost a second request; use
-// Owners. Refs keep the name the caller passed; see crateResponse.Crate.Name.
+// yank message as Deprecated), prerelease flag, publisher (the login, or the
+// trusted publishing repository), checksum and provenance. Maintainers stays
+// empty because owners cost a second request; use Owners. The list and every
+// Ref carry the registered spelling (crate.name), not the caller's: crates.io
+// answers serde-json and Serde with serde_json's document, and a caller that
+// kept its own spelling would go on to ask OSV and deps.dev about a crate that
+// does not exist.
 func (c *Client) Versions(ctx context.Context, name string) (*registry.VersionList, error) {
 	doc, err := c.crate(ctx, name)
 	if err != nil {
@@ -207,7 +211,7 @@ func (c *Client) Versions(ctx context.Context, name string) (*registry.VersionLi
 	}
 	list := &registry.VersionList{
 		Ecosystem: model.Cargo,
-		Name:      name,
+		Name:      doc.Crate.Name,
 		Created:   doc.Crate.CreatedAt,
 		Modified:  doc.Crate.UpdatedAt,
 		Versions:  make([]model.VersionInfo, 0, len(doc.Versions)),
@@ -216,7 +220,7 @@ func (c *Client) Versions(ctx context.Context, name string) (*registry.VersionLi
 		list.Latest = *doc.Crate.MaxStableVersion
 	}
 	for i := range doc.Versions {
-		list.Versions = append(list.Versions, versionInfo(name, &doc.Versions[i]))
+		list.Versions = append(list.Versions, versionInfo(doc.Crate.Name, &doc.Versions[i]))
 	}
 	return list, nil
 }
@@ -243,11 +247,19 @@ func versionInfo(name string, v *crateVersion) model.VersionInfo {
 		// The registry validated the provider's token before recording the
 		// publish, so the evidence counts as verified by the registry. Identity
 		// is <provider>:<repository>, for example github:rust-random/rand_core.
+		identity := v.TrustpubData.Provider + ":" + v.TrustpubData.Repository
 		info.Provenance = model.Provenance{
 			Kind:     model.ProvenanceTrustedPublisher,
 			Verified: true,
-			Identity: v.TrustpubData.Provider + ":" + v.TrustpubData.Repository,
+			Identity: identity,
 		}
+		// No user account performed the publish (published_by is null), so the
+		// publishing identity the registry does record, the provider repository,
+		// is the Publisher: TD002 compares it like a login, and a release from a
+		// repository the earlier versions did not come from (a re-pointed trusted
+		// publisher after an account compromise, or a legitimate move) reads as
+		// a publisher change.
+		info.Publisher = &model.Publisher{Name: identity}
 	}
 	return info
 }
@@ -290,14 +302,16 @@ func (c *Client) Downloads(ctx context.Context, name string) (int64, error) {
 // VersionInfo implements registry.Source: the version's entry from the crate
 // document, its normal-kind dependencies from the dependencies endpoint, and
 // Scripts from an inspection of the .crate archive (build script and
-// procedural macro, see Inspect).
+// procedural macro, see inspect). The Ref of the result carries the registered
+// spelling, as Versions does.
 //
-// When the archive cannot be inspected, VersionInfo still returns the version
-// with Scripts empty, together with an error wrapping ErrNotInspected and the
-// cause (ErrArchiveTooLarge, ErrChecksumMismatch, httpcache.ErrOffline, an
-// unavailable or corrupt archive). Callers that only need the metadata keep the
-// value and report the install-script check as skipped with the error text.
-// Every other error returns a nil version.
+// When the archive cannot be inspected (ErrArchiveTooLarge, ErrChecksumMismatch,
+// httpcache.ErrOffline, an unavailable or corrupt archive), the version is still
+// returned with a nil error: Scripts stays empty and Unknown[model.FacetScripts]
+// carries the reason, an ErrNotInspected text with its cause, so that only the
+// install-script checks are skipped while the publisher, the dependencies and
+// the provenance are good for every other check. A failure of the crate document
+// or of the dependencies request returns a nil version.
 func (c *Client) VersionInfo(ctx context.Context, ref model.PackageRef) (*model.VersionInfo, error) {
 	if ref.Ecosystem != model.Cargo && ref.Ecosystem != "" {
 		return nil, fmt.Errorf("crates: %s is not a crates.io ref", ref)
@@ -319,7 +333,7 @@ func (c *Client) VersionInfo(ctx context.Context, ref model.PackageRef) (*model.
 	if entry == nil {
 		return nil, fmt.Errorf("crates: %s: %w", ref, registry.ErrNotFound)
 	}
-	info := versionInfo(ref.Name, entry)
+	info := versionInfo(doc.Crate.Name, entry)
 
 	deps, err := c.dependencies(ctx, doc.Crate.Name, ref)
 	if err != nil {
@@ -329,8 +343,9 @@ func (c *Client) VersionInfo(ctx context.Context, ref model.PackageRef) (*model.
 
 	scripts, err := c.inspect(ctx, doc.Crate.Name, ref.Version, entry.Checksum, entry.CrateSize)
 	if err != nil {
-		c.log.Warn("crate archive not inspected", "ref", ref.String(), "error", err)
-		return &info, fmt.Errorf("crates: %s: %w", ref, err)
+		c.log.Warn("crate archive not inspected", "ref", info.Ref.String(), "error", err)
+		info.SetUnknown(model.FacetScripts, fmt.Sprintf("crates: %s: %v", info.Ref, err))
+		return &info, nil
 	}
 	info.Scripts = scripts
 	return &info, nil

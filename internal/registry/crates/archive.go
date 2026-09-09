@@ -39,10 +39,11 @@ const (
 	buildScriptName = "build.rs"
 )
 
-// ErrNotInspected is wrapped by VersionInfo when the archive was not inspected
-// and Scripts is therefore unknown, not empty. The cause is wrapped as well:
+// ErrNotInspected is what inspect wraps when the archive was not inspected and
+// Scripts is therefore unknown, not empty. The cause is wrapped as well:
 // ErrArchiveTooLarge, ErrChecksumMismatch, httpcache.ErrOffline, a missing
-// archive or a corrupt one.
+// archive or a corrupt one. VersionInfo does not return it; it records the
+// text under Unknown[model.FacetScripts] and returns the version.
 var ErrNotInspected = errors.New("crate archive not inspected")
 
 // ErrArchiveTooLarge means the archive exceeds MaxArchiveBytes and was skipped;

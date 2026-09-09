@@ -82,18 +82,20 @@ func MustParseRef(s string) PackageRef {
 }
 
 // NormalizeName applies the registry's canonical spelling so that the same package
-// compares equal however it was written: PEP 503 for PyPI (lowercase, runs of "-",
-// "_" and "." become one "-"), lowercase for npm (the registry rejects mixed case
-// for new packages and treats lookups case-insensitively), unchanged otherwise.
+// compares equal however it was written. Only PyPI has one: PEP 503 (lowercase,
+// runs of "-", "_" and "." become one "-"). Every other name is returned as
+// written. npm in particular is case-sensitive: the registry rejects uppercase in
+// new names but still serves the legacy mixed-case ones as packages of their own
+// (JSONStream and jsonstream are two unrelated packages, verified 2026-09-09), and
+// OSV, deps.dev and the download counts API index them that way too, so folding
+// case would evaluate a different package. A caller that wants a case-insensitive
+// comparison (typosquat neighbors, allow-list globs) folds case at the comparison
+// site, not in the identity.
 func NormalizeName(eco Ecosystem, name string) string {
-	switch eco {
-	case PyPI:
+	if eco == PyPI {
 		return strings.ToLower(pep503Separators.ReplaceAllString(name, "-"))
-	case NPM:
-		return strings.ToLower(name)
-	default:
-		return name
 	}
+	return name
 }
 
 // String renders the ref in the form ParseRef accepts.

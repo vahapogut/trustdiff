@@ -8,7 +8,7 @@
 // requests, sampleproject and pycrypto (recorded under testdata):
 //
 //	GET https://pypi.org/pypi/<project>/json                                 project JSON, TTL 1 h
-//	GET https://pypi.org/pypi/<project>/<version>/json                       release JSON, immutable
+//	GET https://pypi.org/pypi/<project>/<version>/json                       release JSON, TTL 1 h (it carries the yanked flag)
 //	GET https://pypi.org/integrity/<project>/<version>/<filename>/provenance PEP 740, immutable; 404 means none
 //
 // Project names are normalized per PEP 503 before they enter a URL, so
@@ -52,11 +52,15 @@ const (
 	// projectTTL is the freshness of the project JSON: new releases and ownership
 	// changes show up within the hour.
 	projectTTL = httpcache.DefaultTTL
-	// releaseTTL and provenanceTTL mark data that never changes once published:
-	// the files of a release and their attestations. A yank does change the
-	// release JSON, but the yanked flag on the version list is refreshed hourly and
-	// is what TD011 reads.
-	releaseTTL    = httpcache.Forever
+	// releaseTTL is the freshness of the release JSON. Its files and digests
+	// never change, but the release-level yanked flag and yanked_reason do, and
+	// VersionInfo.Yanked, which TD011 reads, comes from this document and not
+	// from the hourly project list. requests 2.32.0 was yanked about six hours
+	// after publishing; a run inside that window must not pin "not yanked" for
+	// good. PyPI sends an ETag, so an hourly refresh is one conditional request.
+	releaseTTL = httpcache.DefaultTTL
+	// provenanceTTL marks the PEP 740 attestations of one file, which are
+	// immutable once uploaded.
 	provenanceTTL = httpcache.Forever
 
 	// Wheel and source distribution package types as the JSON API spells them.
@@ -158,10 +162,15 @@ func (c *Client) Versions(ctx context.Context, name string) (*registry.VersionLi
 // VersionInfo implements registry.Source from the release JSON plus one
 // provenance lookup. Dependencies come from info.requires_dist keyed by the
 // normalized project name, with the specifier and any environment marker kept as
-// written. Provenance queries the PEP 740 endpoint for the first wheel, or the
-// sdist when there is no wheel: a bundle yields an unverified attestation naming
-// the publisher, a 404 yields none. Any other failure of that lookup fails the
-// call, because a zero Provenance would read as a downgrade.
+// written; a requirement guarded by an extra marker, which pip installs only
+// when the extra is asked for, goes to OptionalDependencies instead. Provenance
+// queries the PEP 740 endpoint for the first wheel, or the sdist when there is
+// no wheel: a bundle yields an unverified attestation naming the publisher, a
+// 404 yields none. Any other failure of that lookup leaves the facet unknown
+// rather than failing the version: Provenance stays at its zero value and
+// Unknown[model.FacetProvenance] carries the reason, because a zero Provenance
+// read as a fact would look like a downgrade, while the dependencies, the yank
+// state and the publish time are still good for every other check.
 func (c *Client) VersionInfo(ctx context.Context, ref model.PackageRef) (*model.VersionInfo, error) {
 	if ref.Ecosystem != "" && ref.Ecosystem != model.PyPI {
 		return nil, fmt.Errorf("pypi: %s is not a PyPI package", ref)
@@ -179,11 +188,14 @@ func (c *Client) VersionInfo(ctx context.Context, ref model.PackageRef) (*model.
 		ver = ref.Version
 	}
 	info := fromFiles(name, ver, rel.URLs, rel.Info.Yanked)
-	info.Dependencies = dependencies(rel.Info.RequiresDist, c.log)
-	info.Provenance, err = c.provenance(ctx, name, ver, preferredFile(rel.URLs))
+	info.Dependencies, info.OptionalDependencies = dependencies(rel.Info.RequiresDist, c.log)
+	prov, err := c.provenance(ctx, name, ver, preferredFile(rel.URLs))
 	if err != nil {
-		return nil, err
+		c.log.Warn("provenance not gathered", "ref", info.Ref.String(), "error", err)
+		info.SetUnknown(model.FacetProvenance, err.Error())
+		return &info, nil
 	}
+	info.Provenance = prov
 	return &info, nil
 }
 

@@ -51,6 +51,12 @@ the file, which is why the list of recordings is the last section.)
   top-level maintainer is npm and the version was published by an npm employee.
   The removed 11.1.1 (2018-11-28) is still named in `time`, one day before the
   placeholder.
+- Legacy mixed-case name, JSONStream.json: dominictarr's `JSONStream` (54
+  versions, latest 1.3.5, published 2018-10-14), requested as `/JSONStream`.
+  The registry is case-sensitive for names published before it started
+  rejecting uppercase, and `jsonstream` is an unrelated package (latest 1.0.3
+  on 2026-09-09), so the client must send the spelling it was given; the test
+  server answers the lowercase path with the not-found body.
 - Download counts, downloads-isarray.json, downloads-sigstore-bundle.json and
   downloads-bulk.json: the point endpoint for a plain and a scoped name (the
   scoped one requested with its slash intact, as the download-counts
@@ -72,3 +78,4 @@ the file, which is why the list of recordings is the last section.)
 - `not-found.json`: GET https://registry.npmjs.org/trustdiff-no-such-package-9f3a1c (HTTP 404, 21 bytes, recorded 2026-09-09)
 - `downloads-not-found.json`: GET https://api.npmjs.org/downloads/point/last-week/trustdiff-no-such-package-9f3a1c (HTTP 404, 62 bytes, recorded 2026-09-09)
 - `downloads-bulk.json`: GET https://api.npmjs.org/downloads/point/last-week/isarray,event-stream,trustdiff-no-such-package-9f3a1c (HTTP 200, 237 bytes, recorded 2026-09-09)
+- `JSONStream.json`: GET https://registry.npmjs.org/JSONStream (HTTP 200, 93357 bytes, recorded 2026-09-09)

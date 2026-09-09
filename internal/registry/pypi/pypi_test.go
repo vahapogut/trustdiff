@@ -369,13 +369,16 @@ func TestVersionInfoHealthy(t *testing.T) {
 	if want := mustTime(t, "2024-11-06T22:37:09.220617Z"); !info.PublishedAt.Equal(want) {
 		t.Errorf("PublishedAt = %v, want %v", info.PublishedAt, want)
 	}
-	wantDeps := map[string]string{
-		"peppercorn":     "",
+	// The dev and test extras are not installed by a plain pip install.
+	if want := map[string]string{"peppercorn": ""}; !equalMaps(info.Dependencies, want) {
+		t.Errorf("Dependencies = %v, want %v", info.Dependencies, want)
+	}
+	wantOptional := map[string]string{
 		"check-manifest": `; extra == "dev"`,
 		"coverage":       `; extra == "test"`,
 	}
-	if !equalMaps(info.Dependencies, wantDeps) {
-		t.Errorf("Dependencies = %v, want %v", info.Dependencies, wantDeps)
+	if !equalMaps(info.OptionalDependencies, wantOptional) {
+		t.Errorf("OptionalDependencies = %v, want %v", info.OptionalDependencies, wantOptional)
 	}
 	if info.Scripts != nil {
 		t.Errorf("Scripts = %v, want none for a release with a wheel", info.Scripts)
@@ -383,6 +386,9 @@ func TestVersionInfoHealthy(t *testing.T) {
 	wantProv := model.Provenance{Kind: model.ProvenanceAttestation, Verified: false, Identity: "github:pypa/sampleproject/release.yml"}
 	if info.Provenance != wantProv {
 		t.Errorf("Provenance = %+v, want %+v", info.Provenance, wantProv)
+	}
+	if info.Unknown != nil {
+		t.Errorf("Unknown = %v, want nothing unknown", info.Unknown)
 	}
 	if want := "sha256:c23e447ea90d796d1e645c35c4b2de125040add12a845825546f91c93f391b6b"; info.Integrity != want {
 		t.Errorf("Integrity = %q, want %q", info.Integrity, want)
@@ -415,17 +421,23 @@ func TestVersionInfoYanked(t *testing.T) {
 		t.Errorf("Provenance = %+v, want %+v", info.Provenance, want)
 	}
 	// requires_dist spells charset-normalizer with a dash here and with an
-	// underscore in 2.34.2; both must map to the same key.
+	// underscore in 2.34.2; both must map to the same key. The socks and
+	// use-chardet-on-py3 extras are optional.
 	wantDeps := map[string]string{
 		"charset-normalizer": "<4,>=2",
 		"idna":               "<4,>=2.5",
 		"urllib3":            "<3,>=1.21.1",
 		"certifi":            ">=2017.4.17",
-		"pysocks":            `!=1.5.7,>=1.5.6; extra == "socks"`,
-		"chardet":            `<6,>=3.0.2; extra == "use-chardet-on-py3"`,
 	}
 	if !equalMaps(info.Dependencies, wantDeps) {
 		t.Errorf("Dependencies = %v, want %v", info.Dependencies, wantDeps)
+	}
+	wantOptional := map[string]string{
+		"pysocks": `!=1.5.7,>=1.5.6; extra == "socks"`,
+		"chardet": `<6,>=3.0.2; extra == "use-chardet-on-py3"`,
+	}
+	if !equalMaps(info.OptionalDependencies, wantOptional) {
+		t.Errorf("OptionalDependencies = %v, want %v", info.OptionalDependencies, wantOptional)
 	}
 	if want := "sha256:f2c3881dddb70d056c5bd7600a4fae312b2a300e39be6a118d30b90bd27262b5"; info.Integrity != want {
 		t.Errorf("Integrity = %q, want the wheel digest %q", info.Integrity, want)
@@ -471,7 +483,6 @@ func TestVersionInfoErrors(t *testing.T) {
 		ref     model.PackageRef
 		fail    map[string]int
 		wantErr error
-		wantAs  bool
 	}{
 		{
 			name:    "unknown version",
@@ -492,10 +503,9 @@ func TestVersionInfoErrors(t *testing.T) {
 			ref:  model.MustParseRef("npm:express@4.19.2"),
 		},
 		{
-			name:   "provenance endpoint down",
-			ref:    model.MustParseRef("pypi:sampleproject@4.0.0"),
-			fail:   map[string]int{"/integrity/sampleproject/4.0.0/sampleproject-4.0.0-py3-none-any.whl/provenance": http.StatusForbidden},
-			wantAs: true,
+			name: "release endpoint down",
+			ref:  model.MustParseRef("pypi:sampleproject@4.0.0"),
+			fail: map[string]int{"/pypi/sampleproject/4.0.0/json": http.StatusServiceUnavailable},
 		},
 	}
 	for _, tc := range tests {
@@ -512,11 +522,46 @@ func TestVersionInfoErrors(t *testing.T) {
 			if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
 				t.Errorf("error = %v, want %v", err, tc.wantErr)
 			}
-			var se *httpcache.StatusError
-			if tc.wantAs && !errors.As(err, &se) {
-				t.Errorf("error = %v, want a *httpcache.StatusError", err)
-			}
 		})
+	}
+}
+
+func TestVersionInfoProvenanceUnavailable(t *testing.T) {
+	// The integrity API failing with anything but a 404 leaves provenance
+	// unknown and keeps everything the release JSON said, so that only TD004 is
+	// skipped rather than every registry-backed check.
+	s := newServer(t)
+	path := "/integrity/sampleproject/4.0.0/sampleproject-4.0.0-py3-none-any.whl/provenance"
+	s.fail[path] = http.StatusForbidden
+	var buf strings.Builder
+	c, _ := newClient(t, s, WithLogger(slog.New(slog.NewTextHandler(&buf, nil))))
+	info, err := c.VersionInfo(context.Background(), model.MustParseRef("pypi:sampleproject@4.0.0"))
+	if err != nil {
+		t.Fatalf("VersionInfo: %v", err)
+	}
+	if info.Provenance != (model.Provenance{}) {
+		t.Errorf("Provenance = %+v, want the zero value while unknown", info.Provenance)
+	}
+	reason, ok := info.Unknown[model.FacetProvenance]
+	if !ok || !strings.Contains(reason, "403") || !strings.Contains(reason, "sampleproject 4.0.0") {
+		t.Errorf("Unknown[provenance] = %q (%v), want the failed lookup with its status", reason, ok)
+	}
+	if want := map[string]string{"peppercorn": ""}; !equalMaps(info.Dependencies, want) {
+		t.Errorf("Dependencies = %v, want %v (the rest of the version stays)", info.Dependencies, want)
+	}
+	if info.PublishedAt.IsZero() || info.Integrity == "" {
+		t.Errorf("PublishedAt %v / Integrity %q not filled", info.PublishedAt, info.Integrity)
+	}
+	if !strings.Contains(buf.String(), "provenance not gathered") {
+		t.Errorf("log = %q, want a warning about the provenance lookup", buf.String())
+	}
+	// A 404 still means none, with nothing unknown.
+	known, err := c.VersionInfo(context.Background(), model.MustParseRef("pypi:requests@2.32.0"))
+	if err != nil {
+		t.Fatalf("VersionInfo: %v", err)
+	}
+	if known.Provenance.Kind != model.ProvenanceNone || known.Unknown != nil {
+		t.Errorf("requests 2.32.0 = provenance %+v unknown %v, want none and nothing unknown", known.Provenance, known.Unknown)
 	}
 }
 
@@ -683,9 +728,11 @@ func TestCacheTTLs(t *testing.T) {
 	}
 	host := strings.TrimPrefix(s.URL, "http://")
 	want := map[string]string{
-		host + "/pypi/sampleproject/json":                                                       "1h0m0s",
-		host + "/pypi/sampleproject/4.0.0/json":                                                 "forever",
-		host + "/pypi/pycrypto/2.6.1/json":                                                      "forever",
+		host + "/pypi/sampleproject/json": "1h0m0s",
+		// The release JSON carries the yanked flag, so it is refreshed hourly;
+		// only the PEP 740 provenance of a file is immutable.
+		host + "/pypi/sampleproject/4.0.0/json":                                                 "1h0m0s",
+		host + "/pypi/pycrypto/2.6.1/json":                                                      "1h0m0s",
 		host + "/integrity/sampleproject/4.0.0/sampleproject-4.0.0-py3-none-any.whl/provenance": "forever",
 		// A 404 is cached too, capped at the default TTL by the shared client.
 		host + "/integrity/pycrypto/2.6.1/pycrypto-2.6.1.tar.gz/provenance": "1h0m0s",
@@ -707,6 +754,102 @@ func TestCacheTTLs(t *testing.T) {
 	}
 	if after := len(s.paths()); after != before {
 		t.Errorf("%d requests after warm cache, want %d", after, before)
+	}
+}
+
+// newClientAt is newClient on a given cache directory with a fixed clock, for
+// tests that watch an entry expire.
+func newClientAt(t *testing.T, s *server, dir string, now time.Time) *Client {
+	t.Helper()
+	h, err := httpcache.New(httpcache.Options{
+		UserAgent: "trustdiff-test",
+		Dir:       dir,
+		Retries:   -1,
+		Timeout:   5 * time.Second,
+		HostRPS:   map[string]float64{strings.TrimPrefix(s.URL, "http://"): 1000},
+		Now:       func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("httpcache.New: %v", err)
+	}
+	return New(h, WithBaseURL(s.URL))
+}
+
+func TestYankObservedAfterCacheExpiry(t *testing.T) {
+	// requests 2.32.0 as it looked in the hours before it was yanked: the
+	// recorded release JSON with every yanked flag cleared.
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(fixture(t, "requests-2.32.0.json"), &doc); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+	var info map[string]any
+	if err := json.Unmarshal(doc["info"], &info); err != nil {
+		t.Fatalf("decode info: %v", err)
+	}
+	info["yanked"], info["yanked_reason"] = false, nil
+	var files []map[string]any
+	if err := json.Unmarshal(doc["urls"], &files); err != nil {
+		t.Fatalf("decode urls: %v", err)
+	}
+	for _, f := range files {
+		f["yanked"], f["yanked_reason"] = false, nil
+	}
+	var err error
+	if doc["info"], err = json.Marshal(info); err != nil {
+		t.Fatalf("encode info: %v", err)
+	}
+	if doc["urls"], err = json.Marshal(files); err != nil {
+		t.Fatalf("encode urls: %v", err)
+	}
+	notYetYanked, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("encode release: %v", err)
+	}
+
+	s := newServer(t)
+	const path = "/pypi/requests/2.32.0/json"
+	s.bodies[path] = notYetYanked
+	dir := t.TempDir()
+	ref := model.MustParseRef("pypi:requests@2.32.0")
+	t0 := time.Date(2024, time.May, 20, 18, 0, 0, 0, time.UTC)
+
+	first, err := newClientAt(t, s, dir, t0).VersionInfo(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("VersionInfo before the yank: %v", err)
+	}
+	if first.Yanked {
+		t.Fatal("Yanked = true before the yank")
+	}
+
+	// The yank happens; the recorded fixture is what PyPI serves from now on.
+	s.mu.Lock()
+	delete(s.bodies, path)
+	s.mu.Unlock()
+
+	// Within the hour the cached document is served as is: no request, no yank.
+	requestsBefore := len(s.paths())
+	cached, err := newClientAt(t, s, dir, t0.Add(59*time.Minute)).VersionInfo(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("VersionInfo within the TTL: %v", err)
+	}
+	if cached.Yanked {
+		t.Error("Yanked = true from a cached document that predates the yank")
+	}
+	if n := len(s.paths()) - requestsBefore; n != 0 {
+		t.Errorf("%d requests within the TTL, want none", n)
+	}
+
+	// Once the entry expires the release is fetched again and the yank shows up.
+	requestsBefore = len(s.paths())
+	fresh, err := newClientAt(t, s, dir, t0.Add(61*time.Minute)).VersionInfo(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("VersionInfo after the TTL: %v", err)
+	}
+	if !fresh.Yanked {
+		t.Error("Yanked = false after the cached release JSON expired")
+	}
+	if n := len(s.paths()) - requestsBefore; n == 0 {
+		t.Error("no request after the TTL expired")
 	}
 }
 

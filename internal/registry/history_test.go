@@ -108,10 +108,56 @@ func TestLatestStable(t *testing.T) {
 	}
 	only := &VersionList{Ecosystem: model.NPM, Versions: []model.VersionInfo{v("1.0.0-rc.1", 0, true, false, "")}}
 	if got := LatestStable(only); got != nil {
-		t.Fatalf("LatestStable with only prereleases = %v, want nil", got)
+		t.Fatalf("LatestStable with only prereleases and no registry latest = %v, want nil", got)
 	}
 	if got := LatestStable(nil); got != nil {
 		t.Fatal("LatestStable(nil) must be nil")
+	}
+}
+
+func TestLatestStableFallsBackToTheRegistryLatest(t *testing.T) {
+	// A security holding placeholder: the only version is the prerelease the
+	// registry itself points at, so that is what a bare ref resolves to.
+	holding := &VersionList{
+		Ecosystem: model.NPM,
+		Latest:    "0.0.1-security",
+		Versions:  []model.VersionInfo{v("0.0.1-security", 0, true, false, "npm")},
+	}
+	if got := LatestStable(holding); got == nil || got.Ref.Version != "0.0.1-security" {
+		t.Fatalf("LatestStable(placeholder) = %v, want the prerelease latest", got)
+	}
+	// A prerelease-only package whose registry latest is one of several
+	// prereleases resolves to the one the registry names, not the highest.
+	preOnly := &VersionList{
+		Ecosystem: model.NPM,
+		Latest:    "2.0.0-beta.1",
+		Versions:  []model.VersionInfo{v("2.0.0-beta.1", 0, true, false, ""), v("2.0.0-beta.2", 1, true, false, "")},
+	}
+	if got := LatestStable(preOnly); got == nil || got.Ref.Version != "2.0.0-beta.1" {
+		t.Fatalf("LatestStable(prerelease-only) = %v, want the registry latest 2.0.0-beta.1", got)
+	}
+	// The fallback never resolves to a yanked version or to a latest that is
+	// not listed, and a stable version still wins over a prerelease latest.
+	yankedLatest := &VersionList{
+		Ecosystem: model.NPM,
+		Latest:    "1.0.0",
+		Versions:  []model.VersionInfo{v("1.0.0", 0, false, true, "")},
+	}
+	if got := LatestStable(yankedLatest); got != nil {
+		t.Fatalf("LatestStable(yanked latest) = %v, want nil", got)
+	}
+	missingLatest := &VersionList{
+		Ecosystem: model.NPM,
+		Latest:    "9.9.9",
+		Versions:  []model.VersionInfo{v("1.0.0-rc.1", 0, true, false, "")},
+	}
+	if got := LatestStable(missingLatest); got != nil {
+		t.Fatalf("LatestStable(unlisted latest) = %v, want nil", got)
+	}
+	mixed := sample()
+	mixed.Latest = "2.0.0-beta.1"
+	if got := LatestStable(mixed); got == nil || got.Ref.Version != "1.4.0" {
+		t.Fatalf("LatestStable(stable versions and a prerelease latest) = %v, want 1.4.0", got)
 	}
 }
 
