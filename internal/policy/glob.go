@@ -99,6 +99,20 @@ func splitPatternVersion(rest string) (name, version string) {
 	return rest[:at], rest[at+1:]
 }
 
+// matchName is the spelling a pattern and a package name are compared in. It is
+// the ecosystem's canonical form (PEP 503 for PyPI), and for npm it also folds
+// case: the registry serves JSONStream and jsonstream as two packages, but a
+// pattern is written by a person in a policy file, where a difference in case is
+// a spelling slip rather than a different package. Package identity everywhere
+// else keeps the registry's own spelling.
+func matchName(eco model.Ecosystem, name string) string {
+	name = model.NormalizeName(eco, name)
+	if eco == model.NPM {
+		return strings.ToLower(name)
+	}
+	return name
+}
+
 // MustParsePattern is ParsePattern for constants and tests; it panics on error.
 func MustParsePattern(s string) Pattern {
 	p, err := ParsePattern(s)
@@ -119,8 +133,8 @@ func (p Pattern) Match(ref model.PackageRef) bool {
 	if p.ecosystem != "" && ref.Ecosystem != p.ecosystem {
 		return false
 	}
-	name := model.NormalizeName(ref.Ecosystem, ref.Name)
-	namePattern := model.NormalizeName(ref.Ecosystem, p.name)
+	name := matchName(ref.Ecosystem, ref.Name)
+	namePattern := matchName(ref.Ecosystem, p.name)
 	if ok, err := path.Match(namePattern, name); err != nil || !ok {
 		return false
 	}

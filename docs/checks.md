@@ -319,8 +319,8 @@ A pattern such as `"cargo:*"` covers every crate when build scripts are not wort
 npm:parcel-bundler@1.2.1  BLOCK
   warn
     TD007 new-dependency-introduced: New dependency json5 (^0.5.1), not declared by 1.2.0
-      1.2.0 declared 31 runtime dependencies; 1.2.1 adds json5 (^0.5.1). A fresh install would take
-      json5@2.2.3, published on 2022-12-31T17:11:32Z (1347d19h9m31s ago); the package's first
+      1.2.0 declared 31 runtime dependencies; 1.2.1 adds json5 (^0.5.1). The newest stable version
+      is json5@2.2.3, published on 2022-12-31T17:11:32Z (1347d19h9m31s ago); the package's first
       release dates from 2012-05-27T20:32:39Z (5217d15h48m24s ago); it has 205460792 weekly
       downloads; deps.dev knows json5@2.2.3. Nothing raises the finding above the configured level
 ```
