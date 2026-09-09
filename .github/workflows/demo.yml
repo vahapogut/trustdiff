@@ -1,0 +1,96 @@
+# Records docs/demo.gif from docs/demo.tape with vhs and commits the result back.
+#
+# Manual only (workflow_dispatch): the recording talks to the live registries and
+# changes a binary file, so it runs when someone decides the demo is stale, on the
+# branch they select in the dispatch dialog, and never on push or pull request.
+#
+# Every "uses:" reference is pinned to a full commit SHA and the trailing comment names
+# the tag. Pins were resolved on 2026-09-09 with
+#   gh api repos/<owner>/<repo>/git/ref/tags/<tag> --jq '.object | "\(.type) \(.sha)"'
+# and, for vhs-action, whose tag is annotated, dereferenced with
+#   gh api repos/<owner>/<repo>/git/tags/<sha> --jq .object.sha
+# so the workflow pins the commit and not the tag object:
+#   actions/checkout v7.0.1           3d3c42e5aac5ba805825da76410c181273ba90b1
+#   actions/setup-go v7.0.0           b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+#   charmbracelet/vhs-action v2.1.1   f6d7db07a432fcd3b06772628d36a57f96d95dcf
+#                                     (tag object 60ed28058cc5ec1ac4edbf3a6380a1ea17b89c42)
+#   actions/upload-artifact v7.0.1    043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+
+name: demo
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CGO_ENABLED: "0"
+  # Use exactly the Go version the job installed, as the other workflows do.
+  GOTOOLCHAIN: local
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  record:
+    name: record docs/demo.gif
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # push the refreshed recording to the branch the run was started on
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The commit step at the end pushes with the workflow token, so the
+          # credentials stay in the checkout; every other workflow here drops them.
+          persist-credentials: true
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          # The newest 1.26 patch release, as in ci.yml; go-version-file would install
+          # the bare "go 1.26.0" directive version because GOTOOLCHAIN is local.
+          go-version: "1.26.x"
+          check-latest: true
+
+      - name: Build trustdiff and put it on PATH for the tape
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          version=$(git describe --tags --always)
+          go build -trimpath \
+            -ldflags "-s -w -X github.com/vahapogut/trustdiff/internal/version.Version=${version}" \
+            -o "$RUNNER_TEMP/bin/trustdiff" ./cmd/trustdiff
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Record docs/demo.tape
+        uses: charmbracelet/vhs-action@f6d7db07a432fcd3b06772628d36a57f96d95dcf # v2.1.1
+        with:
+          path: docs/demo.tape
+          # The tape uses Set Columns and Set Rows, which need vhs v0.12.0 or later.
+          version: v0.12.0
+
+      - name: Upload the recording as an artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: demo
+          path: docs/demo.gif
+          if-no-files-found: error
+
+      - name: Commit the recording to the branch this run started from
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          git add docs/demo.gif
+          if git diff --cached --quiet; then
+            echo "docs/demo.gif is unchanged; nothing to commit"
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit --author="Vahap Ogut <vahapogut@gmail.com>" -m "docs: refresh demo recording"
+          git push origin "HEAD:${BRANCH}"

@@ -35,7 +35,7 @@ This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). Security pr
 | `clean` | Removes `bin/` and `dist/` |
 | `tools` | Installs the pinned developer tools from `tools.mk` |
 
-Two more targets arrive with later milestones: `fixture` (recording registry responses, with the first registry client) and `demo` (the README demonstration, with the demo repository).
+`fixture` records one live registry response into a testdata directory (see Recording fixtures below) and `test-integration` runs the live tests in `internal/integration`, which need the network and skip when `TRUSTDIFF_INTEGRATION_OFFLINE` is set. The `demo` target arrives with the demo repository in 0.2.0.
 
 CI runs `lint`, `test`, `vet`, `vuln` and `sec`, plus a binary size gate and a direct dependency budget gate. Run the same targets locally before opening a pull request.
 
@@ -125,7 +125,36 @@ If you believe a change needs another module, stop and ask in an issue before wr
 
 ## Adding a check
 
-A check is one file under `internal/checks/`, one commit, and one section in `docs/checks.md`; the walkthrough for this section arrives with the check framework in v0.1.0.
+A check is one file under `internal/checks/`, its test file, one section in `docs/checks.md`, one line in the changelog and one commit. The doc comment on `Runner` in `internal/checks/runner.go` is the contract; this is the same procedure with `internal/checks/td001.go` (`young-version`) as the example.
+
+1. Pick the id and the name. Ids are `TD` plus three digits, assigned in order and never reused; the name is lower-case words joined by hyphens and is the key in the `checks` map of the policy file. Both patterns are enforced by `schema/report.v1.json`.
+2. Register the default. Add a row to `checkDefaults` in `internal/policy/policy.go`, the source of `policy.CheckNames` and `policy.DefaultCheck`; add the name to both check name lists in `schema/policy.v1.json` and copy that file over `internal/policy/policy.v1.json` (the tests fail while the two differ); add the commented line to `internal/policy/default.yaml`, which `policy init` writes and which the tests compare with the defaults. The test in `internal/policy/policy_test.go` that counts the checks needs the new count.
+3. Write `internal/checks/tdNNN.go`. It starts with a doc comment that says what the check detects, which ecosystems it applies to, when it is skipped, and lists the evidence keys one per line with their meaning; that list is copied into `docs/checks.md`, so keep the two identical. A registry field the check relies on is re-verified against a live response and the date goes into the comment. The file defines a type implementing `Check` and registers it from `init`:
+
+   ```go
+   type td001 struct{}
+
+   func init() { Register(td001{}) }
+
+   func (td001) ID() string                    { return "TD001" }
+   func (td001) Name() string                  { return "young-version" }
+   func (td001) Ecosystems() []model.Ecosystem { return nil } // nil means every ecosystem
+   ```
+
+   `Run` receives the assembled `Subject` and must:
+
+   - read what it needs from the `Subject` and never fetch on its own; a check that needs another package goes through `s.Loader`, which memoizes per run;
+   - return `Skip(id, reason)` when a source it needs is unavailable, taking the reason from `s.Skipped(SourceRegistry)` and its siblings, never an empty `Result`: an unavailable source is reported as skipped, not as a pass;
+   - build findings with `NewFinding` so the id, name, effective level, ref and location are set, with an `Evidence` map whose keys the doc comment documents; values must encode as JSON, and keys are added within a report schema version, never renamed or removed;
+   - honor `ctx`: the runner cancels it at the per-check timeout and reports the check as skipped, and a check that ignores `ctx` keeps running in the background until it returns on its own;
+   - not panic; the runner recovers a panic and reports the check as skipped with the message, but whatever the check found is lost;
+   - put the evidence into the title and the explanation in plain ASCII ("the previous 5 versions (3.3.4, 3.3.3, 3.3.2, 3.3.1, 3.3.0) were published by dominictarr; 3.3.5 was published by right9ctrl"); the test helper rejects em and en dashes.
+
+   The runner does the rest: it skips checks that do not apply to the ecosystem or whose effective level is `off`, drops findings covered by an allow entry, skips `young-version` for packages under `cooldown_exclude`, and emits the expired-allow finding for stale entries. A check does not re-implement any of that.
+4. Write `internal/checks/tdNNN_test.go` as a table over hand-built subjects with the helpers in `subject_a_test.go`: `subjectA` builds a subject with a version and its history, `withPreviousA` adds the previous release, `unavailableA` marks a source as failed, `runA` runs the check by id and asserts the shape of the result against an `outcomeA` (a number of findings, or a skip whose reason contains a fragment), `wantTextA` checks fragments of the text. Cover the finding with its evidence and text, the boundary where it does not fire, and a skip for every source the check needs. No fixtures: a check never talks to a registry.
+5. Document it in `docs/checks.md` with a section headed `## TDNNN name` (the anchor `#tdNNN-name` becomes the rule's `helpUri` in SARIF): what it detects, why it matters with a real incident and a link to a source, the evidence table, an example as the human writer prints it, how to fix, how to allow. Add the row to the checks table in `README.md`.
+6. Add a line under `Unreleased` in `CHANGELOG.md`: ``TDNNN `name` (default level): one sentence on what it reports``.
+7. Commit the whole change as `feat(checks): TDNNN name`.
 
 ## Adding a lockfile parser
 

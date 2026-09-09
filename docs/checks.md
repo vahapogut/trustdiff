@@ -1,0 +1,588 @@
+# Checks
+
+trustdiff evaluates a package version with the checks listed here. Every check has a stable id (`TD001`) that reports, SARIF rules and allow entries refer to, and a short name (`young-version`) that the policy file uses. Ids never change meaning; a check that is retired keeps its id.
+
+Levels come from the policy. The defaults quoted in each section are what a run without a `.trustdiff.yaml` uses; every one of them can be set to `block`, `warn`, `info` or `off`, per ecosystem if needed, and `--fail-on` decides which levels turn into exit code 1. See the commented file that `trustdiff policy init` writes.
+
+A check never passes for lack of data. When a registry, OSV, deps.dev or the download counts could not be fetched, or when the registry does not record what the check needs, the check reports `skipped` with the reason, the human report lists it under the card, and the JSON report lists it in `skipped`. A version with no evaluated check gets the verdict `skipped`, not `ok`.
+
+Evidence keys are part of the JSON report (`schema/report.v1.json`, schema `trustdiff.report/1`). Within a schema version keys are added, never renamed or removed. The example under each check is the human report as `trustdiff check` prints it, captured against the live registries on 2026-09-09 unless the section says otherwise.
+
+Ecosystems in 0.1.0: npm, PyPI and crates.io. `deno` and `jsr` refs arrive in 0.4.0.
+
+## TD000 expired-allow
+
+**Detects.** An `allow` entry in the policy whose `expires` date has passed and whose `package` pattern matches the evaluated package. It is not a check in the registry sense: the runner emits it before the checks run, always at level `warn`, and it cannot be turned off. The check the entry was written for is evaluated again as if the entry did not exist.
+
+**Why it matters.** Exceptions are the place where a gate rots. An entry written for one reviewed release keeps applying to every later one unless it expires, and an expired entry that stops applying silently is just as bad, because the next finding it was hiding looks like noise. The warning makes the expiry visible in the report until someone renews or removes the entry.
+
+**Evidence.**
+
+| Key | Meaning |
+|---|---|
+| `check` | the policy name of the check the entry covered |
+| `package` | the entry's package pattern |
+| `reason` | the entry's reason |
+| `expires` | the expiry date, `yyyy-mm-dd` |
+
+**Example.** A policy that allowed `install-script-present` for `cargo:serde` until 2026-06-01:
+
+```
+cargo:serde@1.0.210  WARN
+  warn
+    TD000 expired-allow: allow entry for install-script-present on cargo:serde expired on 2026-06-01
+      the policy allowed install-script-present for cargo:serde until 2026-06-01 (reason: build
+      script reviewed by @vahap 2025-12-01); today is 2026-09-09, so the exception no longer applies
+      and the check is reported again until the entry is renewed or removed
+    TD006 install-script-present: Runs code at install time: build.rs
+      1.0.210 ships a build script (build.rs), which cargo compiles and runs before building the
+      crate
+```
+
+**Fix.** Review the package again, then either move `expires` forward or delete the entry. An entry without `expires` never expires; that is allowed, but the policy file comments recommend a date.
+
+**Allow.** Not applicable; the finding is about an allow entry.
+
+## TD001 young-version
+
+**Detects.** A version published less than `cooldown` ago (default `3d`, `7d` for crates.io in the default policy). The publish time comes from the registry; when the registry lists the version without a time, the deps.dev `publishedAt` of the same version is used and the explanation says so. Skipped when the registry was unavailable or no source knows the publish time. Applies to every ecosystem.
+
+**Why it matters.** Compromised releases are found fast and removed fast, so a short waiting period avoids most of them without knowing anything about the attack. The two malicious axios versions of 31 March 2026 (`1.14.1` and `0.30.4`, published through the lead maintainer's stolen credentials) were on the registry for about three hours before removal ([axios post mortem](https://github.com/axios/axios/issues/10636), [Datadog Security Labs](https://securitylabs.datadoghq.com/articles/axios-npm-supply-chain-compromise/)). The malicious nx versions of 26 August 2025 were live for a little over five hours ([Nx post mortem](https://nx.dev/blog/s1ngularity-postmortem)). The Shai-Hulud worm of September 2025 spread through hundreds of packages, and GitHub removed more than 500 of them within days ([GitHub, 22 September 2025](https://github.blog/security/supply-chain-security/our-plan-for-a-more-secure-npm-supply-chain/)). A three day cooldown skips all of these. The package managers now ship the same idea (npm `min-release-age`, pnpm `minimumReleaseAge`, uv `exclude-newer`, pip `--uploaded-prior-to`); this check reports it for the version in front of you, whatever the manager is configured to do.
+
+**Evidence.**
+
+| Key | Meaning |
+|---|---|
+| `published_at` | RFC 3339 publish time of the version, in UTC |
+| `published_at_source` | where the time came from: `registry` or `deps.dev` |
+| `age` | time since the publish in the policy spelling (`6h`, `2d12h`); negative when the publish time is after the run clock |
+| `age_seconds` | the same as a whole number of seconds |
+| `cooldown` | the effective cooldown for the ecosystem, policy spelling (`3d`) |
+| `cooldown_seconds` | the same as a whole number of seconds |
+| `cooldown_ends_at` | RFC 3339 time at which the version leaves the cooldown |
+
+**Example.** `express@4.19.2` evaluated one day after its release, with the run clock set to `TRUSTDIFF_NOW=2024-03-26T12:00:00Z`:
+
+```
+npm:express@4.19.2  WARN
+  warn
+    TD001 young-version: Published 21h29m23s ago, inside the 3d cooldown
+      4.19.2 was published on 2024-03-25T14:30:36Z, 21h29m23s before this run; the cooldown is 3d,
+      so the version has been public for too short a time for problems to be noticed and reported,
+      and it leaves the cooldown on 2024-03-28T14:30:36Z
+```
+
+**Fix.** Wait, or pin the previous version until `cooldown_ends_at`. A security fix that cannot wait is what the allow entry below is for; write the reason down.
+
+**Allow.** Your own packages belong in `cooldown_exclude`, which skips the check for them:
+
+```yaml
+cooldown_exclude:
+  - "npm:@myorg/*"
+```
+
+A one-off exception is an allow entry with an expiry:
+
+```yaml
+allow:
+  - check: young-version
+    package: "npm:express@4.19.2"
+    reason: "fixes CVE-2024-29041, reviewed the diff against 4.19.1"
+    expires: 2024-04-01
+```
+
+`--cooldown 12h` overrides the policy for one run, and `young-version: off` turns the check off.
+
+## TD002 publisher-changed
+
+**Detects.** A version whose publishing account is not among the accounts that published the previous N releases, N being `previous_versions_window` (default 5). The window is built from the registry's version list by publish time, without prereleases and yanked versions, so a backport is compared with the releases that came before it, not with the highest version numbers. Account names are compared case-insensitively. Skipped when the version or its predecessors carry no publisher, or when there is no earlier release. Applies to npm (`_npmUser` per version) and crates.io (`published_by` per version); PyPI records no per-version publisher and gets this check through the baseline in 0.4.0.
+
+**Why it matters.** The event-stream backdoor of 2018 started with a change of hands. The author had stopped maintaining the package, gave publish rights to a volunteer, and the volunteer's release `3.3.6` pulled in the malicious `flatmap-stream` that stole Copay wallets ([npm, 26 November 2018](https://blog.npmjs.org/post/180565383195/details-about-the-event-stream-incident), [Snyk post mortem](https://snyk.io/blog/a-post-mortem-of-the-malicious-event-stream-backdoor/)). The registry still shows the handover: `3.3.5` is the first release by `right9ctrl` after years of releases by `dominictarr`, and that is the example below. The check does not fire when the legitimate account itself is used with a stolen token, as with axios in 2026 and ua-parser-js in 2021; TD004, TD005 and TD007 are there for that case.
+
+**Evidence.**
+
+| Key | Meaning |
+|---|---|
+| `publisher` | account that published the evaluated version |
+| `previous_publishers` | distinct accounts of the previous releases, newest first |
+| `previous_versions` | the previous releases that were compared, newest first |
+| `previous_releases` | one object per previous release: `version`, `publisher` (empty when not recorded) and `published_at` (RFC 3339) |
+| `window` | the configured lookback (`previous_versions_window`) |
+
+**Example.** The 2018 handover, as the registry records it today:
+
+```
+npm:event-stream@3.3.5  BLOCK
+  block
+    TD002 publisher-changed: Published by right9ctrl, which published none of the previous 5 versions
+      the previous 5 versions (3.3.4, 3.3.3, 3.3.2, 3.3.1, 3.3.0) were published by dominictarr;
+      3.3.5 was published by right9ctrl, an account that published none of them
+```
+
+**Fix.** Find out who the new account is before installing: the package's repository, its release notes, the maintainer's own announcements. A move to a bot or to a trusted publishing account is normal and shows up once; note it in an allow entry so the next release is compared with a window that already contains the new account.
+
+**Allow.**
+
+```yaml
+allow:
+  - check: publisher-changed
+    package: "npm:event-stream@3.3.5"
+    reason: "maintenance handed to right9ctrl, announced in the repository"
+    expires: 2019-03-01
+```
+
+A larger `previous_versions_window` tolerates packages with several rotating publishers.
+
+## TD003 maintainers-changed
+
+**Detects.** A version whose maintainer set differs from the set recorded at the previous version, listing who was added and who was removed. Names are compared case-insensitively. Skipped without a previous version and when either version records no maintainers at all, since an empty set is more likely missing data than a package that lost every maintainer. Applies to every ecosystem, but only npm records the maintainer set per version (`versions[<v>].maintainers` in the packument). crates.io owners and PyPI roles are current state only, so for those two ecosystems the check reports `skipped: baseline required (arrives in M4)` until 0.4.0, when `trustdiff baseline` gives it a previous set to compare with.
+
+**Why it matters.** Before a new account publishes, it is usually added as a maintainer. In the event-stream case `right9ctrl` appears in the maintainer list at `3.3.5`, next to the original author, one release before the backdoor ([npm, 26 November 2018](https://blog.npmjs.org/post/180565383195/details-about-the-event-stream-incident)). A removed maintainer matters too: it is what a takeover looks like once the attacker cleans up.
+
+**Evidence.**
+
+| Key | Meaning |
+|---|---|
+| `previous_version` | the previous release the set was compared with |
+| `previous_maintainers` | its maintainer names, sorted |
+| `maintainers` | the evaluated version's maintainer names, sorted |
+| `added` | names present now and absent before, sorted |
+| `removed` | names present before and absent now, sorted |
+
+**Example.**
+
+```
+npm:event-stream@3.3.5  BLOCK
+  warn
+    TD003 maintainers-changed: Maintainers changed since 3.3.4: added right9ctrl
+      3.3.4 listed dominictarr as maintainer; 3.3.5 lists dominictarr and right9ctrl: added
+      right9ctrl
+```
+
+**Fix.** Same as TD002: confirm the change with the project. When the change is a maintainer leaving, check that the remaining ones are the people you expect.
+
+**Allow.**
+
+```yaml
+allow:
+  - check: maintainers-changed
+    package: "npm:event-stream"
+    reason: "right9ctrl joined as maintainer, confirmed with the author"
+    expires: 2019-03-01
+```
+
+## TD004 trust-downgrade
+
+**Detects.** A version whose publishing evidence is weaker than the previous version's: a verified build attestation or trusted publishing record before, a bare registry signature or nothing now. The strength order is none, signature, attestation, trusted publisher, and a verified record ranks above an unverified one of the same kind. When the registry stores an attestation without verifying it, a deps.dev verification of the same version counts, so a registry that only stores the bundle does not produce a downgrade by itself. Skipped without a previous version. Applies to npm (`dist.attestations`, `dist.signatures`), PyPI (PEP 740 provenance) and crates.io (`trustpub_data`). This is the pnpm `trustPolicy: no-downgrade` idea applied to every ecosystem.
+
+**Why it matters.** A stolen token cannot produce provenance. When the nx publishing token was stolen through a GitHub Actions injection on 26 August 2025, the attacker published eight malicious nx versions from outside the release workflow, and the Nx team's post mortem notes that "the malicious packages lacked NPM provenance signing" while provenance "doesn't block unsigned packages from being installed" ([Nx post mortem](https://nx.dev/blog/s1ngularity-postmortem), [GHSA-cxm3-wv7p-598c](https://github.com/nrwl/nx/security/advisories/GHSA-cxm3-wv7p-598c)). A package that has shipped provenance for years and suddenly ships none is exactly this pattern.
+
+**Evidence.**
+
+| Key | Meaning |
+|---|---|
+| `previous_version` | the previous release compared with |
+| `previous_kind` | its provenance kind: `none`, `signature`, `attestation` or `trusted-publisher` |
+| `previous_verified` | whether that evidence was verified |
+| `previous_identity` | the workflow or repository it names, when known |
+| `kind` | the evaluated version's provenance kind |
+| `verified` | whether its evidence was verified |
+| `verified_by` | `registry` or `deps.dev`, when verified |
+| `identity` | the workflow or repository it names, when known |
+
+**Example.** A legitimate case that shows the shape: `rand_core@0.4.3` is a backport to an old release line, published with a token on 2026-09-02, while the line's newest release `0.10.1` came through trusted publishing:
+
+```
+cargo:rand_core@0.4.3  BLOCK
+  block
+    TD004 trust-downgrade: Provenance weaker than 0.10.1: a verified trusted publishing record before, no provenance evidence now
+      0.10.1 was published with a verified trusted publishing record for
+      github:rust-random/rand_core; 0.4.3 was published with no provenance evidence, so the evidence
+      tying this release to its source is weaker than for the previous one
+```
+
+**Fix.** Ask why the evidence disappeared. A backport from a maintainer's machine, a migration between CI systems and a broken release workflow are the common benign answers, and each of them is visible in the repository. If none applies, treat the release as unverified until the maintainer confirms it.
+
+**Allow.**
+
+```yaml
+allow:
+  - check: trust-downgrade
+    package: "cargo:rand_core@0.4.3"
+    reason: "backport to the 0.4 line published by hand, matches the 0.4 branch"
+    expires: 2026-12-01
+```
+
+## TD005 install-script-introduced
+
+**Detects.** An npm version that declares an install-time script (`preinstall`, `install`, `postinstall` or `prepare`) while the previous version declared none. npm runs the first three on every install of the package; `prepare` runs on a local install of the package's own checkout and on git dependencies. Skipped without a previous version. npm only: crates.io and PyPI have no per-version script list to compare, and TD006 covers their install-time code.
+
+**Why it matters.** Nearly every npm compromise of the last years delivered its payload through a script that the previous release did not have. The hijacked ua-parser-js releases `0.7.29`, `0.8.0` and `1.0.0` of 22 October 2021 added a `preinstall` hook that ran a cryptominer and a credential stealer ([issue #538](https://github.com/faisalman/ua-parser-js/issues/538)). The Shai-Hulud worm of September 2025 worked "by injecting malicious post-install scripts into popular JavaScript packages" ([GitHub, 22 September 2025](https://github.blog/security/supply-chain-security/our-plan-for-a-more-secure-npm-supply-chain/)). The `plain-crypto-js` package that the compromised axios pulled in on 31 March 2026 downloaded its remote access trojan from a `postinstall` hook ([Datadog Security Labs](https://securitylabs.datadoghq.com/articles/axios-npm-supply-chain-compromise/)). In every case the script was new.
+
+**Evidence.**
+
+| Key | Meaning |
+|---|---|
+| `previous_version` | the previous release, which declared no install-time script |
+| `script_names` | the install-time scripts of the evaluated version, in lifecycle order (`preinstall`, `install`, `postinstall`, `prepare`) |
+| `scripts` | the scripts by name, with the command each one runs |
+
+**Example.** A harmless one that the registry still carries: `parcel-bundler@1.2.1` (December 2017) added a `postinstall` banner where `1.2.0` had no install script:
+
+```
+npm:parcel-bundler@1.2.1  BLOCK
+  block
+    TD005 install-script-introduced: Install script introduced: postinstall (1.2.0 had none)
+      1.2.0 declared no install-time script; 1.2.1 declares postinstall (node -e
+      "console.log('\u001b[35m\u001b[1mLove Parcel? You can now donate to our open
+      collective:\u001b[22m\u001b[39m\n >
+      \u001b[34mhttps://opencollective.com/parcel/donate\u001b[0m')"), which npm runs with the
+      installing user's permissions on every install of the package
+```
+
+**Fix.** Read the script. `scripts` in the evidence holds the exact command; an `npm pack` of the version shows the files it runs. Install with `--ignore-scripts` (or the manager's `allowScripts` list) if the package works without it.
+
+**Allow.**
+
+```yaml
+allow:
+  - check: install-script-introduced
+    package: "npm:parcel-bundler@1.2.1"
+    reason: "postinstall only prints a donation banner, read the command"
+    expires: 2018-06-01
+```
+
+## TD006 install-script-present
+
+**Detects.** A version that runs code at install time at all, whether or not the previous version did. What that means depends on the ecosystem: npm scripts (`preinstall`, `install`, `postinstall`, `prepare`); a crates.io crate with a `build.rs`, which cargo compiles and runs before building the crate, or with `[lib] proc-macro = true`, whose code runs inside the compiler of every dependent (both found by downloading the `.crate` archive and checked against the registry checksum); a PyPI release published as a source distribution only, which pip must build by running the project's `setup.py` because no wheel exists. Skipped when the version details are unavailable. Applies to every ecosystem.
+
+**Why it matters.** TD005 catches a script appearing; this check tells you that a package runs code on your machine before you ever import it, which is the part of the install worth reviewing even for a package that has always done it. The payloads of ua-parser-js (2021), Shai-Hulud (2025) and plain-crypto-js (2026) cited under TD005 all ran from install hooks, and blocking install scripts by default is now what npm 12, pnpm 11, Bun and Yarn do.
+
+**Evidence.**
+
+| Key | Meaning |
+|---|---|
+| `script_names` | the install-time scripts or markers of the version, in lifecycle order for npm (`preinstall`, `install`, `postinstall`, `prepare`), alphabetically otherwise |
+| `scripts` | the same by name, with the command each one runs when the registry records one (empty for `build.rs`, `proc-macro`, `setup.py`) |
+
+**Example.**
+
+```
+cargo:serde@1.0.229  WARN
+  warn
+    TD006 install-script-present: Runs code at install time: build.rs
+      1.0.229 ships a build script (build.rs), which cargo compiles and runs before building the
+      crate
+```
+
+**Fix.** Nothing to fix in the usual case; the finding is a warning that says where to look. Keep install scripts off by default in the package manager and allow them per package.
+
+**Allow.** This is the check most projects write allow entries for. The default policy ships one as an example:
+
+```yaml
+allow:
+  - check: install-script-present
+    package: "npm:esbuild"
+    reason: "downloads a native binary; reviewed by @vahap 2026-09-08"
+    expires: 2027-03-01
+```
+
+A pattern such as `"cargo:*"` covers every crate when build scripts are not worth a warning in your project.
+
+## TD007 new-dependency-introduced
+
+**Detects.** Every runtime dependency the evaluated version declares and the previous version did not, one finding per new dependency so that a reviewed one can be allowed on its own. Each new dependency is looked up through the registry and deps.dev, and the finding is raised to `block` when the dependency is young (the version a fresh install would take, or the package's first release, is less than 7 days old), has low usage (weekly downloads below `low-usage.min_weekly_downloads`; no escalation on PyPI, which has no counts) or is unknown to deps.dev. A lookup error never escalates; the explanation says what could not be checked. Skipped without a previous version. Applies to every ecosystem.
+
+**Why it matters.** This is the pattern of the axios compromise of 31 March 2026: `axios@1.14.1` and `0.30.4` differed from the previous releases by one new dependency, `plain-crypto-js@4.2.1`, a package created for the attack that carried the remote access trojan ([axios post mortem](https://github.com/axios/axios/issues/10636)). It is also the event-stream pattern of 2018: `event-stream@3.3.6` added `flatmap-stream`, a package with no history and no users ([Snyk post mortem](https://snyk.io/blog/a-post-mortem-of-the-malicious-event-stream-backdoor/)). In both cases the new dependency was days old and had almost no downloads, which is what the escalation looks for.
+
+**Evidence.** Present in every finding unless marked.
+
+| Key | Meaning |
+|---|---|
+| `previous_version` | the previous release compared with |
+| `dependency` | the new dependency's name |
+| `requirement` | the version requirement the evaluated version declares |
+| `new_dependencies` | every dependency the evaluated version added, sorted |
+| `escalated` | whether the level was raised to block |
+| `escalation_reasons` | `young`, `low-usage` and `unknown-to-deps.dev`, those that apply |
+| `resolved_version` | the version a fresh install would take (when resolved) |
+| `published_at` | its RFC 3339 publish time (when known) |
+| `first_published_at` | RFC 3339 time of the package's first release (when known) |
+| `weekly_downloads` | the dependency's weekly downloads (when the registry has them) |
+| `min_weekly_downloads` | the low-usage threshold applied (when one is configured) |
+| `deps_dev_found` | whether deps.dev knows the resolved version (when looked up) |
+| `inspection_errors` | loader errors, one sentence each (when any) |
+
+**Example.** A benign one; the explanation shows the facts the escalation is decided on:
+
+```
+npm:parcel-bundler@1.2.1  BLOCK
+  warn
+    TD007 new-dependency-introduced: New dependency json5 (^0.5.1), not declared by 1.2.0
+      1.2.0 declared 31 runtime dependencies; 1.2.1 adds json5 (^0.5.1). A fresh install would take
+      json5@2.2.3, published on 2022-12-31T17:11:32Z (1347d19h9m31s ago); the package's first
+      release dates from 2012-05-27T20:32:39Z (5217d15h48m24s ago); it has 205460792 weekly
+      downloads; deps.dev knows json5@2.2.3. Nothing raises the finding above the configured level
+```
+
+An escalated finding ends with "The finding is raised to block because the dependency is young and has low usage" and the title carries the reasons.
+
+**Fix.** Look at the new dependency the way you would look at a new direct dependency: run `trustdiff check` on it. A young package with a handful of downloads pulled in by a popular one is the signature of the two incidents above; do not install until the maintainer has explained it.
+
+**Allow.**
+
+```yaml
+allow:
+  - check: new-dependency-introduced
+    package: "npm:parcel-bundler@1.2.1"
+    reason: "json5 is a well known parser, added for the .parcelrc format"
+    expires: 2018-06-01
+```
+
+## TD008 typosquat-suspect
+
+**Detects.** A package whose name looks like a misspelling of a popular package in the same ecosystem. The name is compared with the ecosystem's popular list (an embedded snapshot of about 14 900 npm names, 14 900 PyPI names and 5 000 crates, fetched on 2026-09-09 from the sources named in `internal/typosquat/data`, or a refreshed copy under the cache directory when it is less than 30 days old) using edit distance with a length-based threshold, adjacent transpositions, separator swaps, npm scope confusion, `py`, `python`, `js` and `node` affixes, digit and letter confusables and common-word insertions. A name that is itself popular is never a suspect. As a cross-check, deps.dev's similarly named packages are consulted; a neighbor that is much more popular is added to the evidence and reported on its own when no rule matched. A deps.dev error means no cross-check, never a skip. Skipped only for an ecosystem without a popular list. Applies to every ecosystem.
+
+**Why it matters.** In July 2017 a user published about forty packages under names one character away from popular ones; `crossenv`, the look-alike of `cross-env`, sent the environment variables of every machine that installed it to the attacker's server and went unnoticed for two weeks ([npm, 1 August 2017](https://blog.npmjs.org/post/163723642530/crossenv-malware-on-the-npm-registry)). The `plain-crypto-js` of the 2026 axios compromise borrowed the name of `crypto-js` for the same reason. Note the limits: the rules match `crossenv`, but a made-up prefix such as `plain-` is not in the common-word list, so `plain-crypto-js` was caught by TD009 and TD012 rather than by this check.
+
+**Evidence.**
+
+| Key | Meaning |
+|---|---|
+| `candidate` | the evaluated name in canonical spelling |
+| `neighbor` | the popular name it resembles (when a rule matched) |
+| `rule` | the rule that matched: `separator-swap`, `scope-confusion`, `language-affix`, `confusable-characters`, `common-word`, `transposition` or `edit-distance` (when a rule matched) |
+| `distance` | the Damerau-Levenshtein distance to the neighbor (when a rule matched) |
+| `list_fetched` | the date of the popular list consulted, `yyyy-mm-dd` |
+| `deps_dev_neighbor` | a similarly named, much more popular package deps.dev returned (when the cross-check found one) |
+
+**Example.** The 2017 package, which npm has since removed (the version details are therefore skipped; the name check needs only the name):
+
+```
+npm:crossenv@6.1.1  BLOCK
+  block
+    TD008 typosquat-suspect: "crossenv" resembles the popular npm package "cross-env"
+      "crossenv" is not among the 14900 most popular npm packages but differs from "cross-env" only
+      in separators (rule separator-swap, edit distance 1); deps.dev also lists the much more
+      popular "cross-env" as a similarly named package
+```
+
+**Fix.** Check that you meant this package and not its neighbor. If you did, the finding is a false positive of the rules, which is what the allow entry is for.
+
+**Allow.**
+
+```yaml
+allow:
+  - check: typosquat-suspect
+    package: "npm:crossenv"
+    reason: "the fork is intended; it is not cross-env"
+```
+
+## TD009 malicious-advisory
+
+**Detects.** A version that OSV lists under a malicious-package advisory (an id starting with `MAL-`, imported from the OpenSSF `malicious-packages` repository) or that deps.dev flags with a `MALICIOUS` finding. The two sources are consulted independently: the check is skipped only when both were unavailable; when one of them was, it runs on the other and the explanation says which source could not be consulted. Applies to every ecosystem and blocks by default.
+
+**Why it matters.** Once a compromise is public, the advisory is the cheapest signal there is, and it keeps protecting the people who install an old lockfile years later. Both packages of the event-stream incident carry advisories today, as does `plain-crypto-js` from the 2026 axios compromise ([MAL-2026-2306](https://osv.dev/vulnerability/MAL-2026-2306)). The limit is latency: an advisory exists only after someone found the package, which for axios took hours and for event-stream took weeks. The history-relative checks above are for the time in between; trustdiff does not try to beat commercial malware feeds at their own game.
+
+**Evidence.**
+
+| Key | Meaning |
+|---|---|
+| `advisories` | every malicious OSV advisory, sorted by id, as `{id, url, summary, aliases}` (`url`, `summary` and `aliases` are present when the advisory carries them) |
+| `deps_dev_findings` | every deps.dev `MALICIOUS` finding as `{type, risk, detail}` (`risk` and `detail` are present when deps.dev returned them) |
+| `sources` | the sources that answered, in this order: `osv`, `deps.dev` |
+| `unavailable` | the source that could not be consulted, when one was: `osv` or `deps.dev` |
+
+**Example.** The package behind the 2018 event-stream backdoor:
+
+```
+npm:flatmap-stream@0.1.1  BLOCK
+  block
+    TD009 malicious-advisory: malicious-package advisory MAL-2025-20690
+      OSV lists 1 malicious-package advisory for npm:flatmap-stream@0.1.1: MAL-2025-20690 (Malicious
+      code in flatmap-stream (npm)) at https://osv.dev/vulnerability/MAL-2025-20690; deps.dev flags
+      npm:flatmap-stream@0.1.1 as malicious: MALICIOUS finding (RISK_CRITICAL)
+```
+
+**Fix.** Do not install it. If it is already installed, treat the machine and every credential on it as exposed; the advisory's references say what the payload did.
+
+**Allow.** Possible, but there is no good reason for it. A wrong advisory should be reported upstream at the `malicious-packages` repository.
+
+## TD010 vulnerability
+
+**Detects.** Every OSV advisory that affects the version and whose severity is at or above `vulnerability.min_severity` (default `high`), one finding per advisory, most severe first. The severity is the advisory's own label when it has one (GHSA advisories carry LOW, MODERATE, HIGH or CRITICAL); otherwise the CVSS v3.0 or v3.1 base score is computed from the vector. Malicious-package advisories belong to TD009 and are left out. Skipped when OSV was unavailable; deps.dev `VULNERABLE` findings are not used as a substitute because they miss advisories OSV has. Applies to every ecosystem.
+
+Limitation in 0.1.0: an advisory whose only severity is a CVSS v4 vector reports `unknown`, and an unknown severity counts as `medium`. It is therefore reported under a `low` or `medium` threshold and passes the default `high` one. CVSS v4 scoring is on the list in `docs/PLAN.md` section 13.
+
+**Why it matters.** A known vulnerability in a version you are about to install is the oldest supply-chain problem and still the most common. The prototype pollution in lodash below 4.17.12 ([GHSA-jf85-cpcp-j695](https://osv.dev/vulnerability/GHSA-jf85-cpcp-j695), CVE-2019-10744, critical) sat in one of the most depended-on npm packages; a threshold on severity keeps the check useful in projects with many transitive dependencies.
+
+**Evidence.** One finding per advisory.
+
+| Key | Meaning |
+|---|---|
+| `advisory_id` | the OSV id |
+| `aliases` | other identifiers of the same advisory (CVE ids), when any |
+| `severity` | the severity as reported: `unknown`, `low`, `medium`, `high` or `critical` |
+| `effective_severity` | the severity compared with the threshold (`unknown` counts as `medium`) |
+| `score` | the CVSS base score, when the advisory carries one |
+| `summary` | the advisory's one-line summary, when any |
+| `url` | the advisory page, when known |
+| `min_severity` | the threshold applied |
+
+**Example.** The advisory GitHub filed for the 2021 ua-parser-js hijack:
+
+```
+npm:ua-parser-js@0.7.29  BLOCK
+  block
+    TD010 vulnerability: GHSA-pjwm-rvh2-c87w: high severity vulnerability (CVSS 8.8)
+      OSV advisory GHSA-pjwm-rvh2-c87w (CVE-2021-4229) affects npm:ua-parser-js@0.7.29 with severity
+      high (CVSS 8.8): Embedded malware in ua-parser-js, see
+      https://osv.dev/vulnerability/GHSA-pjwm-rvh2-c87w; the policy reports vulnerabilities of
+      severity high or above (vulnerability.min_severity)
+```
+
+**Fix.** Upgrade to a version outside the affected range; the advisory page lists it.
+
+**Allow.** Lower or raise the threshold in the policy (`vulnerability: { level: block, min_severity: critical }`), or allow a reviewed advisory for one package:
+
+```yaml
+allow:
+  - check: vulnerability
+    package: "npm:lodash@4.17.11"
+    reason: "the vulnerable function is not reachable from this project"
+    expires: 2026-12-31
+```
+
+An allow entry covers every finding of the check for that package, so keep the pattern narrow.
+
+## TD011 deprecated-or-yanked
+
+**Detects.** A version the registry yanked or deprecated, a package deprecated or archived as a whole, or a version deps.dev marks deprecated. npm carries a per-version `deprecated` message, PyPI a per-release `yanked` flag with a reason, crates.io a per-version `yanked` flag with a `yank_message`. The registry and deps.dev are consulted independently like TD009. Applies to every ecosystem and warns by default.
+
+**Why it matters.** A yank is the registry's way of saying that a version should not be installed fresh: a broken build, a wrong dependency, a leaked secret or a compromise. A deprecation of the whole package says nobody maintains it, which is how event-stream got handed to a stranger in 2018 ([npm, 26 November 2018](https://blog.npmjs.org/post/180565383195/details-about-the-event-stream-incident)). Either way the version you are looking at is one its own maintainers moved away from.
+
+**Evidence.**
+
+| Key | Meaning |
+|---|---|
+| `signals` | which signals fired, in this order: `yanked`, `version-deprecated`, `package-deprecated`, `deps-dev-deprecated` |
+| `yanked` | `true` when the registry yanked the version |
+| `version_deprecated` | the registry's deprecation message for the version, when set |
+| `package_deprecated` | the registry's deprecation or archival message for the package, when set |
+| `deps_dev_deprecated` | `true` when deps.dev marks the version deprecated |
+| `deps_dev_reason` | the reason deps.dev gives, when it gives one |
+| `unavailable` | the source that could not be consulted, when one was: `registry` or `deps.dev` |
+
+**Example.**
+
+```
+npm:request@2.88.2  WARN
+  warn
+    TD011 deprecated-or-yanked: 2.88.2 is deprecated
+      the registry deprecated version 2.88.2: "request has been deprecated, see
+      https://github.com/request/request/issues/3142"; the registry deprecated the whole package
+      request: "request has been deprecated, see https://github.com/request/request/issues/3142";
+      deps.dev marks the version deprecated: "request has been deprecated, see
+      https://github.com/request/request/issues/3142"
+```
+
+**Fix.** Move to the version or package the deprecation message points at. A yanked version that is already in your lockfile keeps installing; replace it before it disappears.
+
+**Allow.**
+
+```yaml
+allow:
+  - check: deprecated-or-yanked
+    package: "npm:request"
+    reason: "replacement scheduled for Q1, tracked in issue 42"
+    expires: 2027-03-31
+```
+
+## TD012 low-usage
+
+**Detects.** A package few people install: weekly downloads below `low-usage.min_weekly_downloads` (default 500). npm gives a weekly figure; crates.io gives 90-day recent downloads, reduced to a weekly figure; PyPI publishes no counts, so there the check uses a deps.dev `LOW_USAGE` finding when there is one and is skipped otherwise. Applies to every ecosystem and is `info` by default.
+
+**Why it matters.** Low usage is not a problem by itself, but it is the common property of the packages that carried the payload in the incidents above: `flatmap-stream` had no users besides event-stream when it was added in 2018, and `plain-crypto-js` had none besides axios when it was added in 2026. It is also what makes a typosquat a typosquat. The count gives the other checks context, which is why the level is `info`, and it is one of the three reasons TD007 escalates a new dependency.
+
+**Evidence.**
+
+| Key | Meaning |
+|---|---|
+| `source` | where the signal came from: `registry` or `deps.dev` |
+| `weekly_downloads` | the registry's weekly count (registry source only) |
+| `min_weekly_downloads` | the policy threshold (registry source only) |
+| `deps_dev_risk` | the `RISK_*` level of the `LOW_USAGE` finding, when deps.dev gave one (deps.dev source only) |
+| `deps_dev_detail` | the finding's text, when deps.dev gave one (deps.dev source only) |
+
+**Example.**
+
+```
+npm:plain-crypto-js@4.2.1  BLOCK
+  info
+    TD012 low-usage: 8 weekly downloads, below 500
+      the registry reports 8 downloads in the last week for npm:plain-crypto-js, below the policy
+      threshold of 500 (low-usage.min_weekly_downloads)
+```
+
+**Fix.** Nothing by itself. Read the package before depending on it; small packages are where a review is actually possible.
+
+**Allow.** Set the threshold for your project (`low-usage: { level: info, min_weekly_downloads: 100 }`), or turn the check off with `low-usage: off`. Internal packages are better handled with an allow entry using a pattern such as `"npm:@myorg/*"`.
+
+## TD013 exotic-source
+
+Arrives in 0.2.0 with the `diff` and `scan` commands. It will report a lockfile entry resolved from a git repository, a tarball or an http URL instead of the registry, with the lockfile path and line in the finding's `location`. The policy already accepts `exotic-source` (default `block`) so that a policy file written today keeps validating.
+
+## TD014 integrity-missing
+
+Arrives in 0.2.0 with the `diff` and `scan` commands. It will report a lockfile entry without an integrity hash, or resolved over plain http, with the lockfile location. The policy already accepts `integrity-missing` (default `warn`).
+
+## TD015 version-anomaly
+
+**Detects.** A version number that does not fit the package's history. Two signals, each its own finding, both `info` by default:
+
+- `jump`: the major component exceeds the previous release's by more than one, or the minor jumps by more than ten while the major is unchanged (1.4.2 to 9.9.9). The explanation states the cadence observed over the earlier releases.
+- `out-of-order`: the version sorts below a release that was published earlier, so the registry's newest upload is not its highest version (1.2.3 uploaded after 2.0.0).
+
+Prereleases, yanked versions, versions without a publish time and versions that do not parse (semver for npm and crates.io, PEP 440 for PyPI) are left out of the comparison. Skipped without a version list, when the evaluated version is missing from it, does not parse or has no publish time, and when there is no earlier release. Applies to every ecosystem.
+
+**Why it matters.** This is a consistency check, not a detector, and none of the incidents cited in this document would have tripped the `jump` rule on its own: the sabotaged `colors@1.4.1` and `faker@6.6.6` of January 2022 ([Snyk](https://snyk.io/blog/open-source-npm-packages-colors-faker/)) kept to ordinary steps, and so did every hijacked release above. The `out-of-order` signal fires on legitimate backports at least as often as on anything else; the fix releases for the ua-parser-js hijack, `0.7.30` and `0.8.1`, were themselves published after `1.0.0` ([issue #538](https://github.com/faisalman/ua-parser-js/issues/538)). That is why the level is `info`: the finding adds context to a card, it is not meant to fail a build.
+
+**Evidence.**
+
+| Key | Meaning |
+|---|---|
+| `signal` | `jump` or `out-of-order` |
+| `version` | the evaluated version |
+| `published` | its publish time, RFC 3339 |
+| `previous` | the previous release (jump only) |
+| `previous_published` | its publish time, RFC 3339 (jump only) |
+| `major_step` | the major increase from the previous release (jump only) |
+| `minor_step` | the minor increase from the previous release (jump only) |
+| `earlier_releases` | how many earlier releases the cadence was read from (jump only) |
+| `max_major_step` | the largest major increase between consecutive earlier releases (jump only) |
+| `max_minor_step` | the largest minor increase between consecutive earlier releases that share a major (jump only) |
+| `earlier_version` | the highest earlier-published release the version sorts below (out-of-order only) |
+| `earlier_published` | its publish time, RFC 3339 (out-of-order only) |
+| `earlier_above` | how many earlier-published releases sort above the version (out-of-order only) |
+
+**Example.** The `rand_core` backport from TD004:
+
+```
+cargo:rand_core@0.4.3  BLOCK
+  info
+    TD015 version-anomaly: 0.4.3 published after 0.10.1, which sorts above it
+      cargo:rand_core@0.4.3 was published on 2026-09-02 but sorts below 0.10.1, published on
+      2026-04-13; 13 earlier releases sort above it, so this upload is not the package's newest
+      version
+```
+
+**Fix.** Nothing to fix. Make sure the version you are installing is the one you meant; an out-of-order upload is often a backport you did not know existed.
+
+**Allow.** `version-anomaly: off` in the policy, or an allow entry for a package that publishes several release lines:
+
+```yaml
+allow:
+  - check: version-anomaly
+    package: "cargo:rand_core"
+    reason: "maintains the 0.4, 0.6 and 0.10 lines in parallel"
+```
