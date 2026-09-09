@@ -346,7 +346,7 @@ doctor:                           # the hardening scorecard
 
 The complete file with every key and its default is [internal/policy/default.yaml](internal/policy/default.yaml). Precedence for a value that exists in several places: the command line flag (`--cooldown`, `--fail-on`), then the ecosystem override, then the policy value, then the built-in default.
 
-Two environment variables matter: `TRUSTDIFF_CACHE_DIR` moves the disk cache (default: the `trustdiff` directory under the user cache directory; `trustdiff cache status` prints it) and `TRUSTDIFF_NOW`, an RFC 3339 time, fixes the run clock for reproducible runs. `NO_COLOR` and a non-terminal stdout disable color, as does `--no-color`. `--offline` reads only the cache and reports every check that needs the network as skipped.
+Two environment variables matter: `TRUSTDIFF_CACHE_DIR` moves the disk cache (default: the `trustdiff` directory under the user cache directory; `trustdiff cache status` prints it) and `TRUSTDIFF_NOW`, an RFC 3339 time, fixes the run clock for reproducible runs. `NO_COLOR` and a non-terminal stdout disable color, as does `--no-color`. `--offline` reads only what is on the disk. The advisory checks answer from the local OSV mirror that `trustdiff cache refresh` downloads, and every check that has nothing to read reports itself as skipped with the reason.
 
 ## How it compares
 
