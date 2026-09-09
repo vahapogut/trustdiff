@@ -36,7 +36,7 @@ sec:
 	gosec -quiet ./...
 
 snapshot:
-	goreleaser release --snapshot --clean --skip=sign,publish
+	goreleaser release --snapshot --clean --skip=sign,publish,sbom
 
 clean:
 	rm -rf bin dist

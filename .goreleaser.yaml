@@ -1,0 +1,139 @@
+# goreleaser configuration for trustdiff.
+#
+# Every key below was checked against the goreleaser v2.18.1 documentation and
+# its deprecation list on 2026-09-09: archives use the plural "formats", builds
+# use "flags" and "mod_timestamp", the snapshot key is "version_template", and
+# signing uses the cosign v3 "--bundle" flag, which writes the certificate and
+# the signature into a single .sigstore.json file.
+#
+# Local dry run (no syft, cosign or GitHub token needed):
+#   goreleaser release --snapshot --clean --skip=sign,publish,sbom
+# The release workflow in .github/workflows/release.yml runs the full pipeline
+# on every v* tag with SOURCE_DATE_EPOCH set to the commit timestamp.
+
+version: 2
+
+project_name: trustdiff
+
+before:
+  hooks:
+    # Pre-fills the module cache so the six parallel builds do not race on
+    # downloads. go.sum already holds every hash, so it is left untouched.
+    - go mod download
+
+builds:
+  - id: trustdiff
+    main: ./cmd/trustdiff
+    binary: trustdiff
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    # One entry on purpose: goreleaser passes each entry as its own -ldflags
+    # argument and the Go tool keeps only the last one per package pattern.
+    ldflags:
+      - >-
+        -s -w
+        -X github.com/vahapogut/trustdiff/internal/version.Version=v{{ .Version }}
+        -X github.com/vahapogut/trustdiff/internal/version.Commit={{ .ShortCommit }}
+        -X github.com/vahapogut/trustdiff/internal/version.Date={{ .CommitDate }}
+    # The binary carries the commit time, not the build time, so rebuilding
+    # the same commit yields the same archive and the same checksum.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: trustdiff
+    ids:
+      - trustdiff
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Commit time on every archive member, for the same reason as above.
+    builds_info:
+      mtime: "{{ .CommitDate }}"
+    files:
+      - src: LICENSE
+        info:
+          mtime: "{{ .CommitDate }}"
+      - src: README.md
+        info:
+          mtime: "{{ .CommitDate }}"
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+sboms:
+  # One SPDX JSON document per archive. The explicit args drop goreleaser's
+  # default "--enrich all", which would make syft call out to the network.
+  - id: archives
+    artifacts: archive
+    documents:
+      - "{{ .ArtifactName }}.spdx.json"
+    cmd: syft
+    args:
+      - "$artifact"
+      - --output
+      - "spdx-json=$document"
+
+signs:
+  # Keyless signing with cosign v3. In GitHub Actions the certificate comes
+  # from the workflow's OIDC identity (id-token: write); no key is stored.
+  # The bundle is uploaded next to checksums.txt, and every other artifact is
+  # covered through the checksum file it lists.
+  - id: cosign
+    cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - --yes
+      - "${artifact}"
+    artifacts: checksum
+    output: true
+
+release:
+  github:
+    owner: vahapogut
+    name: trustdiff
+  draft: false
+  # A tag with a suffix (v0.1.0-rc1) is marked as a prerelease automatically.
+  # A plain tag that must not be marked latest, such as v0.0.1, is edited
+  # afterwards with "gh release edit <tag> --prerelease".
+  prerelease: auto
+  # Fails before building when the token cannot publish or the tag already
+  # has an immutable release (goreleaser v2.18 and later).
+  preflight:
+    fail_on_error: true
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Others
+      order: 999
+  filters:
+    exclude:
+      - '^chore(\([[:word:]]+\))??!?:'
+      - '^docs(\([[:word:]]+\))??!?:'
