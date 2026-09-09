@@ -125,9 +125,18 @@ func assertSkippedC(t *testing.T, c Check, res Result, want string) {
 }
 
 // assertFindingsC asserts that the check ran and produced exactly n findings, each
-// with the check's identity, the subject's ref, the effective level, the subject's
-// location and prose free of the dashes the style rules keep out.
+// at the level the policy sets for the check. See assertFindingsAtC for the rest.
 func assertFindingsC(t *testing.T, c Check, s *Subject, res Result, n int) {
+	t.Helper()
+	assertFindingsAtC(t, c, s, res, n, s.Setting(c.Name()).Level)
+}
+
+// assertFindingsAtC asserts that the check ran and produced exactly n findings, each
+// with the check's identity, the subject's ref, the wanted level, the subject's
+// location and prose free of the dashes the style rules keep out. The level is a
+// parameter because TD013 reports a workspace member and an entry with no stated
+// origin at info however the policy has the check set.
+func assertFindingsAtC(t *testing.T, c Check, s *Subject, res Result, n int, level model.Level) {
 	t.Helper()
 	if res.Skipped != nil {
 		t.Fatalf("%s: want %d findings, got skipped: %s", c.ID(), n, res.Skipped.Reason)
@@ -143,8 +152,8 @@ func assertFindingsC(t *testing.T, c Check, s *Subject, res Result, n int) {
 		if f.Ref != s.Ref {
 			t.Errorf("finding %d: ref %s, want %s", i, f.Ref, s.Ref)
 		}
-		if want := s.Setting(c.Name()).Level; f.Level != want {
-			t.Errorf("finding %d: level %s, want %s", i, f.Level, want)
+		if f.Level != level {
+			t.Errorf("finding %d: level %s, want %s", i, f.Level, level)
 		}
 		if f.Location != s.Location {
 			t.Errorf("finding %d: location %v, want %v", i, f.Location, s.Location)

@@ -1,6 +1,7 @@
 package checks
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/vahapogut/trustdiff/internal/lockfile"
@@ -38,7 +39,10 @@ func TestExoticSource(t *testing.T) {
 		opts    []func(*Subject)
 		skipped string
 		want    int
-		verify  func(t *testing.T, f *model.Finding)
+		// level is what every finding must carry; the zero value means the level
+		// the policy sets for the check.
+		level  model.Level
+		verify func(t *testing.T, f *model.Finding)
 	}{
 		{
 			name: "registry entry passes",
@@ -57,7 +61,8 @@ func TestExoticSource(t *testing.T) {
 				return entryC(t, "npm:lib@2.0.0", lockfile.SourceGit,
 					resolvedC("git+ssh://git@github.com/acme/lib.git#main"))
 			},
-			want: 1,
+			want:  1,
+			level: model.LevelBlock,
 			verify: func(t *testing.T, f *model.Finding) {
 				if f.Title != "resolved from a git repository instead of the npm registry" {
 					t.Errorf("title = %q", f.Title)
@@ -100,7 +105,8 @@ func TestExoticSource(t *testing.T) {
 				return entryC(t, "npm:lib@2.0.0", lockfile.SourceURL,
 					resolvedC("https://files.example.com/lib-2.0.0.tgz"))
 			},
-			want: 1,
+			want:  1,
+			level: model.LevelBlock,
 			verify: func(t *testing.T, f *model.Finding) {
 				if f.Title != "resolved from a URL instead of the npm registry" {
 					t.Errorf("title = %q", f.Title)
@@ -113,12 +119,16 @@ func TestExoticSource(t *testing.T) {
 			},
 		},
 		{
-			name: "workspace member resolved from a path",
+			// A monorepo resolves its own packages from a path, and the default
+			// policy blocks this check, so this is the entry that must not fail a
+			// gate on unmodified upstream code.
+			name: "workspace member resolved from a path is reported at info",
 			ref:  "npm:@acme/ui@1.0.0",
 			entry: func(t *testing.T) *lockfile.Entry {
 				return entryC(t, "npm:@acme/ui@1.0.0", lockfile.SourcePath, resolvedC("packages/ui"))
 			},
-			want: 1,
+			want:  1,
+			level: model.LevelInfo,
 			verify: func(t *testing.T, f *model.Finding) {
 				if f.Title != "resolved from a local directory instead of the npm registry" {
 					t.Errorf("title = %q", f.Title)
@@ -128,8 +138,19 @@ func TestExoticSource(t *testing.T) {
 				}
 				assertContainsC(t, "explanation", f.Explanation,
 					"A path entry is a local directory",
+					"reported at info rather than at the level the policy sets",
 					"allow entry for exotic-source with a package glob")
 			},
+		},
+		{
+			name: "the policy level does not raise a workspace member",
+			ref:  "npm:@acme/ui@1.0.0",
+			entry: func(t *testing.T) *lockfile.Entry {
+				return entryC(t, "npm:@acme/ui@1.0.0", lockfile.SourcePath, resolvedC("packages/ui"))
+			},
+			opts:  []func(*Subject){withSettingC("exotic-source", policy.CheckSetting{Level: model.LevelWarn})},
+			want:  1,
+			level: model.LevelInfo,
 		},
 		{
 			name: "origin the file does not state",
@@ -137,7 +158,8 @@ func TestExoticSource(t *testing.T) {
 			entry: func(t *testing.T) *lockfile.Entry {
 				return entryC(t, "pypi:lib@1.2.3", lockfile.SourceUnknown)
 			},
-			want: 1,
+			want:  1,
+			level: model.LevelInfo,
 			verify: func(t *testing.T, f *model.Finding) {
 				if f.Title != "the lockfile does not say where this version was resolved from" {
 					t.Errorf("title = %q", f.Title)
@@ -150,20 +172,30 @@ func TestExoticSource(t *testing.T) {
 					t.Errorf("lockfile = %s", got)
 				}
 				assertContainsC(t, "explanation", f.Explanation,
-					"uv.lock does not say where pypi:lib@1.2.3 was resolved from, so the entry cannot be read as a release from PyPI")
+					"uv.lock does not say where pypi:lib@1.2.3 was resolved from, so the entry cannot be read as a release from PyPI",
+					"reported at info rather than at the level the policy sets")
+				if strings.Contains(f.Explanation, "npm records neither") {
+					t.Errorf("a uv.lock entry is explained with npm's bundling: %q", f.Explanation)
+				}
 			},
 		},
 		{
+			// npm writes an entry with no location and no hash for a dependency
+			// bundled inside another package's archive, which is what an unstated
+			// origin usually is there.
 			name: "a source the parser left empty is read as unknown",
-			ref:  "npm:lib@2.0.0",
+			ref:  "npm:bundled-helper@3.0.1",
 			entry: func(t *testing.T) *lockfile.Entry {
-				return entryC(t, "npm:lib@2.0.0", "")
+				return entryC(t, "npm:bundled-helper@3.0.1", "")
 			},
-			want: 1,
+			want:  1,
+			level: model.LevelInfo,
 			verify: func(t *testing.T, f *model.Finding) {
 				if got := evidenceC(t, f, "source"); got != string(lockfile.SourceUnknown) {
 					t.Errorf("source = %s, want unknown", got)
 				}
+				assertContainsC(t, "explanation", f.Explanation,
+					"npm records neither a location nor a hash for a dependency bundled inside another package's archive")
 			},
 		},
 		{
@@ -225,7 +257,11 @@ func TestExoticSource(t *testing.T) {
 				assertSkippedC(t, c, res, tt.skipped)
 				return
 			}
-			assertFindingsC(t, c, s, res, tt.want)
+			level := tt.level
+			if level == model.LevelOff {
+				level = s.Setting(c.Name()).Level
+			}
+			assertFindingsAtC(t, c, s, res, tt.want, level)
 			if tt.verify != nil && len(res.Findings) > 0 {
 				tt.verify(t, &res.Findings[0])
 			}

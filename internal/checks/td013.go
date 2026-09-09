@@ -11,24 +11,31 @@ import (
 
 // TD013 exotic-source reports a lockfile entry resolved from somewhere other than
 // the ecosystem's registry: a git repository, a URL, a directory on the machine, or
-// an origin the file does not state. It applies to every ecosystem and blocks by
-// default. It reads Subject.Lock and nothing else, so a ref named on the command
-// line, which has no lockfile entry behind it, is reported as skipped.
+// an origin the file does not state. It applies to every ecosystem. It reads
+// Subject.Lock and nothing else, so a ref named on the command line, which has no
+// lockfile entry behind it, is reported as skipped.
 //
-// Why this blocks by default. What the registry does for a published release it
-// does not do for these: the release cannot be yanked, advisories are not matched
-// against it, and the publisher, the provenance and the download history that the
-// other checks compare are simply absent. The version number the lockfile records
-// is then whatever the fetched manifest claimed rather than a version anyone
-// published. On top of that a git reference that pins no commit sha, and any URL,
-// can serve different bytes tomorrow without the lockfile changing.
+// A git or URL entry is reported at the level the policy sets, block by default.
+// What the registry does for a published release it does not do for these: the
+// release cannot be yanked, advisories are not matched against it, and the
+// publisher, the provenance and the download history that the other checks compare
+// are simply absent. The version number the lockfile records is then whatever the
+// fetched manifest claimed rather than a version anyone published. On top of that a
+// git reference that pins no commit sha, and any URL, can serve different bytes
+// tomorrow without the lockfile changing.
 //
-// A workspace member is the common false positive: a monorepo resolves its own
-// packages from a path and every one of them is reported. That is on purpose. The
-// explanation says the entry is a local directory and leaves the judgment to the
-// level, and a project that means it silences those entries with allow entries
-// (check: exotic-source with a package glob), which keeps the check working for
-// everything else.
+// A directory and an unstated origin are reported at info instead, whatever level
+// the policy sets for the check. Neither is the signal this check exists for. A path
+// entry is what a monorepo writes for its own packages: ripgrep 14.1.1's Cargo.lock
+// carries ten of them and Superset's package-lock.json twenty five, so blocking
+// there fails the gate on unmodified upstream code and teaches people to turn the
+// check off, which is the worst outcome available. An
+// entry with no stated origin is usually an npm bundled dependency, whose bytes
+// travel inside the archive of the package that carries them and are covered by that
+// package's hash. Both stay in the report, because an entry that does not come from
+// the registry is worth seeing in a diff and the source evidence key says which it
+// is; neither fails a gate on its own. A project that wants them out of the report
+// altogether uses an allow entry (check: exotic-source with a package glob).
 //
 // Evidence keys:
 //
@@ -61,7 +68,22 @@ func (c exoticSource) Run(_ context.Context, s *Subject) Result {
 
 	evidence := map[string]any{"source": string(source)}
 	addLockEvidence(evidence, s)
-	return Result{Findings: []model.Finding{NewFinding(c, s, c.title(s, source), c.explain(s, source), evidence)}}
+	f := NewFinding(c, s, c.title(s, source), c.explain(s, source), evidence)
+	if reportedAtInfo(source) {
+		// Never above info for these two, whatever the policy sets for the check: a
+		// workspace member and a bundled dependency are reported so that they are
+		// visible, not so that they fail a gate. A policy that turned the check off
+		// keeps it off, because the runner never reaches a check set to off.
+		f.Level = min(f.Level, model.LevelInfo)
+	}
+	return Result{Findings: []model.Finding{f}}
+}
+
+// reportedAtInfo reports whether a source is one of the two this check states
+// rather than judges: a directory on the machine and an origin the file does not
+// state. See the package comment above for why.
+func reportedAtInfo(source lockfile.Source) bool {
+	return source == lockfile.SourcePath || source == lockfile.SourceUnknown
 }
 
 // title names the source the entry came from and the registry it did not come from.
@@ -100,7 +122,14 @@ func (exoticSource) explain(s *Subject, source lockfile.Source) string {
 	case lockfile.SourceURL:
 		b.WriteString(" Whoever controls that URL can replace what it serves, and the lockfile would not change.")
 	case lockfile.SourcePath:
-		b.WriteString(" A path entry is a local directory: nothing was fetched, so there is nothing to check. Workspace members look exactly like this, and the way to silence them is an allow entry for exotic-source with a package glob, which keeps the check working for everything else.")
+		b.WriteString(" A path entry is a local directory: nothing was fetched, so there is nothing to check. A workspace member looks exactly like this.")
+	case lockfile.SourceUnknown:
+		if s.Ref.Ecosystem == model.NPM {
+			b.WriteString(" npm records neither a location nor a hash for a dependency bundled inside another package's archive, which is the usual reason for an entry with no stated origin; those bytes travel with the package that carries them and are covered by its hash.")
+		}
+	}
+	if reportedAtInfo(source) {
+		b.WriteString(" This is reported at info rather than at the level the policy sets for exotic-source, because that level is meant for a version fetched from a git repository or a URL, which is what a pull request can repoint under review, and not for an entry a monorepo or a bundling package manager writes for itself. An allow entry for exotic-source with a package glob takes it out of the report altogether.")
 	}
 	return b.String()
 }

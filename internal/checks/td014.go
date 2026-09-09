@@ -28,9 +28,19 @@ import (
 // pins a branch or a tag instead is reported, and its explanation states the rule it
 // missed.
 //
+// Two more entries have a hash somewhere other than in the entry, and the
+// explanation says so rather than claiming that nothing guards them: a local
+// directory, which has no artifact to hash at all, and an npm dependency bundled
+// inside another package's archive, which the lockfile writes without a location and
+// without a hash because the package that carries it covers both. Neither is
+// exempted, because the lockfile does not mark either one and an entry that states
+// no origin is worth a maintainer's glance in a pull request; the source evidence
+// key is there so that telling them apart does not mean opening the lockfile.
+//
 // Evidence keys:
 //
 //	signal     missing-hash or plain-http
+//	source     where the entry was resolved from: registry, git, url, path or unknown
 //	integrity  the hash the entry records, absent when it records none
 //	resolved   the location as the lockfile records it, absent when the file states none
 //	lockfile   the lockfile the entry came from, absent when the subject carries no location
@@ -76,7 +86,7 @@ func (c integrityMissing) missingHash(s *Subject) (model.Finding, bool) {
 		}
 	}
 
-	evidence := map[string]any{"signal": "missing-hash"}
+	evidence := map[string]any{"signal": "missing-hash", "source": string(source)}
 	addLockEvidence(evidence, s)
 
 	var b strings.Builder
@@ -84,12 +94,26 @@ func (c integrityMissing) missingHash(s *Subject) (model.Finding, bool) {
 	if s.Lock.Resolved != "" {
 		fmt.Fprintf(&b, ", resolved from %s", s.Lock.Resolved)
 	}
-	b.WriteString(". Nothing ties the entry to the bytes an install downloads, so a replaced archive or a compromised mirror is installed without complaint and the lockfile still looks unchanged.")
+	// What is missing depends on what the entry would fetch, so the sentence after
+	// the first one does too: an artifact downloaded from somewhere is unguarded, a
+	// directory has nothing to guard, and an entry that states no origin says
+	// neither where the bytes come from nor what would check them.
+	const unguarded = ". Nothing ties the entry to the bytes an install downloads, so a replaced archive or a compromised mirror is installed without complaint and the lockfile still looks unchanged."
 	switch source {
 	case lockfile.SourceGit:
+		b.WriteString(unguarded)
 		b.WriteString(" A git entry needs no hash when its location pins a full forty character commit sha, because the sha is the integrity; this one pins a branch or a tag instead.")
 	case lockfile.SourcePath:
-		b.WriteString(" The entry is a local directory, which has nothing to download and so nothing to hash; a workspace member is silenced with an allow entry for integrity-missing with a package glob.")
+		b.WriteString(". The entry is a local directory, which has nothing to download and so nothing to hash, so there is nothing here for an install to verify against; a workspace member is silenced with an allow entry for integrity-missing with a package glob.")
+	case lockfile.SourceUnknown:
+		b.WriteString(". Nothing in the entry ties it to the bytes an install downloads.")
+		if s.Ref.Ecosystem == model.NPM {
+			b.WriteString(" An npm entry with neither a location nor a hash is usually a bundled dependency, whose bytes travel inside the archive of the package that carries it and are covered by that package's hash; the lockfile does not say so, which is why this is reported rather than assumed.")
+		} else {
+			b.WriteString(" The entry does not say where it comes from either, so what an install would fetch, and what would check it, are both unstated.")
+		}
+	default:
+		b.WriteString(unguarded)
 	}
 	return NewFinding(c, s, "no integrity hash in the lockfile", b.String(), evidence), true
 }
@@ -101,7 +125,7 @@ func (c integrityMissing) plainHTTP(s *Subject) (model.Finding, bool) {
 	}
 
 	hash := strings.TrimSpace(s.Lock.Integrity)
-	evidence := map[string]any{"signal": "plain-http"}
+	evidence := map[string]any{"signal": "plain-http", "source": string(entrySource(s.Lock))}
 	if hash != "" {
 		evidence["integrity"] = s.Lock.Integrity
 	}

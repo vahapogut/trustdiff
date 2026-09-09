@@ -1,6 +1,7 @@
 package checks
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/vahapogut/trustdiff/internal/lockfile"
@@ -69,6 +70,9 @@ func TestIntegrityMissing(t *testing.T) {
 				if got := evidenceC(t, f, "signal"); got != "missing-hash" {
 					t.Errorf("signal = %s", got)
 				}
+				if got := evidenceC(t, f, "source"); got != string(lockfile.SourceRegistry) {
+					t.Errorf("source = %s, want registry", got)
+				}
 				if got := evidenceC(t, f, "resolved"); got != "https://registry.npmjs.org/lib/-/lib-2.0.0.tgz" {
 					t.Errorf("resolved = %s", got)
 				}
@@ -110,6 +114,9 @@ func TestIntegrityMissing(t *testing.T) {
 				}
 				if got := evidenceC(t, f, "signal"); got != "plain-http" {
 					t.Errorf("signal = %s", got)
+				}
+				if got := evidenceC(t, f, "source"); got != string(lockfile.SourceURL) {
+					t.Errorf("source = %s, want url", got)
 				}
 				if got := evidenceC(t, f, "integrity"); got != npmIntegrityC {
 					t.Errorf("integrity = %s", got)
@@ -226,9 +233,37 @@ func TestIntegrityMissing(t *testing.T) {
 			},
 			want: 1,
 			verify: func(t *testing.T, findings []model.Finding) {
+				if got := evidenceC(t, &findings[0], "source"); got != string(lockfile.SourcePath) {
+					t.Errorf("source = %s, want path", got)
+				}
 				assertContainsC(t, "explanation", findings[0].Explanation,
 					"The entry is a local directory, which has nothing to download and so nothing to hash",
 					"allow entry for integrity-missing with a package glob")
+				if strings.Contains(findings[0].Explanation, "a compromised mirror is installed without complaint") {
+					t.Errorf("a local directory is explained as a download: %q", findings[0].Explanation)
+				}
+			},
+		},
+		{
+			// npm writes a bundled dependency with no location and no hash: its bytes
+			// ship inside the archive of the package that carries it, so the entry
+			// says what a maintainer needs instead of claiming nothing guards it.
+			name: "an npm entry with neither a location nor a hash",
+			ref:  "npm:bundled-helper@3.0.1",
+			entry: func(t *testing.T) *lockfile.Entry {
+				return entryC(t, "npm:bundled-helper@3.0.1", lockfile.SourceUnknown)
+			},
+			want: 1,
+			verify: func(t *testing.T, findings []model.Finding) {
+				if got := evidenceC(t, &findings[0], "source"); got != string(lockfile.SourceUnknown) {
+					t.Errorf("source = %s, want unknown", got)
+				}
+				assertNoEvidenceC(t, &findings[0], "resolved")
+				assertContainsC(t, "explanation", findings[0].Explanation,
+					"usually a bundled dependency, whose bytes travel inside the archive of the package that carries it and are covered by that package's hash")
+				if strings.Contains(findings[0].Explanation, "a compromised mirror is installed without complaint") {
+					t.Errorf("an entry with nothing to download is explained as a download: %q", findings[0].Explanation)
+				}
 			},
 		},
 		{
@@ -239,7 +274,12 @@ func TestIntegrityMissing(t *testing.T) {
 			},
 			want: 1,
 			verify: func(t *testing.T, findings []model.Finding) {
-				assertContainsC(t, "explanation", findings[0].Explanation, "uv.lock records no integrity hash for pypi:lib@1.2.3.")
+				assertContainsC(t, "explanation", findings[0].Explanation,
+					"uv.lock records no integrity hash for pypi:lib@1.2.3.",
+					"The entry does not say where it comes from either")
+				if strings.Contains(findings[0].Explanation, "npm") {
+					t.Errorf("a uv.lock entry is explained with npm's bundling: %q", findings[0].Explanation)
+				}
 			},
 		},
 		{
