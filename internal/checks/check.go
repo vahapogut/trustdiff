@@ -9,6 +9,7 @@ package checks
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -97,12 +98,24 @@ func (s *Subject) Setting(name string) policy.CheckSetting {
 	return policy.CheckSetting{}
 }
 
-// Skipped reports whether a data source is unavailable and returns the reason.
+// Skipped reports whether a data source failed and returns the reason.
 func (s *Subject) Skipped(source string) (string, bool) {
 	if err, ok := s.Unavailable[source]; ok && err != nil {
-		return fmt.Sprintf("%s unavailable: %v", source, err), true
+		return sourceProblem(source, err), true
 	}
 	return "", false
+}
+
+// sourceProblem words a data source failure. A definite answer from the source
+// (not found, not provided) is stated as such; anything else is "unavailable",
+// which is the wording on_data_unavailable: fail reacts to.
+func sourceProblem(source string, err error) string {
+	switch {
+	case errors.Is(err, registry.ErrNotFound), errors.Is(err, registry.ErrUnsupported):
+		return fmt.Sprintf("%s: %v", source, err)
+	default:
+		return fmt.Sprintf("%s unavailable: %v", source, err)
+	}
 }
 
 // Result is what one check returns for one subject: any findings, or the reason it
