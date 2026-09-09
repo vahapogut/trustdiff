@@ -1,0 +1,119 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@scope/widget':
+        specifier: ^2.1.0
+        version: 2.1.0(react@18.3.1)
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      tarball-dep:
+        specifier: https://example.test/tarball-dep-1.4.0.tgz
+        version: https://example.test/tarball-dep-1.4.0.tgz
+    devDependencies:
+      '@scope/local-tool':
+        specifier: file:packages/local-tool
+        version: file:packages/local-tool
+      dev-only:
+        specifier: ^1.0.0
+        version: 1.0.0
+      git-dep:
+        specifier: git+ssh://git@git.example.test/example/git-dep.git#v3
+        version: git+ssh://git@git.example.test/example/git-dep.git#4f1d2c6f6b0e2f2f3c9f0f1a2b3c4d5e6f708192
+      shared-tool:
+        specifier: ^1.0.0
+        version: 1.0.0
+    optionalDependencies:
+      optional-dep:
+        specifier: ^0.5.0
+        version: 0.5.0
+
+  packages/tools:
+    dependencies:
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      shared-tool:
+        specifier: ^1.0.0
+        version: 1.0.0
+      sibling:
+        specifier: workspace:*
+        version: link:../sibling
+
+packages:
+
+  '@scope/local-tool@file:packages/local-tool':
+    resolution: {directory: packages/local-tool, type: directory}
+
+  '@scope/widget@2.1.0':
+    resolution: {integrity: sha512-HnlASVRufHWu42SsFb/wmVczoHWjpeaEaEHuz9xTN/cwoZEOtBYpx29Hu22TvFLxhXazSm0AJ6pgHHUHrKFrQg==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      react: '>=17'
+
+  dev-only@1.0.0:
+    resolution: {integrity: sha512-A1mWZSuCbYyjm0rmQYzUF/calG4IHQtZVvTW6saMNI6p3bfv1fsku3qHHOZxZaNfmeWGHJBrt4zUNiXZb3q53A==}
+
+  git-dep@git+ssh://git@git.example.test/example/git-dep.git#4f1d2c6f6b0e2f2f3c9f0f1a2b3c4d5e6f708192:
+    resolution: {commit: 4f1d2c6f6b0e2f2f3c9f0f1a2b3c4d5e6f708192, repo: git+ssh://git@git.example.test/example/git-dep.git, type: git}
+    name: git-dep
+    version: 3.0.0
+
+  only-transitive@1.2.3:
+    resolution: {integrity: sha512-DuQ34ChJIQneevsn5BAsdpA8u8ZVi6cvSWzVSLxgPWGKjtPyPKWGcvG1smB0vhkagrJ9wRyPje6iuHmScFc+uA==}
+
+  optional-dep@0.5.0:
+    resolution: {integrity: sha512-5liwl07oS8ExViVjO+6p6zsoEvFtP17kRj85mVzG49kNlRvWDRlZ3LYYgi+ulIJK/3Q9+pnFfzZ8BrWbAObY4Q==}
+
+  react@18.3.1:
+    resolution: {integrity: sha512-2+1d312Gv/F0ka3L+WanxnvPQ93+m+j2HLOWk54rzWk/lAPxKcimaVSC+kRml1k+lqAEalcc0tQie4/Wubz/Zg==}
+    engines: {node: '>=0.10.0'}
+
+  shared-tool@1.0.0:
+    resolution: {integrity: sha512-driVjsG9unzaLc5wqO/yr3C1ysFKkxFIBcPmZKYcntmzF+JocqeIe+FwxQTFDNz7oDhSxhcrReY4qkqLJ+NhLQ==}
+
+  styled-thing@5.3.11(react@18.3.1):
+    resolution: {integrity: sha512-iSg/gkwbnNIW3MZ9+8AcQFI9CeACI/jwi4fBsWyWW0luNKKYesgjtnzBBN/k+89Xy4gEv7Bcspx7ChsK5vLEjA==}
+    peerDependencies:
+      react: '>=16.8'
+
+  tarball-dep@https://example.test/tarball-dep-1.4.0.tgz:
+    resolution: {tarball: https://example.test/tarball-dep-1.4.0.tgz}
+    version: 1.4.0
+
+snapshots:
+
+  '@scope/local-tool@file:packages/local-tool': {}
+
+  '@scope/widget@2.1.0':
+    dependencies:
+      react: 18.3.1
+      styled-thing: 5.3.11(react@18.3.1)
+
+  dev-only@1.0.0: {}
+
+  git-dep@git+ssh://git@git.example.test/example/git-dep.git#4f1d2c6f6b0e2f2f3c9f0f1a2b3c4d5e6f708192: {}
+
+  only-transitive@1.2.3: {}
+
+  optional-dep@0.5.0:
+    optional: true
+
+  react@18.3.1: {}
+
+  shared-tool@1.0.0:
+    dependencies:
+      only-transitive: 1.2.3
+
+  styled-thing@5.3.11(react@18.3.1):
+    dependencies:
+      react: 18.3.1
+
+  tarball-dep@https://example.test/tarball-dep-1.4.0.tgz: {}
