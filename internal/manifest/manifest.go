@@ -292,8 +292,14 @@ func Formats() []string {
 // there is one. Names are compared case insensitively because Cargo.toml is written
 // with a capital and package.json without one, and a checkout on a case insensitive
 // filesystem can hand back either spelling.
+//
+// The backslashes are replaced rather than passed to filepath.ToSlash, which does
+// nothing anywhere but Windows: a path is as likely to have been written on one
+// platform and read on another, and a name is worth recognizing wherever it was
+// spelled. A file whose name really does contain a backslash is opened by the string
+// that was given, so nothing is lost by reading the name more liberally than that.
 func For(path string) (string, bool) {
-	switch strings.ToLower(filepath.Base(filepath.ToSlash(path))) {
+	switch strings.ToLower(filepath.Base(strings.ReplaceAll(path, `\`, "/"))) {
 	case strings.ToLower(FormatPackageJSON):
 		return FormatPackageJSON, true
 	case strings.ToLower(FormatPyproject):
