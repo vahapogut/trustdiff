@@ -1,0 +1,38 @@
+# Report test fixtures
+
+Every downloaded file in this directory carries its source, the date it was recorded
+and the license it came with. Downloaded files are stored byte for byte; do not
+reformat them.
+
+## Golden files
+
+`report.json.golden`, `report.human.golden` and `report.human-color.golden` are not
+downloaded: `go test ./internal/report/ -update` regenerates them from the fixture
+subjects built in `golden_test.go`. Review the diff of a regenerated golden file like
+code, it is the report format contract.
+
+## sarif-schema-2.1.0.json
+
+- Source: https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json
+  (OASIS Standard, SARIF Version 2.1.0 Errata 01). Note that
+  https://json.schemastore.org/sarif-2.1.0.json serves a different variant, checked
+  2026-09-09: it declares draft-07, its `$id` points at the oasis-tcs/sarif-spec
+  GitHub repository, and three enums lack the `"type": "string"` the OASIS file has.
+  The OASIS publication is the normative one and is the copy vendored here.
+- Downloaded: 2026-09-09, HTTP 200, 112768 bytes,
+  SHA-256 `c3b4bb2d6093897483348925aaa73af03b3e3f4bd4ca38cef26dcb4212a2682e`
+- Schema dialect: `http://json-schema.org/draft-04/schema#`, top-level `id` equal to the
+  source URL
+- License, as observed on 2026-09-09: the JSON file itself carries no license or
+  copyright text. The specification it belongs to
+  (https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/sarif-v2.1.0-errata01-os.html)
+  states in its Notices section "Copyright (c) OASIS Open 2023. All Rights Reserved."
+  and "Distributed under the terms of the OASIS IPR Policy"
+  (https://www.oasis-open.org/policies-guidelines/ipr/), which permits copying and
+  distributing the document, in whole or in part, without restriction, provided the
+  copyright notice and the Notices section are included, and forbids modifying it. The
+  SARIF Technical Committee operates under the RF on RAND Mode of the OASIS IPR Policy
+  (https://www.oasis-open.org/committees/sarif/ipr.php). This copy is unmodified and
+  is used only to validate the SARIF output of trustdiff in tests.
+- Used by: `internal/jsonschema` tests (the validator must compile and apply the full
+  schema) and, from task 2.9 on, the SARIF report golden tests.

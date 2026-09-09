@@ -1,0 +1,125 @@
+{
+  "schema": "trustdiff.report/1",
+  "tool": {
+    "name": "trustdiff",
+    "version": "v0.0.1",
+    "commit": "abc1234",
+    "date": "2026-09-09T00:00:00Z",
+    "go_version": "go1.26.8"
+  },
+  "policy": {
+    "path": ".trustdiff.yaml",
+    "cooldown": "3d",
+    "fail_on": "block"
+  },
+  "subjects": [
+    {
+      "ref": {
+        "ecosystem": "npm",
+        "name": "example-lib",
+        "version": "4.19.3"
+      },
+      "location": {
+        "path": "package-lock.json",
+        "line": 42
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD006",
+        "TD009"
+      ],
+      "skipped": [],
+      "findings": [
+        {
+          "id": "TD002",
+          "name": "publisher-changed",
+          "level": "block",
+          "ref": {
+            "ecosystem": "npm",
+            "name": "example-lib",
+            "version": "4.19.3"
+          },
+          "title": "Publisher of 4.19.3 is not among the previous publishers",
+          "explanation": "previous 5 versions were published by alice; 4.19.3 was published by bob-ci, an account that has published nothing else",
+          "evidence": {
+            "previous_publishers": [
+              "alice"
+            ],
+            "publisher": "bob-ci",
+            "window": 5
+          },
+          "location": {
+            "path": "package-lock.json",
+            "line": 42
+          }
+        },
+        {
+          "id": "TD001",
+          "name": "young-version",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "npm",
+            "name": "example-lib",
+            "version": "4.19.3"
+          },
+          "title": "Version is 6 hours old",
+          "explanation": "4.19.3 was published on 2026-09-08T18:00:00Z, 6 hours before this run; the cooldown is 3d",
+          "evidence": {
+            "age": "6h",
+            "cooldown": "3d",
+            "published_at": "2026-09-08T18:00:00Z"
+          },
+          "location": {
+            "path": "package-lock.json",
+            "line": 42
+          }
+        }
+      ],
+      "verdict": "block"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "example-tool",
+        "version": "2.0.0"
+      },
+      "evaluated": [],
+      "skipped": [
+        {
+          "check": "TD001",
+          "reason": "pypi.org unavailable in offline mode and no cached response"
+        }
+      ],
+      "findings": [],
+      "verdict": "skipped"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "example-crate",
+        "version": "1.0.0"
+      },
+      "evaluated": [
+        "TD001",
+        "TD006",
+        "TD009"
+      ],
+      "skipped": [],
+      "findings": [],
+      "verdict": "ok"
+    }
+  ],
+  "summary": {
+    "subjects": 3,
+    "findings": {
+      "block": 1,
+      "info": 0,
+      "warn": 1
+    },
+    "skipped": 1,
+    "exit_code": 1,
+    "exit_meaning": "blocking findings"
+  }
+}

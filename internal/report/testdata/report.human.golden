@@ -1,0 +1,16 @@
+npm:example-lib@4.19.3  BLOCK  (package-lock.json:42, direct)
+  block
+    TD002 publisher-changed: Publisher of 4.19.3 is not among the previous publishers
+      previous 5 versions were published by alice; 4.19.3 was published by
+      bob-ci, an account that has published nothing else
+  warn
+    TD001 young-version: Version is 6 hours old
+      4.19.3 was published on 2026-09-08T18:00:00Z, 6 hours before this run; the
+      cooldown is 3d
+
+pypi:example-tool@2.0.0  SKIPPED
+  skipped TD001: pypi.org unavailable in offline mode and no cached response
+
+cargo:example-crate@1.0.0  OK
+
+3 subjects, 1 block, 1 warn, 0 info, 1 skipped check. Exit code 1 (blocking findings).

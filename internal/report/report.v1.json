@@ -1,0 +1,267 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/vahapogut/trustdiff/main/schema/report.v1.json",
+  "title": "trustdiff report, schema version 1",
+  "description": "The document written by trustdiff --format json. Within schema version 1 fields are added, never renamed or removed; a breaking change bumps the version in the schema field and in this file's name.",
+  "type": "object",
+  "required": ["schema", "tool", "policy", "subjects", "summary"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "description": "Identifies the document format. Always trustdiff.report/1 for documents that match this schema.",
+      "const": "trustdiff.report/1"
+    },
+    "tool": {
+      "$ref": "#/definitions/tool"
+    },
+    "policy": {
+      "$ref": "#/definitions/policy"
+    },
+    "subjects": {
+      "description": "One entry per evaluated package version, in the order the run evaluated them: command line order for check, lockfile order for diff and scan.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/subject"
+      }
+    },
+    "summary": {
+      "$ref": "#/definitions/summary"
+    }
+  },
+  "definitions": {
+    "tool": {
+      "description": "Build identity of the trustdiff binary that wrote the document.",
+      "type": "object",
+      "required": ["name", "version", "commit", "date", "go_version"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Always trustdiff.",
+          "const": "trustdiff"
+        },
+        "version": {
+          "description": "Release tag such as v0.1.0, or dev for a build without link-time version information.",
+          "type": "string"
+        },
+        "commit": {
+          "description": "Short git commit the binary was built from, or none.",
+          "type": "string"
+        },
+        "date": {
+          "description": "Commit or build timestamp in RFC 3339, or unknown.",
+          "type": "string"
+        },
+        "go_version": {
+          "description": "Go toolchain the binary was compiled with, for example go1.26.8.",
+          "type": "string"
+        }
+      }
+    },
+    "policy": {
+      "description": "The settings that shaped the run after the command line flags and the policy file were reconciled.",
+      "type": "object",
+      "required": ["path", "cooldown", "fail_on"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "Policy file that was loaded, as given or discovered. Empty when the built-in defaults were used.",
+          "type": "string"
+        },
+        "cooldown": {
+          "description": "Threshold of the young-version check in the spelling the policy accepts, for example 3d, 12h, 1w or P3D. Per-ecosystem overrides are reported in the evidence of each finding.",
+          "type": "string"
+        },
+        "fail_on": {
+          "description": "Lowest finding level that makes the exit code 1. never means the exit code is 0 whatever the findings are; exit codes 2 and 3 are unaffected.",
+          "type": "string",
+          "enum": ["block", "warn", "never"]
+        }
+      }
+    },
+    "ref": {
+      "description": "A package, optionally at one version, in one ecosystem. The textual form is ecosystem:name[@version].",
+      "type": "object",
+      "required": ["ecosystem", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "ecosystem": {
+          "description": "Registry the package lives in. deno and jsr are accepted from milestone M4 on.",
+          "type": "string",
+          "enum": ["npm", "pypi", "cargo", "deno", "jsr"]
+        },
+        "name": {
+          "description": "Package name in the registry's canonical spelling: lowercase for npm, PEP 503 normalized for pypi, unchanged elsewhere. Scoped npm and jsr names keep their @scope/ prefix.",
+          "type": "string",
+          "pattern": "^[^\\s]+$"
+        },
+        "version": {
+          "description": "The exact version the entry refers to. Present for every evaluated subject and finding; absent only when no version could be resolved.",
+          "type": "string",
+          "pattern": "^[^\\s]+$"
+        }
+      }
+    },
+    "location": {
+      "description": "Where a subject came from when it was read from a lockfile.",
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "Lockfile path relative to the directory the run started in, with forward slashes.",
+          "type": "string"
+        },
+        "line": {
+          "description": "One-based line of the entry in the lockfile. Absent when the parser could not attribute the entry to a line.",
+          "type": "integer"
+        }
+      }
+    },
+    "skipped": {
+      "description": "A check that could not run for a subject. Skips are reported, never hidden, so that an unavailable data source is not mistaken for a pass.",
+      "type": "object",
+      "required": ["check", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "description": "Id of the check that was skipped, for example TD012.",
+          "type": "string",
+          "pattern": "^[A-Z]+[0-9]{3}$"
+        },
+        "reason": {
+          "description": "Why the check did not run, in one sentence: an unavailable data source, offline mode, or a check that does not apply to the ecosystem.",
+          "type": "string"
+        }
+      }
+    },
+    "finding": {
+      "description": "One result of one check for one package version. The id, name and evidence keys are stable within a schema version and documented per check in docs/checks.md.",
+      "type": "object",
+      "required": ["id", "name", "level", "ref", "title", "explanation"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Stable check identifier, for example TD002.",
+          "type": "string",
+          "pattern": "^[A-Z]+[0-9]{3}$"
+        },
+        "name": {
+          "description": "The check's policy name, for example publisher-changed.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "level": {
+          "description": "Effective level after the policy was applied. Checks set to off produce no findings.",
+          "type": "string",
+          "enum": ["block", "warn", "info"]
+        },
+        "ref": {
+          "$ref": "#/definitions/ref"
+        },
+        "title": {
+          "description": "One line suitable for a terminal or a code scanning annotation.",
+          "type": "string"
+        },
+        "explanation": {
+          "description": "The human account of the evidence, for example: previous 5 versions were published by alice; 4.19.3 was published by bob-ci.",
+          "type": "string"
+        },
+        "evidence": {
+          "description": "Machine-readable facts behind the explanation. Keys are specific to each check and documented in docs/checks.md; absent when the check recorded none.",
+          "type": "object"
+        },
+        "location": {
+          "$ref": "#/definitions/location"
+        }
+      }
+    },
+    "subject": {
+      "description": "One evaluated package version with everything the checks said about it.",
+      "type": "object",
+      "required": ["ref", "evaluated", "skipped", "findings", "verdict"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "$ref": "#/definitions/ref"
+        },
+        "location": {
+          "$ref": "#/definitions/location"
+        },
+        "direct": {
+          "description": "True when the subject is a direct dependency of the project. Absent means false.",
+          "type": "boolean"
+        },
+        "evaluated": {
+          "description": "Ids of the checks that ran to completion for this subject, sorted. A check that ran and found nothing is listed here and has no finding.",
+          "type": "array",
+          "items": {
+            "description": "Check id, for example TD001.",
+            "type": "string",
+            "pattern": "^[A-Z]+[0-9]{3}$"
+          }
+        },
+        "skipped": {
+          "description": "Checks that could not run for this subject, sorted by check id.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/skipped"
+          }
+        },
+        "findings": {
+          "description": "Findings sorted by level, most severe first, then by check id.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/finding"
+          }
+        },
+        "verdict": {
+          "description": "The highest finding level, or ok when every check that ran found nothing, or skipped when no check could be evaluated.",
+          "type": "string",
+          "enum": ["block", "warn", "info", "ok", "skipped"]
+        }
+      }
+    },
+    "summary": {
+      "description": "Counts over all subjects and the process exit code, so a script needs nothing else.",
+      "type": "object",
+      "required": ["subjects", "findings", "skipped", "exit_code", "exit_meaning"],
+      "additionalProperties": false,
+      "properties": {
+        "subjects": {
+          "description": "Number of entries in subjects.",
+          "type": "integer"
+        },
+        "findings": {
+          "description": "Number of findings per level over all subjects. Every key is present even when its count is zero.",
+          "type": "object",
+          "required": ["block", "warn", "info"],
+          "additionalProperties": false,
+          "properties": {
+            "block": {
+              "type": "integer"
+            },
+            "warn": {
+              "type": "integer"
+            },
+            "info": {
+              "type": "integer"
+            }
+          }
+        },
+        "skipped": {
+          "description": "Number of skipped checks over all subjects.",
+          "type": "integer"
+        },
+        "exit_code": {
+          "description": "The process exit code: 0 no finding at or above fail_on, 1 at least one finding at or above fail_on, 3 a required data source was unavailable and the policy says on_data_unavailable: fail. Exit code 2 (usage or configuration error) is never accompanied by a document.",
+          "type": "integer",
+          "enum": [0, 1, 3]
+        },
+        "exit_meaning": {
+          "description": "The exit code spelled out: no blocking findings, blocking findings, or a required data source was unavailable.",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

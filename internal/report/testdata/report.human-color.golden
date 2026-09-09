@@ -1,0 +1,16 @@
+[1mnpm:example-lib@4.19.3[0m  [1;31mBLOCK[0m  (package-lock.json:42, direct)
+  [31mblock[0m
+    [1mTD002[0m publisher-changed: Publisher of 4.19.3 is not among the previous publishers
+      previous 5 versions were published by alice; 4.19.3 was published by
+      bob-ci, an account that has published nothing else
+  [33mwarn[0m
+    [1mTD001[0m young-version: Version is 6 hours old
+      4.19.3 was published on 2026-09-08T18:00:00Z, 6 hours before this run; the
+      cooldown is 3d
+
+[1mpypi:example-tool@2.0.0[0m  [1;2mSKIPPED[0m
+  [2mskipped[0m TD001: pypi.org unavailable in offline mode and no cached response
+
+[1mcargo:example-crate@1.0.0[0m  [1;32mOK[0m
+
+3 subjects, 1 block, 1 warn, 0 info, 1 skipped check. [31mExit code 1 (blocking findings).[0m
