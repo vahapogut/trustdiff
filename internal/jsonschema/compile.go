@@ -136,7 +136,63 @@ func (c *compiler) compileRoot() (*node, error) {
 			}
 		}
 	}
+	if err := c.checkCycles(); err != nil {
+		return nil, err
+	}
 	return root, nil
+}
+
+// checkCycles walks the compiled graph along the edges that do not consume input
+// ($ref, allOf, anyOf, oneOf, not) and reports a loop among them. The chain check in
+// compileRef misses a back edge whenever its target was already cached, which
+// happens when a consuming keyword (items, additionalProperties) sorts before the
+// combinator that closes the loop: the target is first compiled with a fresh chain,
+// and the later $ref returns the cached node without a check. Such a loop would
+// recurse forever on any instance, so it is a compile error whichever path found it.
+func (c *compiler) checkCycles() error {
+	pointerOf := make(map[*node]string, len(c.nodes))
+	for pointer, n := range c.nodes {
+		pointerOf[n] = pointer
+	}
+	// The zero value of state is "not visited yet".
+	const (
+		visiting = iota + 1
+		done
+	)
+	state := make(map[*node]int, len(c.nodes))
+	var visit func(n *node) error
+	visit = func(n *node) error {
+		switch state[n] {
+		case visiting:
+			return &schemaError{pointer: pointerOf[n], err: errors.New("cyclic $ref: the reference loops back without consuming input")}
+		case done:
+			return nil
+		}
+		state[n] = visiting
+		next := make([]*node, 0, 2+len(n.allOf)+len(n.anyOf)+len(n.oneOf))
+		if n.ref != nil {
+			next = append(next, n.ref)
+		}
+		next = append(next, n.allOf...)
+		next = append(next, n.anyOf...)
+		next = append(next, n.oneOf...)
+		if n.not != nil {
+			next = append(next, n.not)
+		}
+		for _, m := range next {
+			if err := visit(m); err != nil {
+				return err
+			}
+		}
+		state[n] = done
+		return nil
+	}
+	for _, pointer := range sortedKeys(c.nodes) {
+		if err := visit(c.nodes[pointer]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *compiler) unsupportedKeywords() []string {
@@ -149,7 +205,8 @@ func (c *compiler) unsupportedKeywords() []string {
 // not consume input ($ref, allOf, anyOf, oneOf, not). A $ref back into that chain
 // would recurse forever on any instance, so it is rejected. Keywords that descend
 // into the instance (properties, patternProperties, additionalProperties, items)
-// start a fresh chain.
+// start a fresh chain. The chain only sees the first path that reached a node;
+// checkCycles catches a loop closed through a node that was already cached.
 func (c *compiler) compile(raw any, pointer string, active []string) (*node, error) {
 	if n, ok := c.nodes[pointer]; ok {
 		return n, nil

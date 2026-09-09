@@ -1,6 +1,7 @@
 package jsonschema
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/url"
@@ -128,16 +129,63 @@ func (n *node) validateArray(arr []any, pointer string, errs *[]error) {
 }
 
 // firstDuplicate returns the first pair of equal items, earliest first index and
-// then earliest second index, so the message is stable.
+// then earliest second index, so the message is stable. Items are compared through
+// a canonical encoding (encoding/json sorts object keys; numbers are normalized
+// first) looked up in a map, so a large array costs one encoding per item rather
+// than one deep comparison per pair.
 func firstDuplicate(arr []any) (i, j int, found bool) {
-	for i := range arr {
-		for j := i + 1; j < len(arr); j++ {
-			if equalJSON(arr[i], arr[j]) {
-				return i, j, true
-			}
+	first := make(map[string]int, len(arr))
+	for k, item := range arr {
+		if _, ok := jsonType(item); !ok {
+			// Not a JSON value: validate reports it as a type error, and equalJSON
+			// never equates such a value with anything.
+			continue
+		}
+		key, err := json.Marshal(normalizeNumbers(item))
+		if err != nil {
+			// Unreachable for values produced by encoding/json.
+			continue
+		}
+		earlier, dup := first[string(key)]
+		if !dup {
+			first[string(key)] = k
+			continue
+		}
+		// The first duplicate of a key pairs its earliest two occurrences. A later key
+		// may still have an earlier first occurrence, so keep the smallest first index.
+		if !found || earlier < i {
+			i, j, found = earlier, k, true
 		}
 	}
-	return 0, 0, false
+	return i, j, found
+}
+
+// normalizeNumbers returns a copy of v with every number as a float64 and negative
+// zero as zero, so that equal JSON values encode to the same bytes: 1, 1.0 and
+// json.Number("1") all become 1.
+func normalizeNumbers(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, e := range x {
+			out[k] = normalizeNumbers(e)
+		}
+		return out
+	case []any:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = normalizeNumbers(e)
+		}
+		return out
+	}
+	if f, ok := asNumber(v); ok {
+		if f == 0 {
+			// -0 equals 0 but would encode as "-0".
+			f = 0
+		}
+		return f
+	}
+	return v
 }
 
 func (n *node) validateString(s, pointer string, errs *[]error) {

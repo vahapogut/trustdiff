@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -88,6 +89,25 @@ func requireError(t *testing.T, err error, pointer, keyword string) {
 	if lookupError(err, pointer, keyword) == nil {
 		t.Fatalf("no error at pointer %q for keyword %q in:\n%v", pointer, keyword, err)
 	}
+}
+
+// requireOnlyError asserts that err carries exactly one leaf, at pointer for keyword.
+func requireOnlyError(t *testing.T, err error, pointer, keyword string) {
+	t.Helper()
+	requireError(t, err, pointer, keyword)
+	if leaves := flatten(err); len(leaves) != 1 {
+		t.Fatalf("got %d errors, want only %s at %q:\n%v", len(leaves), keyword, pointer, err)
+	}
+}
+
+// replaceOnce edits a fixture and fails the test when old is absent, so a test can
+// never end up validating the unedited fixture.
+func replaceOnce(t *testing.T, s, old, replacement string) string {
+	t.Helper()
+	if !strings.Contains(s, old) {
+		t.Fatalf("fixture does not contain %s", old)
+	}
+	return strings.Replace(s, old, replacement, 1)
 }
 
 func TestType(t *testing.T) {
@@ -186,6 +206,10 @@ func TestArrays(t *testing.T) {
 		{name: "uniqueItems ok", schema: `{"uniqueItems":true}`, instance: `[1,"1",[1],{"a":1},{"a":2},null]`},
 		{name: "uniqueItems wrong scalars", schema: `{"uniqueItems":true}`, instance: `[1,2,1.0]`, want: []string{"#: uniqueItems: items 0 and 2 are equal"}},
 		{name: "uniqueItems wrong objects", schema: `{"uniqueItems":true}`, instance: `[{"a":1,"b":[1]},{"b":[1],"a":1}]`, want: []string{"items 0 and 1 are equal"}},
+		{name: "uniqueItems nested numbers", schema: `{"uniqueItems":true}`, instance: `[{"a":[1,2.5]},{"a":[1.0,2.5]}]`, want: []string{"items 0 and 1 are equal"}},
+		{name: "uniqueItems negative zero", schema: `{"uniqueItems":true}`, instance: `[0,-0]`, want: []string{"items 0 and 1 are equal"}},
+		{name: "uniqueItems reports the earliest first index", schema: `{"uniqueItems":true}`, instance: `[1,2,2,1]`, want: []string{"items 0 and 3 are equal"}},
+		{name: "uniqueItems reports the earliest second index", schema: `{"uniqueItems":true}`, instance: `[1,1,1]`, want: []string{"items 0 and 1 are equal"}},
 		{name: "uniqueItems false", schema: `{"uniqueItems":false}`, instance: `[1,1]`},
 	})
 }
@@ -341,6 +365,11 @@ func TestCompileErrors(t *testing.T) {
 		{name: "cycle through allOf", schema: `{"allOf":[{"$ref":"#"}]}`, want: "cyclic $ref"},
 		{name: "cycle through definitions", schema: `{"definitions":{"a":{"$ref":"#/definitions/b"},"b":{"anyOf":[{"$ref":"#/definitions/a"}]}},"$ref":"#/definitions/a"}`, want: "cyclic $ref"},
 		{name: "cycle through not", schema: `{"definitions":{"a":{"not":{"$ref":"#/definitions/a"}}}}`, want: "cyclic $ref"},
+		// Keys compile in sorted order, so "items" reaches definitions/c first and caches it
+		// with a fresh chain; the "not" that closes the loop then finds the cached node.
+		{name: "cycle hidden by cache via items", schema: `{"items":{"$ref":"#/definitions/c"},"not":{"$ref":"#/definitions/c"},"definitions":{"c":{"not":{"$ref":"#"}}}}`, want: "cyclic $ref"},
+		{name: "cycle hidden by cache via definitions", schema: `{"definitions":{"b":{"items":{"$ref":"#/definitions/c"},"oneOf":[{"$ref":"#/definitions/c"}]},"c":{"oneOf":[{"$ref":"#/definitions/b"}]}},"properties":{"x":{"$ref":"#/definitions/b"}}}`, want: "cyclic $ref"},
+		{name: "cycle hidden by cache via additionalProperties", schema: `{"additionalProperties":{"$ref":"#/definitions/c"},"anyOf":[{"$ref":"#/definitions/c"}],"definitions":{"c":{"allOf":[{"$ref":"#"}]}}}`, want: "cyclic $ref"},
 		{name: "type unknown name", schema: `{"type":"strin"}`, want: `#: type: unknown type "strin"`},
 		{name: "type number", schema: `{"type":5}`, want: "type must be a string or an array of strings"},
 		{name: "type list unknown", schema: `{"type":["string","thing"]}`, want: `unknown type "thing"`},
@@ -492,6 +521,52 @@ func TestValidateInputs(t *testing.T) {
 	}
 }
 
+// uniqueItems compares items through a canonical encoding, so every numeric
+// representation a decoded document can carry must collapse to the same key.
+func TestUniqueItemsNormalizesNumbers(t *testing.T) {
+	s, err := Compile([]byte(`{"uniqueItems":true}`))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	tests := []struct {
+		name string
+		arr  []any
+		want string
+	}{
+		{name: "json.Number vs float", arr: []any{json.Number("1"), 1.0}, want: "items 0 and 1 are equal"},
+		{name: "json.Number vs int", arr: []any{map[string]any{"n": json.Number("2")}, map[string]any{"n": 2}}, want: "items 0 and 1 are equal"},
+		{name: "json.Number float vs float", arr: []any{[]any{json.Number("2.50")}, []any{2.5}}, want: "items 0 and 1 are equal"},
+		{name: "json.Number distinct", arr: []any{json.Number("1"), json.Number("2")}},
+		{name: "number vs string", arr: []any{json.Number("1"), "1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var want []string
+			if tt.want != "" {
+				want = []string{tt.want}
+			}
+			assertErrors(t, s.ValidateValue(tt.arr), want)
+		})
+	}
+}
+
+// A uniqueItems array of many distinct objects, the shape of a SARIF rule list.
+func BenchmarkUniqueItemsObjects(b *testing.B) {
+	s, err := Compile([]byte(`{"uniqueItems":true,"items":{"type":"object","required":["id"]}}`))
+	if err != nil {
+		b.Fatalf("Compile: %v", err)
+	}
+	arr := make([]any, 20000)
+	for i := range arr {
+		arr[i] = map[string]any{"id": strconv.Itoa(i), "guid": strings.Repeat("x", 36)}
+	}
+	for b.Loop() {
+		if err := s.ValidateValue(arr); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func TestSARIFSchema(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "report", "testdata", "sarif-schema-2.1.0.json"))
 	if err != nil {
@@ -531,18 +606,12 @@ func TestSARIFSchema(t *testing.T) {
 		t.Fatalf("SARIF log with one result rejected:\n%v", err)
 	}
 
-	badLevel := strings.Replace(withResult, `"level": "warning"`, `"level": "fatal"`, 1)
+	badLevel := replaceOnce(t, withResult, `"level": "warning"`, `"level": "fatal"`)
 	err = s.Validate([]byte(badLevel))
-	if err == nil {
-		t.Fatal("wrong level accepted")
-	}
-	requireError(t, err, "/runs/0/results/0/level", "enum")
+	requireOnlyError(t, err, "/runs/0/results/0/level", "enum")
 	ve := lookupError(err, "/runs/0/results/0/level", "enum")
 	if !strings.Contains(ve.Message, `"fatal"`) {
 		t.Fatalf("enum message = %q, want it to name the value", ve.Message)
-	}
-	if leaves := flatten(err); len(leaves) != 1 {
-		t.Fatalf("got %d errors for one bad level, want 1:\n%v", len(leaves), err)
 	}
 
 	noRuns := `{"version": "2.1.0"}`
@@ -556,15 +625,40 @@ func TestSARIFSchema(t *testing.T) {
 		t.Fatalf("required message = %q", ve.Message)
 	}
 
-	unknownRunProperty := strings.Replace(minimal, `"results": []`, `"results": [], "verdict": "ok"`, 1)
+	unknownRunProperty := replaceOnce(t, minimal, `"results": []`, `"results": [], "verdict": "ok"`)
 	err = s.Validate([]byte(unknownRunProperty))
 	requireError(t, err, "/runs/0/verdict", "additionalProperties")
 
-	missingMessage := strings.Replace(withResult, `"message": {"text": "express@4.19.2 was published 2 days ago"},`, "", 1)
+	missingMessage := replaceOnce(t, withResult, `"message": {"text": "express@4.19.2 was published 2 days ago"},`, "")
 	err = s.Validate([]byte(missingMessage))
 	requireError(t, err, "/runs/0/results/0", "required")
 
-	badRegion := strings.Replace(withResult, `"region": {"startLine": 42}`, `"region": {"startLine": 0}`, 1)
+	badRegion := replaceOnce(t, withResult, `"region": {"startLine": 42}`, `"region": {"startLine": 0}`)
 	err = s.Validate([]byte(badRegion))
 	requireError(t, err, "/runs/0/results/0/locations/0/physicalLocation/region/startLine", "minimum")
+
+	// The structures trustdiff emits lean on these SARIF keywords, so each one is
+	// driven through the compiled schema: anyOf over required lists for region,
+	// physicalLocation and message, maximum for rank, pattern for guid, format uri
+	// for informationUri and uniqueItems for the rule list.
+	noAnchor := replaceOnce(t, withResult, `"region": {"startLine": 42}`, `"region": {"endLine": 42}`)
+	requireOnlyError(t, s.Validate([]byte(noAnchor)), "/runs/0/results/0/locations/0/physicalLocation/region", "anyOf")
+
+	noArtifact := replaceOnce(t, withResult, `"artifactLocation": {"uri": "package-lock.json"}, `, "")
+	requireOnlyError(t, s.Validate([]byte(noArtifact)), "/runs/0/results/0/locations/0/physicalLocation", "anyOf")
+
+	emptyMessage := replaceOnce(t, withResult, `"message": {"text": "express@4.19.2 was published 2 days ago"}`, `"message": {}`)
+	requireOnlyError(t, s.Validate([]byte(emptyMessage)), "/runs/0/results/0/message", "anyOf")
+
+	badRank := replaceOnce(t, withResult, `"level": "warning",`, `"level": "warning", "rank": 101,`)
+	requireOnlyError(t, s.Validate([]byte(badRank)), "/runs/0/results/0/rank", "maximum")
+
+	badGUID := replaceOnce(t, minimal, `"driver": {"name": "trustdiff"}`, `"driver": {"name": "trustdiff", "guid": "nope"}`)
+	requireOnlyError(t, s.Validate([]byte(badGUID)), "/runs/0/tool/driver/guid", "pattern")
+
+	badURI := replaceOnce(t, minimal, `"driver": {"name": "trustdiff"}`, `"driver": {"name": "trustdiff", "informationUri": "not a uri"}`)
+	requireOnlyError(t, s.Validate([]byte(badURI)), "/runs/0/tool/driver/informationUri", "format")
+
+	duplicateRules := replaceOnce(t, minimal, `"driver": {"name": "trustdiff"}`, `"driver": {"name": "trustdiff", "rules": [{"id": "TD001"}, {"id": "TD001"}]}`)
+	requireOnlyError(t, s.Validate([]byte(duplicateRules)), "/runs/0/tool/driver/rules", "uniqueItems")
 }
