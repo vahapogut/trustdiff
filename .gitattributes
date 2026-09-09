@@ -1,0 +1,8 @@
+# Keep LF everywhere: golden files, embedded schemas and shell scripts are compared
+# byte for byte, and Windows checkouts would otherwise turn them into CRLF.
+* text=auto eol=lf
+*.png binary
+*.gif binary
+*.crate binary
+*.tar.gz binary
+*.zip binary
