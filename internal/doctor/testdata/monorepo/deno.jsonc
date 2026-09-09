@@ -1,0 +1,6 @@
+{
+  // The tasks a Deno script in this repository is run through.
+  "tasks": {
+    "check": "deno check tools/check.ts"
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "monorepo",
+  "private": true,
+  "packageManager": "pnpm@11.2.0+sha512.0bd1c8a1e2f3d4c5"
+}
