@@ -94,6 +94,10 @@ func (f *fakeLoader) Downloads(context.Context, model.Ecosystem, string) (int64,
 	return 100000, nil
 }
 
+// lockfileChecks judge the lockfile entry rather than a data source, so they skip
+// with their own reason for a ref named on the command line.
+var lockfileChecks = map[string]bool{"TD013": true, "TD014": true}
+
 // maliciousRef is the ref the fake loader answers a malicious-package advisory
 // for, the way OSV answers for a release a registry has taken down.
 var maliciousRef = model.MustParseRef("npm:trustdiff-fixture-lib@2.0.0")
@@ -246,6 +250,33 @@ func TestCheckMaliciousAdvisoryBlocks(t *testing.T) {
 	}
 }
 
+// Every format the flag accepts writes its own shape to stdout.
+func TestCheckWritesEveryFormat(t *testing.T) {
+	useFakeLoader(t)
+	tests := []struct {
+		format string
+		want   []string
+	}{
+		{format: "human", want: []string{"npm:trustdiff-fixture-lib@2.0.0", "BLOCK", "Exit code 1"}},
+		{format: "json", want: []string{`"schema": "trustdiff.report/1"`, `"id": "TD002"`}},
+		{format: "sarif", want: []string{`"version": "2.1.0"`, `"ruleId": "TD002"`, `"level": "error"`}},
+		{format: "markdown", want: []string{"| Package |", "TD002", "publisher-changed"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.format, func(t *testing.T) {
+			code, stdout, stderr := run(t, "--format", tt.format, "check", "npm:trustdiff-fixture-lib@2.0.0")
+			if code != ExitFindings {
+				t.Fatalf("exit = %d, want 1 (stderr %q)", code, stderr)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(stdout, want) {
+					t.Errorf("stdout lacks %q:\n%s", want, stdout)
+				}
+			}
+		})
+	}
+}
+
 func TestCheckResolvesLatestStable(t *testing.T) {
 	useFakeLoader(t)
 	code, stdout, _ := run(t, "--fail-on", "never", "check", "npm:trustdiff-fixture-lib")
@@ -281,8 +312,6 @@ func TestCheckUsageErrors(t *testing.T) {
 	}{
 		{name: "bad ref", args: []string{"check", "express"}, want: "invalid ref"},
 		{name: "manifest path is planned", args: []string{"check", "package.json"}, want: "later release"},
-		{name: "sarif is planned", args: []string{"--format", "sarif", "check", "npm:trustdiff-fixture-lib@2.0.0"}, want: "later release"},
-		{name: "markdown is planned", args: []string{"--format", "markdown", "check", "npm:trustdiff-fixture-lib@2.0.0"}, want: "later release"},
 		{name: "unknown package", args: []string{"check", "npm:trustdiff-unknown-package-x9q@1.0.0"}, want: ""},
 	}
 	for _, tt := range tests {
@@ -397,6 +426,11 @@ func TestCheckExit3WhenPolicySaysFail(t *testing.T) {
 		t.Fatal("no skipped checks for a registry outage")
 	}
 	for _, sk := range rep.Subjects[0].Skipped {
+		// The lockfile checks have their own reason: a ref named on the command
+		// line brings no entry for them to judge.
+		if lockfileChecks[sk.Check] {
+			continue
+		}
 		if !strings.Contains(sk.Reason, "registry unavailable: connection refused") {
 			t.Errorf("%s skipped with %q, want the registry outage", sk.Check, sk.Reason)
 		}
@@ -480,6 +514,9 @@ func TestCheckOfflineColdCache(t *testing.T) {
 		t.Fatal("no skipped checks with a cold cache")
 	}
 	for _, sk := range s.Skipped {
+		if lockfileChecks[sk.Check] {
+			continue
+		}
 		if !strings.Contains(sk.Reason, "offline") {
 			t.Errorf("%s skipped with %q, want the offline reason", sk.Check, sk.Reason)
 		}
