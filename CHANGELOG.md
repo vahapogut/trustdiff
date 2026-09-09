@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/create-taps.sh` creates and seeds `vahapogut/homebrew-tap` and `vahapogut/scoop-bucket` in one command, which was three manual steps. It commits a README and the license rather than leaving the repositories empty, because goreleaser can only initialise a repository with no commits when the branch it is configured to push to is already that repository's default branch, and both blocks name `main`. It deliberately does not create `Casks/` or `bucket/`: Scoop counts what a bucket holds with a recursive listing that includes hidden files and is not filtered to `*.json`, so a placeholder there would make `scoop bucket list` report two manifests where there is one.
+- `.github/workflows/npm-publish.yml` publishes the Bun scanner as `@trustdiff/bun-scanner` through npm's trusted publishing, so no npm credential exists in this repository and none can leak. It runs on a version tag rather than on the GitHub release, because a release created by the automatic `GITHUB_TOKEN` does not start another workflow run. It runs the scanner's tests, asserts the tarball holds exactly four files, and skips silently when the registry already has the version.
+- The scanner is staged rather than published outright. Since 2026-09-03 a trusted publishing configuration can stage by default and direct publishing is opt in, and that opt-in is deliberately not taken: a version sits on the registry where nobody can install it until a person approves it. A tool that argues a package which changed hands deserves a look before it lands should be willing to apply that to itself.
+- [docs/adr/0004-macos-notarization.md](docs/adr/0004-macos-notarization.md) decides the question the release runbook had been deferring. The macOS binaries stay unsigned: notarization would not fix the Finder case at all, and it would very likely cost the byte-reproducible macOS archives, which is a poor trade for a tool whose pitch is that you can check what you are installing yourself.
+
+### Changed
+
+- The Homebrew install line names the cask in full, `brew install --cask vahapogut/tap/trustdiff`. Since Homebrew 6.0 a tap that is not one of Homebrew's own has to be trusted before its code runs, and a fully qualified name trusts that one cask and nothing else; tapping first and installing the short name now needs a separate `brew trust`.
+- The README says what a macOS user will actually meet, per route rather than in general. Downloading in a browser and unpacking with `tar` in a shell is clean, because `tar` does not carry the mark onto what it extracts; unpacking the same archive by double-clicking in Finder is not. Installing from the tap is not clean either: Homebrew marks what a cask installs on purpose, and the flag that used to turn that off has been removed.
+
+### Fixed
+
+- The release runbook no longer tells the owner to add `TAP_GITHUB_TOKEN` to the release workflow. That line has been there since the workflow was written, so storing the secret is the whole step, and the instruction sent a reader looking for a change that was already made.
+- The first manual publish of the Bun scanner is documented with `--provenance=false`. `package.json` sets `publishConfig.provenance: true`, which is right in CI and aborts a publish anywhere else, and `npm publish --dry-run` does not warn because it returns before reaching that check.
+
 ## [0.4.0] - 2026-09-10
 
 Four more lockfile formats, the JSR registry, a record for the registries that only answer about now, advisories without a network, and an install that can be stopped before anything reaches the disk.
