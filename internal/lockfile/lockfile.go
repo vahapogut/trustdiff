@@ -122,8 +122,12 @@ func (l *Lockfile) Refs() []model.PackageRef {
 type Parser interface {
 	// Name is the format's name, which is also the file name it looks for.
 	Name() string
-	// Detect reports whether the parser handles a file with this base name.
-	Detect(base string) bool
+	// Detect reports whether the parser handles a file with this name. The name is
+	// the base name, lower cased, and For asks a second time with the parent
+	// directory in front of it ("requirements/dev.txt") for the one format that
+	// cannot be recognized without it. A parser that only knows fixed file names
+	// compares the whole string and answers false for the second form.
+	Detect(name string) bool
 	// Parse reads the file. path is used for messages and for Lockfile.Path only.
 	Parse(path string, r io.Reader) (*Lockfile, error)
 }
@@ -156,11 +160,31 @@ func Parsers() []Parser {
 	return out
 }
 
-// For returns the parser that handles the file, by base name.
+// For returns the parser that handles the file.
+//
+// Every parser is asked about the base name first, which is what all but one
+// format is identified by. A parser that recognizes none of them is then asked
+// about the name with its parent directory, because pip's requirements are the one
+// format whose base name can say nothing at all: a requirements directory holding
+// main.txt and dev.txt is as common as requirements.txt, and accepting every .txt
+// file would swallow the repository. Passing the whole path is therefore worth
+// more than passing the base name, and a caller that has one should.
 func For(path string) (Parser, bool) {
-	base := strings.ToLower(filepath.Base(path))
-	for _, p := range Parsers() {
+	slashed := filepath.ToSlash(path)
+	base := strings.ToLower(filepath.Base(slashed))
+	parsers := Parsers()
+	for _, p := range parsers {
 		if p.Detect(base) {
+			return p, true
+		}
+	}
+	dir := filepath.ToSlash(filepath.Dir(slashed))
+	if dir == "." || dir == "" || dir == slashed {
+		return nil, false
+	}
+	withParent := strings.ToLower(filepath.Base(dir)) + "/" + base
+	for _, p := range parsers {
+		if p.Detect(withParent) {
 			return p, true
 		}
 	}

@@ -308,7 +308,10 @@ func findLockfiles(root string, log *slog.Logger) (found, unreadable []string, e
 			}
 			return nil
 		}
-		if _, ok := lockfile.For(d.Name()); !ok {
+		// The whole path, not the name: one format is identified by the directory
+		// it sits in, and lockfile.For asks about the parent when the base name
+		// answers nothing.
+		if _, ok := lockfile.For(path); !ok {
 			return nil
 		}
 		rel, relErr := relativeTo(root, path)

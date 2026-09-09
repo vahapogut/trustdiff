@@ -3,6 +3,7 @@ package lockfile
 import (
 	"errors"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -339,4 +340,47 @@ func TestAtNamesALineOrSaysItHasNone(t *testing.T) {
 	if got := At(0); got != "an unplaced table" {
 		t.Errorf("At(0) = %q", got)
 	}
+}
+
+// One format is identified by the directory it sits in. A requirements directory
+// holding main.txt and dev.txt is as common as a requirements.txt, and "dev.txt"
+// alone says nothing, so For asks a second time with the parent directory in front
+// of the name.
+func TestForAsksAboutTheParentDirectory(t *testing.T) {
+	// The registry is swapped for the duration, so this parser is the only answer
+	// and cannot be left behind for another test to trip over.
+	withParsers(t, parentParser{})
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"requirements/dev.txt", true},
+		{filepath.Join("python", "requirements", "main.txt"), true},
+		{"dev.txt", false},
+		{"docs/dev.txt", false},
+	}
+	for _, tt := range tests {
+		p, ok := For(tt.path)
+		if ok != tt.want {
+			t.Errorf("For(%q) = %v, want %v", tt.path, ok, tt.want)
+			continue
+		}
+		if ok && p.Name() != "parent-directory-test" {
+			t.Errorf("For(%q) chose %s", tt.path, p.Name())
+		}
+	}
+}
+
+// parentParser recognizes only the form with a parent directory, which is what the
+// test above is about. It is registered by that test alone.
+type parentParser struct{}
+
+func (parentParser) Name() string { return "parent-directory-test" }
+
+func (parentParser) Detect(name string) bool {
+	return strings.HasPrefix(name, "requirements/") && strings.HasSuffix(name, ".txt")
+}
+
+func (parentParser) Parse(path string, _ io.Reader) (*Lockfile, error) {
+	return &Lockfile{Path: path, Format: "parent-directory-test"}, nil
 }
