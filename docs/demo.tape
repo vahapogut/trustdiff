@@ -20,9 +20,14 @@ Set TypingSpeed 40ms
 # downloads API answers 429 to shared CI addresses often enough to matter) delays
 # this hidden run instead of timing the recording out.
 Hide
-Type "trustdiff check npm:express@4.19.2 pypi:requests cargo:serde >/dev/null 2>&1; trustdiff check npm:flatmap-stream@0.1.1 >/dev/null 2>&1; clear"
+Type "trustdiff check npm:express@4.19.2 pypi:requests cargo:serde >/dev/null 2>&1; trustdiff check npm:flatmap-stream@0.1.1 >/dev/null 2>&1; echo CACHE-WARMED"
 Enter
-Wait@300s /\$ $/
+# Wait on a sentinel the command prints rather than on the prompt, whose shape
+# depends on the shell vhs starts.
+Wait+Screen@300s /CACHE-WARMED/
+Type "clear"
+Enter
+Sleep 500ms
 Show
 
 # The three cards of the 0.1.0 acceptance scenario.
