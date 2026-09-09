@@ -1,0 +1,1 @@
+{"dependencies":[{"id":9870532,"version_id":1094992,"crate_id":"autocfg","req":"^1","optional":false,"default_features":true,"features":[],"target":null,"kind":"build","downloads":0},{"id":9870531,"version_id":1094992,"crate_id":"doc-comment","req":"^0.3","optional":false,"default_features":true,"features":[],"target":null,"kind":"dev","downloads":0}]}

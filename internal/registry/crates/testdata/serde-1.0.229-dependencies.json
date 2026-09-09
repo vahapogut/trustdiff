@@ -1,0 +1,1 @@
+{"dependencies":[{"id":31200783,"version_id":2817185,"crate_id":"serde_core","req":"=1.0.229","optional":false,"default_features":false,"features":["result"],"target":null,"kind":"normal","downloads":0},{"id":31200784,"version_id":2817185,"crate_id":"serde_derive","req":"^1","optional":true,"default_features":true,"features":[],"target":null,"kind":"normal","downloads":0}]}
