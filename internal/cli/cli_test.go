@@ -28,7 +28,7 @@ func TestMainExitCodes(t *testing.T) {
 		{name: "version prints identity", args: []string{"version"}, wantCode: ExitOK, wantStdout: "trustdiff dev (commit none"},
 		{name: "version json", args: []string{"--format", "json", "version"}, wantCode: ExitOK, wantStdout: `"version": "dev"`},
 		{name: "unimplemented command exits 2", args: []string{"check", "npm:express"}, wantCode: ExitUsage, wantStderr: "check: not implemented in dev"},
-		{name: "unimplemented nested command exits 2", args: []string{"cache", "status"}, wantCode: ExitUsage, wantStderr: "cache status: not implemented"},
+		{name: "unimplemented nested command exits 2", args: []string{"hook", "install"}, wantCode: ExitUsage, wantStderr: "hook install: not implemented"},
 		{name: "check requires an argument", args: []string{"check"}, wantCode: ExitUsage, wantStderr: "requires at least 1 arg"},
 		{name: "unknown command", args: []string{"nope"}, wantCode: ExitUsage, wantStderr: "unknown command"},
 		{name: "unknown flag", args: []string{"--bogus", "version"}, wantCode: ExitUsage, wantStderr: "unknown flag"},
