@@ -35,6 +35,7 @@ func TestMainExitCodes(t *testing.T) {
 		{name: "bad format", args: []string{"--format", "xml", "version"}, wantCode: ExitUsage, wantStderr: "--format must be one of human, json, sarif, markdown"},
 		{name: "bad fail-on", args: []string{"--fail-on", "maybe", "version"}, wantCode: ExitUsage, wantStderr: "--fail-on must be one of block, warn, never"},
 		{name: "bad jobs", args: []string{"--jobs", "0", "version"}, wantCode: ExitUsage, wantStderr: "--jobs must be at least 1"},
+		{name: "offline and no-cache conflict", args: []string{"--offline", "--no-cache", "version"}, wantCode: ExitUsage, wantStderr: "--offline and --no-cache cannot be combined"},
 		{name: "verbose logs to stderr", args: []string{"-v", "version"}, wantCode: ExitOK, wantStderr: "starting"},
 	}
 	for _, tt := range tests {

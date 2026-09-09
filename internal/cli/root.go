@@ -128,6 +128,9 @@ func (a *App) prepare(cmd *cobra.Command) error {
 	if o.Jobs < 1 {
 		return Usagef("--jobs must be at least 1, got %d", o.Jobs)
 	}
+	if o.Offline && o.NoCache {
+		return Usagef("--offline and --no-cache cannot be combined: offline mode has nothing but the cache to read from")
+	}
 
 	o.Color = colorEnabled(o.NoColor, os.LookupEnv, isTerminal(a.Stdout))
 	o.Width = terminalWidth(a.Stdout, 100)
