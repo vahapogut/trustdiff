@@ -143,28 +143,40 @@ func TestVersionAnomaly(t *testing.T) {
 			},
 		},
 		{
-			name:    "both signals",
-			ref:     "npm:foo@5.0.0",
-			opts:    []func(*Subject){withPackageB(packageB(model.NPM, "foo", releaseB{Version: "1.0.0", Published: dayB(0)}, releaseB{Version: "9.0.0", Published: dayB(10)}, releaseB{Version: "1.0.1", Published: dayB(20)}, releaseB{Version: "5.0.0", Published: dayB(30)}))},
+			// A steady climb in steps of five, then a maintenance release far down
+			// the same line, then a version that leaps past the cadence and still
+			// lands below two releases that were published before it.
+			name: "both signals",
+			ref:  "npm:foo@1.20.5",
+			opts: []func(*Subject){withPackageB(packageB(model.NPM, "foo",
+				releaseB{Version: "1.0.0", Published: dayB(0)},
+				releaseB{Version: "1.5.0", Published: dayB(5)},
+				releaseB{Version: "1.10.0", Published: dayB(10)},
+				releaseB{Version: "1.15.0", Published: dayB(15)},
+				releaseB{Version: "1.20.0", Published: dayB(20)},
+				releaseB{Version: "1.25.0", Published: dayB(25)},
+				releaseB{Version: "1.30.0", Published: dayB(30)},
+				releaseB{Version: "1.1.0", Published: dayB(35)},
+				releaseB{Version: "1.20.5", Published: dayB(40)}))},
 			signals: []string{"jump", "out-of-order"},
 			verify: func(t *testing.T, findings []model.Finding) {
 				jump, order := &findings[0], &findings[1]
-				if got := evidenceB(t, jump, "previous"); got != "1.0.1" {
+				if got := evidenceB(t, jump, "previous"); got != "1.1.0" {
 					t.Errorf("previous = %s", got)
 				}
-				if got := evidenceB(t, jump, "major_step"); got != "4" {
-					t.Errorf("major_step = %s", got)
+				if got := evidenceB(t, jump, "minor_step"); got != "19" {
+					t.Errorf("minor_step = %s", got)
 				}
-				if got := evidenceB(t, jump, "max_major_step"); got != "8" {
-					t.Errorf("max_major_step = %s", got)
+				if got := evidenceB(t, jump, "max_minor_step"); got != "5" {
+					t.Errorf("max_minor_step = %s", got)
 				}
-				if got := evidenceB(t, order, "earlier_version"); got != "9.0.0" {
+				if got := evidenceB(t, order, "earlier_version"); got != "1.30.0" {
 					t.Errorf("earlier_version = %s", got)
 				}
-				if got := evidenceB(t, order, "earlier_above"); got != "1" {
+				if got := evidenceB(t, order, "earlier_above"); got != "2" {
 					t.Errorf("earlier_above = %s", got)
 				}
-				assertContainsB(t, "explanation", order.Explanation, "1 earlier release sorts above it")
+				assertContainsB(t, "explanation", order.Explanation, "2 earlier releases sort above it")
 			},
 		},
 		{

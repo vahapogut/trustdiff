@@ -14,7 +14,10 @@ import (
 //
 //   - npm: preinstall, install, postinstall and prepare from the packument's
 //     versions[<v>].scripts, which npm runs on install (re-verified 2026-09-09
-//     against https://docs.npmjs.com/cli/v11/using-npm/scripts);
+//     against https://docs.npmjs.com/cli/v11/using-npm/scripts), and install
+//     with npm's default command when the version ships a binding.gyp without
+//     declaring an install or preinstall script (the packument marks such
+//     versions with gypfile: true and npm runs node-gyp rebuild for them);
 //   - crates.io: build.rs when the crate ships a build script, which cargo
 //     compiles and runs before building the crate (re-verified 2026-09-09 against
 //     https://doc.rust-lang.org/cargo/reference/build-scripts.html), and
@@ -24,7 +27,10 @@ import (
 //     pip must build, running the project's setup.py, because no wheel exists.
 //
 // Names are reported as recorded; the explanation describes what each one means
-// for the ecosystem. The check is skipped when the version details are unavailable.
+// for the ecosystem. The check is skipped when the version details are
+// unavailable and when the registry could not gather the scripts (for example a
+// crate archive that could not be inspected): VersionInfo.Unknown["scripts"]
+// carries the reason, and an uninspected version is never reported as clean.
 //
 // Evidence keys:
 //
@@ -46,10 +52,13 @@ func (c td006) Run(_ context.Context, s *Subject) Result {
 	if s.Version == nil {
 		return noVersionSkip(c, s)
 	}
+	ref := evaluatedRef(s)
+	if reason, unknown := unknownFacet(s.Version, model.FacetScripts); unknown {
+		return Skip(c.ID(), fmt.Sprintf("install scripts of %s unavailable: %s", ref.Version, reason))
+	}
 	if !s.Version.HasInstallScript() {
 		return Result{}
 	}
-	ref := evaluatedRef(s)
 	names := scriptNames(s.Version.Scripts)
 	title := "Runs code at install time: " + strings.Join(names, ", ")
 	explanation := installScriptText(ref, s.Version.Scripts)
@@ -67,13 +76,44 @@ const (
 	scriptSetupPy   = "setup.py"
 )
 
+// ImplicitInstallCommand is the command the npm client records under the install
+// script of a version that ships a binding.gyp without declaring an install or
+// preinstall script: npm runs node-gyp rebuild for it by default, without any
+// scripts entry. TD005 and TD006 word such a finding as implicit.
+const ImplicitInstallCommand = "node-gyp rebuild (npm default for binding.gyp)"
+
+// implicitInstall reports whether the install script is npm's implicit default.
+func implicitInstall(scripts map[string]string) bool {
+	return strings.TrimSpace(scripts["install"]) == ImplicitInstallCommand
+}
+
+// unknownFacet reports why a registry could not gather one facet of a version
+// (VersionInfo.Unknown keyed by model.FacetScripts, model.FacetProvenance or
+// model.FacetDependencies): the crate archive was too large or not cached
+// offline, the PyPI integrity API failed. A check that needs the facet skips with
+// the reason instead of reading the zero value as a fact.
+func unknownFacet(v *model.VersionInfo, facet string) (reason string, unknown bool) {
+	if v == nil {
+		return "", false
+	}
+	reason, unknown = v.Unknown[facet]
+	if unknown && reason == "" {
+		reason = "not gathered by the registry client"
+	}
+	return reason, unknown
+}
+
 // installScriptText explains, per ecosystem, what the recorded scripts mean.
 func installScriptText(ref model.PackageRef, scripts map[string]string) string {
 	ver := ref.Version
 	switch ref.Ecosystem {
 	case model.NPM:
-		return fmt.Sprintf("%s declares %s, which npm runs with the installing user's permissions on every install of the package",
+		text := fmt.Sprintf("%s declares %s, which npm runs with the installing user's permissions on every install of the package",
 			ver, scriptsText(scripts))
+		if implicitInstall(scripts) {
+			text += "; the install command is not declared in package.json but is npm's default for a package that ships a binding.gyp"
+		}
+		return text
 	case model.Cargo:
 		var parts []string
 		var other map[string]string

@@ -69,7 +69,7 @@ func (c deprecatedOrYanked) Run(_ context.Context, s *Subject) Result {
 		if depsDevReason == "" {
 			depsDevReason = "no deps.dev data for " + s.Ref.String()
 		}
-		return Skip(c.Name(), registryReason+"; "+depsDevReason)
+		return Skip(c.ID(), registryReason+"; "+depsDevReason)
 	}
 
 	evidence := map[string]any{}

@@ -15,9 +15,14 @@ import (
 // packument's versions[<v>].scripts: preinstall, install and postinstall, which
 // npm runs on every install, and prepare, which runs on a local install of the
 // package's own checkout and on git dependencies (lifecycle order re-verified on
-// 2026-09-09 against https://docs.npmjs.com/cli/v11/using-npm/scripts). The check
-// is skipped without a previous version. npm only: crates.io and PyPI have no
-// per-version script list to compare, and TD006 covers their install-time code.
+// 2026-09-09 against https://docs.npmjs.com/cli/v11/using-npm/scripts). A
+// package that ships a binding.gyp without an install or preinstall script gets
+// npm's default install command, node-gyp rebuild; when the client records that
+// implicit command under install the finding says so. The check is skipped
+// without a previous version, when the previous version's details could not be
+// fetched, and when the registry could not gather the scripts of either version.
+// npm only: crates.io and PyPI have no per-version script list to compare, and
+// TD006 covers their install-time code.
 //
 // Evidence keys:
 //
@@ -38,17 +43,32 @@ func (c td005) Run(_ context.Context, s *Subject) Result {
 	if s.Version == nil {
 		return noVersionSkip(c, s)
 	}
+	if res, skipped := previousUnavailableSkip(c, s); skipped {
+		return res
+	}
 	if s.Previous == nil {
 		return Skip(c.ID(), "no earlier release to compare with")
 	}
-	if !s.Version.HasInstallScript() || s.Previous.HasInstallScript() {
+	ref := evaluatedRef(s)
+	if reason, unknown := unknownFacet(s.Version, model.FacetScripts); unknown {
+		return Skip(c.ID(), fmt.Sprintf("install scripts of %s unavailable: %s", ref.Version, reason))
+	}
+	if !s.Version.HasInstallScript() {
 		return Result{}
 	}
-	ref := evaluatedRef(s)
+	if reason, unknown := unknownFacet(s.Previous, model.FacetScripts); unknown {
+		return Skip(c.ID(), fmt.Sprintf("install scripts of the previous version %s unavailable: %s", s.Previous.Ref.Version, reason))
+	}
+	if s.Previous.HasInstallScript() {
+		return Result{}
+	}
 	names := scriptNames(s.Version.Scripts)
 	title := fmt.Sprintf("Install script introduced: %s (%s had none)", strings.Join(names, ", "), s.Previous.Ref.Version)
 	explanation := fmt.Sprintf("%s declared no install-time script; %s declares %s, which npm runs with the installing user's permissions on every install of the package",
 		s.Previous.Ref.Version, ref.Version, scriptsText(s.Version.Scripts))
+	if implicitInstall(s.Version.Scripts) {
+		explanation += "; the install command is not declared in package.json but is npm's default for a package that ships a binding.gyp"
+	}
 	evidence := map[string]any{
 		"previous_version": s.Previous.Ref.Version,
 		"script_names":     names,

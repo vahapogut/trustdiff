@@ -16,11 +16,22 @@ import (
 // TD015 version-anomaly reports a version number that does not fit the package's
 // history. Two signals, each its own finding, both info by default:
 //
-//   - jump: the major component exceeds the previous release's by more than one, or
-//     the minor jumps by more than ten while the major is unchanged (1.4.2 to 9.9.9).
-//     The explanation states the cadence observed over the earlier releases.
-//   - out-of-order: the version sorts below a release that was published earlier,
-//     so the registry's newest upload is not its highest version (1.2.3 after 2.0.0).
+//   - jump: the step from the previous release is far beyond the package's cadence
+//     (brief section 4). The major component exceeds the previous release's by
+//     more than one, or the minor by more than ten while the major is unchanged
+//     (1.4.2 to 9.9.9), and the step also exceeds the largest step between
+//     consecutive earlier releases, so a package that has jumped by three majors
+//     before is not reported for doing it again. Calendar versioning, recognized
+//     by a leading component that is a year between 1970 and 2100, is judged
+//     against the calendar instead: a major step no larger than the years elapsed
+//     between the two publish dates (tz 2023.1 to 2026.1 three years later), or a
+//     minor step no larger than the months elapsed within one year (certifi
+//     2026.1.4 to 2026.12.1), is the scheme at work, not a jump.
+//   - out-of-order: the version sorts below a release of the same major (the same
+//     major.minor while the major is 0) that was published earlier, so the upload is
+//     not the newest of its own release line (1.2.5 after 1.4.2). A maintenance
+//     release on an older line (django 4.2.16 after 5.1.0, express 4.x after 5.0.0)
+//     is the normal shape of a maintained project and is not reported.
 //
 // Both signals use the release history in Subject.Package. Prereleases, yanked
 // versions, versions without a publish time and versions that do not parse are left
@@ -42,14 +53,24 @@ import (
 //	max_major_step      the largest major increase between consecutive earlier releases (jump only)
 //	max_minor_step      the largest minor increase between consecutive earlier releases
 //	                    that share a major (jump only)
-//	earlier_version     the highest earlier-published release the version sorts below (out-of-order only)
+//	calendar            true when the version numbers were read as calendar versioning (jump only)
+//	earlier_version     the highest earlier-published release of the same line the
+//	                    version sorts below (out-of-order only)
 //	earlier_published   its publish time, RFC 3339 (out-of-order only)
-//	earlier_above       how many earlier-published releases sort above the version (out-of-order only)
+//	earlier_above       how many earlier-published releases of the same line sort
+//	                    above the version (out-of-order only)
 
-// Thresholds of the jump signal: a step larger than these is a jump.
+// Thresholds of the jump signal: a step larger than these, and larger than any
+// step in the package's own history, is a jump.
 const (
 	versionAnomalyMajorStep = 1
 	versionAnomalyMinorStep = 10
+)
+
+// Bounds of a leading component read as a calendar year.
+const (
+	calendarFirstYear = 1970
+	calendarLastYear  = 2100
 )
 
 type versionAnomaly struct{}
@@ -77,27 +98,27 @@ type versionAnomalyRelease struct {
 func (c versionAnomaly) Run(_ context.Context, s *Subject) Result {
 	if s.Package == nil {
 		if reason, down := s.Skipped(SourceRegistry); down {
-			return Skip(c.Name(), reason)
+			return Skip(c.ID(), reason)
 		}
-		return Skip(c.Name(), "no version history for "+s.Ref.Package().String())
+		return Skip(c.ID(), "no version history for "+s.Ref.Package().String())
 	}
 	info := s.Version
 	if info == nil {
 		info = registry.Find(s.Package, s.Ref.Version)
 	}
 	if info == nil {
-		return Skip(c.Name(), fmt.Sprintf("version %s is not in the registry's version list", s.Ref.Version))
+		return Skip(c.ID(), fmt.Sprintf("version %s is not in the registry's version list", s.Ref.Version))
 	}
 	if info.PublishedAt.IsZero() {
-		return Skip(c.Name(), fmt.Sprintf("no publish time for %s", s.Ref))
+		return Skip(c.ID(), fmt.Sprintf("no publish time for %s", s.Ref))
 	}
 	current, ok := c.parse(s.Ref.Ecosystem, info)
 	if !ok {
-		return Skip(c.Name(), fmt.Sprintf("version %q does not parse as a %s version", s.Ref.Version, s.Ref.Ecosystem))
+		return Skip(c.ID(), fmt.Sprintf("version %q does not parse as a %s version", s.Ref.Version, s.Ref.Ecosystem))
 	}
 	earlier := c.earlier(s, info.PublishedAt)
 	if len(earlier) == 0 {
-		return Skip(c.Name(), fmt.Sprintf("no earlier release of %s to compare %s with", s.Ref.Package(), s.Ref.Version))
+		return Skip(c.ID(), fmt.Sprintf("no earlier release of %s to compare %s with", s.Ref.Package(), s.Ref.Version))
 	}
 
 	var findings []model.Finding
@@ -145,28 +166,28 @@ func (c versionAnomaly) earlier(s *Subject, publishedAt time.Time) []versionAnom
 }
 
 // jump compares the evaluated version with the previous release and, when the step
-// is larger than the thresholds, reports it against the cadence of the earlier releases.
+// is larger than the thresholds and than any step of the package's own cadence,
+// reports it against that cadence. Calendar versions are judged against the
+// time elapsed between the two releases instead.
 func (c versionAnomaly) jump(s *Subject, current *versionAnomalyRelease, earlier []versionAnomalyRelease) (model.Finding, bool) {
 	previous := earlier[len(earlier)-1]
 	majorStep := current.major - previous.major
 	minorStep := current.minor - previous.minor
-	majorJump := majorStep > versionAnomalyMajorStep
-	minorJump := majorStep == 0 && minorStep > versionAnomalyMinorStep
+	maxMajor, maxMinor := cadence(earlier)
+	majorJump := majorStep > max(versionAnomalyMajorStep, maxMajor)
+	minorJump := majorStep == 0 && minorStep > max(versionAnomalyMinorStep, maxMinor)
+	calendar := calendarYear(current.major) && calendarYear(previous.major)
+	if calendar {
+		years, months := elapsed(previous.info.PublishedAt, current.info.PublishedAt)
+		if majorJump && majorStep <= years {
+			majorJump = false
+		}
+		if minorJump && minorStep <= months {
+			minorJump = false
+		}
+	}
 	if !majorJump && !minorJump {
 		return model.Finding{}, false
-	}
-
-	maxMajor, maxMinor := 0, 0
-	for i := 1; i < len(earlier); i++ {
-		dMajor := earlier[i].major - earlier[i-1].major
-		if dMajor > maxMajor {
-			maxMajor = dMajor
-		}
-		if dMajor == 0 {
-			if dMinor := earlier[i].minor - earlier[i-1].minor; dMinor > maxMinor {
-				maxMinor = dMinor
-			}
-		}
 	}
 
 	evidence := map[string]any{
@@ -180,6 +201,7 @@ func (c versionAnomaly) jump(s *Subject, current *versionAnomalyRelease, earlier
 		"earlier_releases":   len(earlier),
 		"max_major_step":     maxMajor,
 		"max_minor_step":     maxMinor,
+		"calendar":           calendar,
 	}
 
 	var title, step string
@@ -190,26 +212,68 @@ func (c versionAnomaly) jump(s *Subject, current *versionAnomalyRelease, earlier
 		title = fmt.Sprintf("minor version jumps from %s to %s", previous.info.Ref.Version, s.Ref.Version)
 		step = fmt.Sprintf("raises the minor from %d to %d within major %d", previous.minor, current.minor, current.major)
 	}
-	var cadence string
+	var cadenceText string
 	if len(earlier) == 1 {
-		cadence = fmt.Sprintf("%s is the only earlier release, so there is no cadence to compare with", previous.info.Ref.Version)
+		cadenceText = fmt.Sprintf("%s is the only earlier release, so there is no cadence to compare with", previous.info.Ref.Version)
 	} else {
-		cadence = fmt.Sprintf("across the %d earlier releases, consecutive releases raised the major by at most %d and the minor by at most %d",
+		cadenceText = fmt.Sprintf("across the %d earlier releases, consecutive releases raised the major by at most %d and the minor by at most %d",
 			len(earlier), maxMajor, maxMinor)
 	}
 	explanation := fmt.Sprintf("%s (published %s) %s from the previous release %s (published %s); %s",
-		s.Ref, c.day(current.info.PublishedAt), step, previous.info.Ref.Version, c.day(previous.info.PublishedAt), cadence)
+		s.Ref, c.day(current.info.PublishedAt), step, previous.info.Ref.Version, c.day(previous.info.PublishedAt), cadenceText)
+	if calendar {
+		explanation += ", and the leading component reads as a calendar year, which the step outruns"
+	}
 	return NewFinding(c, s, title, explanation, evidence), true
 }
 
-// outOfOrder reports the evaluated version when an earlier-published release sorts
-// above it.
+// cadence returns the largest major step and the largest minor step within one
+// major between consecutive earlier releases, in publish order.
+func cadence(earlier []versionAnomalyRelease) (maxMajor, maxMinor int) {
+	for i := 1; i < len(earlier); i++ {
+		dMajor := earlier[i].major - earlier[i-1].major
+		if dMajor > maxMajor {
+			maxMajor = dMajor
+		}
+		if dMajor == 0 {
+			if dMinor := earlier[i].minor - earlier[i-1].minor; dMinor > maxMinor {
+				maxMinor = dMinor
+			}
+		}
+	}
+	return maxMajor, maxMinor
+}
+
+// calendarYear reports whether a leading component reads as a calendar year.
+func calendarYear(major int) bool {
+	return major >= calendarFirstYear && major <= calendarLastYear
+}
+
+// elapsed returns the calendar years and months from one publish time to another.
+func elapsed(from, to time.Time) (years, months int) {
+	from, to = from.UTC(), to.UTC()
+	years = to.Year() - from.Year()
+	months = years*12 + int(to.Month()) - int(from.Month())
+	return years, months
+}
+
+// sameLine reports whether two releases belong to the same release line: the
+// same major, or the same major.minor while the major is 0.
+func sameLine(a, b *versionAnomalyRelease) bool {
+	if a.major != b.major {
+		return false
+	}
+	return a.major != 0 || a.minor == b.minor
+}
+
+// outOfOrder reports the evaluated version when an earlier-published release of
+// the same line sorts above it.
 func (c versionAnomaly) outOfOrder(s *Subject, current *versionAnomalyRelease, earlier []versionAnomalyRelease) (model.Finding, bool) {
 	var highest *versionAnomalyRelease
 	above := 0
 	for i := range earlier {
 		r := &earlier[i]
-		if current.parsed.Compare(r.parsed) >= 0 {
+		if !sameLine(current, r) || current.parsed.Compare(r.parsed) >= 0 {
 			continue
 		}
 		above++
@@ -233,7 +297,7 @@ func (c versionAnomaly) outOfOrder(s *Subject, current *versionAnomalyRelease, e
 	if above > 1 {
 		noun = "earlier releases sort"
 	}
-	explanation := fmt.Sprintf("%s was published on %s but sorts below %s, published on %s; %d %s above it, so this upload is not the package's newest version",
+	explanation := fmt.Sprintf("%s was published on %s but sorts below %s, published on %s; %d %s above it within the same release line, so this upload is not the newest version of its line",
 		s.Ref, c.day(current.info.PublishedAt), highest.info.Ref.Version, c.day(highest.info.PublishedAt), above, noun)
 	return NewFinding(c, s, title, explanation, evidence), true
 }

@@ -43,9 +43,12 @@ func TestTD002PublisherChanged(t *testing.T) {
 		subject func() *Subject
 		want    outcomeA
 		// when a finding fires
+		publisher  string // the evaluated version's publisher; bob-ci when empty
 		publishers []string
 		versions   []string
 		window     int
+		kind       string // publisher_kind; account when empty
+		evidence   map[string]any
 		text       []string
 	}{
 		{
@@ -154,6 +157,100 @@ func TestTD002PublisherChanged(t *testing.T) {
 			},
 		},
 		{
+			name: "crates.io trusted publishing from another repository is a change",
+			subject: func() *Subject {
+				return historyA(model.Cargo,
+					releaseA{"0.9.0", "github:rust-random/core", 40, false, false},
+					releaseA{"0.10.0", "github:rust-random/core", 20, false, false},
+					releaseA{"0.10.1", "github:attacker/rand_core", 1, false, false})
+			},
+			want:       outcomeA{findings: 1},
+			publisher:  "github:attacker/rand_core",
+			publishers: []string{"github:rust-random/core"},
+			versions:   []string{"0.10.0", "0.9.0"},
+			window:     5,
+			kind:       "trusted-publisher",
+			evidence:   map[string]any{"trusted_publisher_provider": "github", "trusted_publisher_repository": "attacker/rand_core"},
+			text: []string{
+				"the previous 2 versions (0.10.0, 0.9.0) were published by trusted publishing from the github repository rust-random/core",
+				"0.10.1 was published by trusted publishing from the github repository attacker/rand_core, a publishing identity that published none of them",
+			},
+		},
+		{
+			name: "crates.io trusted publishing from the same repository is no change",
+			subject: func() *Subject {
+				return historyA(model.Cargo,
+					releaseA{"0.10.0", "github:rust-random/rand_core", 20, false, false},
+					releaseA{"0.10.1", "github:rust-random/rand_core", 1, false, false})
+			},
+			want: outcomeA{},
+		},
+		{
+			name: "npm trusted publishing through the same configuration is no change",
+			subject: func() *Subject {
+				return historyA(model.NPM,
+					releaseA{"4.0.0", "github-trusted-publisher:oidc:87d8bb4c", 20, false, false},
+					releaseA{"5.0.0", "github-trusted-publisher:oidc:87d8bb4c", 1, false, false})
+			},
+			want: outcomeA{},
+		},
+		{
+			name: "npm trusted publishing through a reconfigured publisher is a change",
+			subject: func() *Subject {
+				return historyA(model.NPM,
+					releaseA{"4.0.0", "github-trusted-publisher:oidc:87d8bb4c", 20, false, false},
+					releaseA{"5.0.0", "github-trusted-publisher:oidc:87d8bb4c", 10, false, false},
+					releaseA{"6.0.0", "github-trusted-publisher:oidc:5e2f01aa", 1, false, false})
+			},
+			want:       outcomeA{findings: 1},
+			publisher:  "github-trusted-publisher:oidc:5e2f01aa",
+			publishers: []string{"github-trusted-publisher:oidc:87d8bb4c"},
+			versions:   []string{"5.0.0", "4.0.0"},
+			window:     5,
+			kind:       "trusted-publisher",
+			evidence:   map[string]any{"trusted_publisher_provider": "github", "trusted_publisher_configuration": "oidc:5e2f01aa"},
+			text: []string{
+				"were published by the github trusted publisher configuration oidc:87d8bb4c",
+				"6.0.0 was published by the github trusted publisher configuration oidc:5e2f01aa, a publishing identity that published none of them",
+			},
+		},
+		{
+			name: "migration from an account to npm trusted publishing names the configuration",
+			subject: func() *Subject {
+				return historyA(model.NPM,
+					releaseA{"2.3.2", "bdehamer", 40, false, false},
+					releaseA{"3.0.0", "bdehamer", 30, false, false},
+					releaseA{"3.1.0", "bdehamer", 20, false, false},
+					releaseA{"4.0.0", "github-trusted-publisher:oidc:87d8bb4c", 1, false, false})
+			},
+			want:       outcomeA{findings: 1},
+			publisher:  "github-trusted-publisher:oidc:87d8bb4c",
+			publishers: []string{"bdehamer"},
+			versions:   []string{"3.1.0", "3.0.0", "2.3.2"},
+			window:     5,
+			kind:       "trusted-publisher",
+			text: []string{
+				"the previous 3 versions (3.1.0, 3.0.0, 2.3.2) were published by bdehamer",
+				"4.0.0 was published by the github trusted publisher configuration oidc:87d8bb4c, a publishing identity that published none of them",
+				"either a migration to trusted publishing or a trusted publisher registered by whoever holds the account",
+			},
+		},
+		{
+			name: "a single trusted publishing predecessor reads as a different identity",
+			subject: func() *Subject {
+				return historyA(model.Cargo,
+					releaseA{"0.10.0", "github:rust-random/core", 20, false, false},
+					releaseA{"0.10.1", "github:rust-random/rand_core", 1, false, false})
+			},
+			want:       outcomeA{findings: 1},
+			publisher:  "github:rust-random/rand_core",
+			publishers: []string{"github:rust-random/core"},
+			versions:   []string{"0.10.0"},
+			window:     5,
+			kind:       "trusted-publisher",
+			text:       []string{"0.10.1 was published by trusted publishing from the github repository rust-random/rand_core, a different publishing identity"},
+		},
+		{
 			name: "skipped when the version has no publisher",
 			subject: func() *Subject {
 				return historyA(model.NPM,
@@ -244,14 +341,36 @@ func TestTD002PublisherChanged(t *testing.T) {
 			if got := f.Evidence["window"]; got != tt.window {
 				t.Errorf("window = %v, want %d", got, tt.window)
 			}
-			if got := f.Evidence["publisher"]; got != "bob-ci" {
-				t.Errorf("publisher = %v, want bob-ci", got)
+			publisher, kind := tt.publisher, tt.kind
+			if publisher == "" {
+				publisher = "bob-ci"
+			}
+			if kind == "" {
+				kind = "account"
+			}
+			if got := f.Evidence["publisher"]; got != publisher {
+				t.Errorf("publisher = %v, want %s", got, publisher)
+			}
+			if got := f.Evidence["publisher_kind"]; got != kind {
+				t.Errorf("publisher_kind = %v, want %s", got, kind)
+			}
+			for key, want := range tt.evidence {
+				if got := f.Evidence[key]; got != want {
+					t.Errorf("evidence[%q] = %v, want %v", key, got, want)
+				}
+			}
+			if kind == "account" {
+				for _, key := range []string{"trusted_publisher_provider", "trusted_publisher_repository", "trusted_publisher_configuration"} {
+					if v, ok := f.Evidence[key]; ok {
+						t.Errorf("evidence carries %s = %v for an account", key, v)
+					}
+				}
 			}
 			releases, ok := f.Evidence["previous_releases"].([]map[string]any)
 			if !ok || len(releases) != len(tt.versions) {
 				t.Errorf("previous_releases = %v, want %d entries", f.Evidence["previous_releases"], len(tt.versions))
 			}
-			wantTextA(t, "title", f.Title, "Published by bob-ci")
+			wantTextA(t, "title", f.Title, "Published by "+parsePublisher(publisher).text())
 			wantTextA(t, "explanation", f.Explanation, tt.text...)
 		})
 	}
@@ -274,5 +393,31 @@ func TestTD002NotApplicableToPyPI(t *testing.T) {
 	c, _ := Lookup("TD002")
 	if AppliesTo(c, model.PyPI) {
 		t.Error("TD002 applies to pypi; the brief routes PyPI through the baseline")
+	}
+}
+
+func TestParsePublisher(t *testing.T) {
+	tests := []struct {
+		name     string
+		trusted  bool
+		text     string
+		provider string
+	}{
+		{name: "bob-ci", text: "bob-ci"},
+		{name: "GitHub Actions", text: "GitHub Actions"},
+		{name: "github:rust-random/rand_core", trusted: true, provider: "github", text: "trusted publishing from the github repository rust-random/rand_core"},
+		{name: "github-trusted-publisher:oidc:87d8bb4c-1", trusted: true, provider: "github", text: "the github trusted publisher configuration oidc:87d8bb4c-1"},
+		{name: "odd:name", text: "odd:name"},
+		{name: ":", text: ":"},
+		{name: "a b:c/d", text: "a b:c/d"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id := parsePublisher(tt.name)
+			if id.trusted() != tt.trusted || id.provider != tt.provider || id.text() != tt.text {
+				t.Errorf("parsePublisher(%q) = trusted %v provider %q text %q; want %v %q %q",
+					tt.name, id.trusted(), id.provider, id.text(), tt.trusted, tt.provider, tt.text)
+			}
+		})
 	}
 }

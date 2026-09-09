@@ -238,8 +238,8 @@ func assertSkippedB(t *testing.T, c Check, res Result, want string) {
 	if res.Skipped == nil {
 		t.Fatalf("%s: want skipped, got %d findings", c.ID(), len(res.Findings))
 	}
-	if res.Skipped.Check != c.Name() {
-		t.Errorf("%s: skipped.check = %q, want %q", c.ID(), res.Skipped.Check, c.Name())
+	if res.Skipped.Check != c.ID() {
+		t.Errorf("%s: skipped.check = %q, want the check id %q", c.ID(), res.Skipped.Check, c.ID())
 	}
 	if !strings.Contains(res.Skipped.Reason, want) {
 		t.Errorf("%s: skipped reason %q does not contain %q", c.ID(), res.Skipped.Reason, want)

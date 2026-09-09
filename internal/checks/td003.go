@@ -43,6 +43,9 @@ func (c td003) Run(_ context.Context, s *Subject) Result {
 	if s.Version == nil {
 		return noVersionSkip(c, s)
 	}
+	if res, skipped := previousUnavailableSkip(c, s); skipped {
+		return res
+	}
 	if s.Previous == nil {
 		return Skip(c.ID(), "no earlier release to compare with")
 	}

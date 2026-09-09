@@ -66,7 +66,7 @@ func (c lowUsage) Run(_ context.Context, s *Subject) Result {
 		noCount = "the registry reports no download counts for " + s.Ref.Package().String()
 	}
 	if reason, down := s.Skipped(SourceDepsDev); down {
-		return Skip(c.Name(), noCount+"; "+reason)
+		return Skip(c.ID(), noCount+"; "+reason)
 	}
 	for _, f := range s.DepsDevFindings {
 		if f.Type == lowUsageFindingType {
@@ -74,10 +74,10 @@ func (c lowUsage) Run(_ context.Context, s *Subject) Result {
 		}
 	}
 	if (s.DepsDev != nil && !s.DepsDev.Found) || c.hasFinding(s, lowUsageNotFoundType) {
-		return Skip(c.Name(), noCount+"; deps.dev has not indexed "+s.Ref.String())
+		return Skip(c.ID(), noCount+"; deps.dev has not indexed "+s.Ref.String())
 	}
 	if s.DepsDev == nil && len(s.DepsDevFindings) == 0 {
-		return Skip(c.Name(), noCount+"; no deps.dev data for "+s.Ref.String())
+		return Skip(c.ID(), noCount+"; no deps.dev data for "+s.Ref.String())
 	}
 	return Result{}
 }

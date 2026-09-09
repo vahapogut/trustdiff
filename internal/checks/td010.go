@@ -54,7 +54,7 @@ func (vulnerability) Ecosystems() []model.Ecosystem { return nil }
 // Run implements Check.
 func (c vulnerability) Run(_ context.Context, s *Subject) Result {
 	if reason, down := s.Skipped(SourceOSV); down {
-		return Skip(c.Name(), reason)
+		return Skip(c.ID(), reason)
 	}
 	threshold, thresholdName := c.threshold(s)
 

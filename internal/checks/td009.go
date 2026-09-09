@@ -63,7 +63,7 @@ func (c maliciousAdvisory) Run(_ context.Context, s *Subject) Result {
 	osvReason, osvDown := s.Skipped(SourceOSV)
 	depsDevReason, depsDevDown := s.Skipped(SourceDepsDev)
 	if osvDown && depsDevDown {
-		return Skip(c.Name(), osvReason+"; "+depsDevReason)
+		return Skip(c.ID(), osvReason+"; "+depsDevReason)
 	}
 
 	var advisories []*advisory.Advisory

@@ -80,7 +80,7 @@ func TestTD007NewDependencyIntroduced(t *testing.T) {
 			},
 			text: []string{
 				"1.2.0 declared 1 runtime dependency; 1.3.0 adds plain-crypto-js (^1.0.0)",
-				"A fresh install would take plain-crypto-js@1.0.1, published on 2026-09-07T12:00:00Z (2d ago)",
+				"The newest stable version is plain-crypto-js@1.0.1, published on 2026-09-07T12:00:00Z (2d ago)",
 				"the package's first release dates from 2026-09-06T12:00:00Z (3d ago)",
 				"it has 12 weekly downloads, below the low-usage threshold of 500",
 				"deps.dev has no record of plain-crypto-js@1.0.1",
