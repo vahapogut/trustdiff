@@ -10,6 +10,7 @@ import (
 
 	"github.com/vahapogut/trustdiff/internal/advisory/depsdev"
 	"github.com/vahapogut/trustdiff/internal/advisory/osv"
+	"github.com/vahapogut/trustdiff/internal/advisory/osvindex"
 	"github.com/vahapogut/trustdiff/internal/checks"
 	"github.com/vahapogut/trustdiff/internal/httpcache"
 	"github.com/vahapogut/trustdiff/internal/model"
@@ -239,5 +240,13 @@ func (a *App) defaultLoader() (checks.Loader, error) {
 		model.Cargo: crates.New(hc, crates.WithLogger(log)),
 		model.JSR:   jsr.New(hc, jsr.WithLogger(log)),
 	}
-	return checks.NewLoader(reg, osv.New(hc), depsdev.New(hc), log), nil
+	var osvOpts []osv.Option
+	if a.Opts.Offline {
+		// Offline the API is unreachable by definition, so OSV answers from the
+		// index the cache holds. Open's error, when there is no index, reaches
+		// every advisory check as the reason it was skipped, and that reason
+		// begins with "offline".
+		osvOpts = append(osvOpts, osv.WithIndex(osvindex.Open(hc.Dir())))
+	}
+	return checks.NewLoader(reg, osv.New(hc, osvOpts...), depsdev.New(hc), log), nil
 }

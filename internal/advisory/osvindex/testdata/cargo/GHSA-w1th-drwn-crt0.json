@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.7.3",
+  "id": "GHSA-w1th-drwn-crt0",
+  "published": "2026-03-01T00:00:00Z",
+  "modified": "2026-03-05T20:55:52Z",
+  "withdrawn": "2026-03-05T20:55:52Z",
+  "summary": "Withdrawn: openssl advisory that duplicated RUSTSEC-2025-0022",
+  "database_specific": {"severity": "CRITICAL"},
+  "affected": [
+    {
+      "package": {"name": "openssl", "ecosystem": "crates.io", "purl": "pkg:cargo/openssl"},
+      "ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "0.10.70"}]}]
+    }
+  ]
+}

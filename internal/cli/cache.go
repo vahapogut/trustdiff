@@ -3,15 +3,27 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/vahapogut/trustdiff/internal/advisory/osvindex"
 	"github.com/vahapogut/trustdiff/internal/httpcache"
+	"github.com/vahapogut/trustdiff/internal/model"
+	"github.com/vahapogut/trustdiff/internal/policy"
+	"github.com/vahapogut/trustdiff/internal/version"
 )
 
-// cache subcommands. status and clear are thin wrappers over internal/httpcache;
-// refresh-lists and refresh arrive in later milestones.
+// refreshOptions lets the tests point "cache refresh" at an httptest server and
+// shorten its budget. Nothing outside tests sets it, so the command uses the
+// real bucket and the real defaults.
+var refreshOptions = func() osvindex.Options { return osvindex.Options{} }
+
+// cache subcommands. status and clear are thin wrappers over internal/httpcache
+// and internal/advisory/osvindex; refresh downloads the OSV advisory archives
+// and rebuilds the offline index; refresh-lists arrives in a later milestone.
 func (a *App) newCacheCommand() *cobra.Command {
 	var dir string
 	cmd := &cobra.Command{
@@ -20,6 +32,29 @@ func (a *App) newCacheCommand() *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&dir, "cache-dir", "",
 		"cache directory (default: $"+httpcache.EnvDir+" when set, otherwise the trustdiff directory under the user cache directory)")
+
+	var ecosystems []string
+	refresh := &cobra.Command{
+		Use:   "refresh",
+		Short: "Download the advisory databases for offline use",
+		Long: `Download the OSV advisory archive of each configured ecosystem and rebuild the
+offline index under the cache directory. With the index in place, --offline
+answers the advisory checks from it instead of reporting them as skipped.
+
+The ecosystems come from the "ecosystems" block of the policy when it names any
+that OSV publishes an archive for, otherwise every ecosystem OSV indexes (npm,
+pypi and cargo). --ecosystem overrides both.
+
+The download is conditional: an archive the server reports as unchanged since the
+last refresh is not transferred again and the index on disk is kept.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return a.cacheRefresh(cmd, dir, ecosystems)
+		},
+	}
+	refresh.Flags().StringSliceVar(&ecosystems, "ecosystem", nil,
+		"ecosystem to refresh, repeatable (default: the ecosystems the policy configures)")
+
 	cmd.AddCommand(
 		&cobra.Command{
 			Use:   "status",
@@ -38,7 +73,7 @@ func (a *App) newCacheCommand() *cobra.Command {
 			},
 		},
 		&cobra.Command{Use: "refresh-lists", Short: "Refresh the popular package lists used for typosquat detection", Args: cobra.NoArgs, RunE: notImplemented("cache refresh-lists")},
-		&cobra.Command{Use: "refresh", Short: "Download the advisory databases for offline use", Args: cobra.NoArgs, RunE: notImplemented("cache refresh")},
+		refresh,
 	)
 	return cmd
 }
@@ -63,6 +98,27 @@ type cacheStatusReport struct {
 	Bytes           int64     `json:"bytes"`
 	OldestFetchedAt time.Time `json:"oldest_fetched_at,omitzero"`
 	NewestFetchedAt time.Time `json:"newest_fetched_at,omitzero"`
+	// AdvisoryIndex describes the offline advisory index, which is what
+	// --offline reads. It is always present, with an empty ecosystem list when
+	// nothing has been downloaded.
+	AdvisoryIndex cacheIndexReport `json:"advisory_index"`
+}
+
+// cacheIndexReport is the advisory index half of "cache status".
+type cacheIndexReport struct {
+	Dir        string           `json:"dir"`
+	Bytes      int64            `json:"bytes"`
+	StaleAfter string           `json:"stale_after"`
+	Ecosystems []cacheIndexEcho `json:"ecosystems"`
+}
+
+// cacheIndexEcho is one indexed ecosystem as the json report prints it: the
+// stored metadata plus the two values a reader would otherwise have to compute,
+// the age and whether that age is past the staleness threshold.
+type cacheIndexEcho struct {
+	osvindex.Meta
+	AgeSeconds float64 `json:"age_seconds"`
+	Stale      bool    `json:"stale"`
 }
 
 func (a *App) cacheStatus(dirFlag string) error {
@@ -74,24 +130,87 @@ func (a *App) cacheStatus(dirFlag string) error {
 	if err != nil {
 		return Exit(ExitUsage, fmt.Errorf("cache status: %w", err))
 	}
+	index, err := osvindex.Stat(dir)
+	if err != nil {
+		return Exit(ExitUsage, fmt.Errorf("cache status: %w", err))
+	}
+	now := time.Now()
+
 	if a.Opts.Format == "json" {
-		return a.writeJSON(cacheStatusReport{
+		report := cacheStatusReport{
 			Dir:             dir,
 			Entries:         stats.Entries,
 			Bytes:           stats.Bytes,
 			OldestFetchedAt: stats.OldestFetchedAt,
 			NewestFetchedAt: stats.NewestFetchedAt,
-		})
+			AdvisoryIndex: cacheIndexReport{
+				Dir:        index.Dir,
+				Bytes:      index.Bytes,
+				StaleAfter: policy.FormatDuration(osvindex.StaleAfter),
+				Ecosystems: make([]cacheIndexEcho, 0, len(index.Ecosystems)),
+			},
+		}
+		for i := range index.Ecosystems {
+			meta := index.Ecosystems[i]
+			report.AdvisoryIndex.Ecosystems = append(report.AdvisoryIndex.Ecosystems, cacheIndexEcho{
+				Meta:       meta,
+				AgeSeconds: meta.Age(now).Seconds(),
+				Stale:      meta.Stale(now),
+			})
+		}
+		return a.writeJSON(report)
 	}
-	now := time.Now()
+
 	oldest, newest := "none", "none"
 	if stats.Entries > 0 {
 		oldest = formatAge(now.Sub(stats.OldestFetchedAt))
 		newest = formatAge(now.Sub(stats.NewestFetchedAt))
 	}
-	_, err = fmt.Fprintf(a.Stdout, "Directory: %s\nEntries:   %d\nSize:      %s\nOldest:    %s\nNewest:    %s\n",
-		dir, stats.Entries, formatBytes(stats.Bytes), oldest, newest)
-	return err
+	if _, err := fmt.Fprintf(a.Stdout, "Directory: %s\nEntries:   %d\nSize:      %s\nOldest:    %s\nNewest:    %s\n",
+		dir, stats.Entries, formatBytes(stats.Bytes), oldest, newest); err != nil {
+		return err
+	}
+	return a.writeIndexStatus(&index, now)
+}
+
+// writeIndexStatus prints the advisory index block of "cache status": which
+// ecosystems are indexed, how many advisories each holds, how old the download
+// is, and out loud when that age is past the threshold. A stale advisory index
+// that looks fresh is worse than none, so the line says so rather than leaving
+// the reader to subtract dates.
+func (a *App) writeIndexStatus(index *osvindex.Stats, now time.Time) error {
+	if len(index.Ecosystems) == 0 {
+		_, err := fmt.Fprintf(a.Stdout, "Advisory index: none, run \"trustdiff cache refresh\" to use --offline\n")
+		return err
+	}
+	if _, err := fmt.Fprintf(a.Stdout, "Advisory index: %s in %s\n", formatBytes(index.Bytes), index.Dir); err != nil {
+		return err
+	}
+	indexed := make(map[model.Ecosystem]bool, len(index.Ecosystems))
+	for i := range index.Ecosystems {
+		meta := &index.Ecosystems[i]
+		indexed[meta.Ecosystem] = true
+		line := fmt.Sprintf("  %-6s %d advisories", meta.Ecosystem, meta.Advisories)
+		if meta.Withdrawn > 0 {
+			line += fmt.Sprintf(" (%d withdrawn)", meta.Withdrawn)
+		}
+		line += fmt.Sprintf(", %d packages, downloaded %s", meta.Packages, formatAge(meta.Age(now)))
+		if meta.Stale(now) {
+			line += fmt.Sprintf(", stale (older than %s), run \"trustdiff cache refresh\"", policy.FormatDuration(osvindex.StaleAfter))
+		}
+		if _, err := fmt.Fprintln(a.Stdout, line); err != nil {
+			return err
+		}
+	}
+	for _, eco := range osvindex.Indexable() {
+		if indexed[eco] {
+			continue
+		}
+		if _, err := fmt.Fprintf(a.Stdout, "  %-6s not downloaded\n", eco); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // cacheClearReport is the --format json shape of "cache clear".
@@ -99,6 +218,8 @@ type cacheClearReport struct {
 	Dir            string `json:"dir"`
 	RemovedEntries int    `json:"removed_entries"`
 	RemovedBytes   int64  `json:"removed_bytes"`
+	// RemovedIndexBytes is the part of RemovedBytes that was the advisory index.
+	RemovedIndexBytes int64 `json:"removed_index_bytes"`
 }
 
 func (a *App) cacheClear(dirFlag string) error {
@@ -110,19 +231,188 @@ func (a *App) cacheClear(dirFlag string) error {
 	if err != nil {
 		return Exit(ExitUsage, fmt.Errorf("cache clear: %w", err))
 	}
+	index, err := osvindex.Stat(dir)
+	if err != nil {
+		return Exit(ExitUsage, fmt.Errorf("cache clear: %w", err))
+	}
+	// The advisory index goes first, because internal/httpcache's Clear refuses
+	// any subdirectory it does not know by name and would otherwise report the
+	// index itself as a foreign file. osvindex.Clear does its own refusal check
+	// over the files it owns, so a cache directory that is not one still keeps
+	// its contents.
+	if err := osvindex.Clear(dir); err != nil {
+		return Exit(ExitUsage, fmt.Errorf("cache clear: %w", err))
+	}
 	if err := httpcache.Clear(dir); err != nil {
 		return Exit(ExitUsage, fmt.Errorf("cache clear: %w", err))
 	}
-	a.Opts.Log.Debug("cache cleared", "dir", dir, "entries", before.Entries, "bytes", before.Bytes)
+	total := before.Bytes + index.Bytes
+	a.Opts.Log.Debug("cache cleared", "dir", dir, "entries", before.Entries, "bytes", total, "index_bytes", index.Bytes)
 	if a.Opts.Format == "json" {
-		return a.writeJSON(cacheClearReport{Dir: dir, RemovedEntries: before.Entries, RemovedBytes: before.Bytes})
+		return a.writeJSON(cacheClearReport{Dir: dir, RemovedEntries: before.Entries, RemovedBytes: total, RemovedIndexBytes: index.Bytes})
 	}
-	if before.Entries == 0 && before.Bytes == 0 {
+	if before.Entries == 0 && total == 0 {
 		_, err = fmt.Fprintf(a.Stdout, "Nothing to remove in %s\n", dir)
 		return err
 	}
-	_, err = fmt.Fprintf(a.Stdout, "Removed %d entries (%s) from %s\n", before.Entries, formatBytes(before.Bytes), dir)
+	suffix := ""
+	if index.Bytes > 0 {
+		suffix = fmt.Sprintf(", the advisory index included (%s)", formatBytes(index.Bytes))
+	}
+	_, err = fmt.Fprintf(a.Stdout, "Removed %d entries (%s) from %s%s\n", before.Entries, formatBytes(total), dir, suffix)
 	return err
+}
+
+// cacheRefreshReport is the --format json shape of "cache refresh".
+type cacheRefreshReport struct {
+	Dir        string                  `json:"dir"`
+	Ecosystems []cacheRefreshEcosystem `json:"ecosystems"`
+}
+
+// cacheRefreshEcosystem is one ecosystem's outcome. Error is the message when
+// that ecosystem failed; the others in the same run still report what they did.
+type cacheRefreshEcosystem struct {
+	Ecosystem     model.Ecosystem `json:"ecosystem"`
+	Unchanged     bool            `json:"unchanged"`
+	WroteShards   int             `json:"wrote_shards"`
+	RemovedShards int             `json:"removed_shards"`
+	Meta          *osvindex.Meta  `json:"meta,omitempty"`
+	Error         string          `json:"error,omitempty"`
+}
+
+func (a *App) cacheRefresh(cmd *cobra.Command, dirFlag string, ecosystemFlag []string) error {
+	dir, err := resolveCacheDir(dirFlag)
+	if err != nil {
+		return err
+	}
+	ecosystems, err := a.refreshEcosystems(ecosystemFlag)
+	if err != nil {
+		return err
+	}
+	opts := refreshOptions()
+	opts.UserAgent = version.UserAgent()
+	opts.Logger = a.Opts.Log
+	if a.Opts.Offline {
+		return Usagef("cache refresh downloads the advisory archives and cannot run with --offline")
+	}
+
+	results, err := osvindex.Refresh(cmd.Context(), dir, ecosystems, opts)
+	if err != nil {
+		return Usagef("cache refresh: %v", err)
+	}
+
+	report := cacheRefreshReport{Dir: dir, Ecosystems: make([]cacheRefreshEcosystem, 0, len(results))}
+	failed := 0
+	for i := range results {
+		res := &results[i]
+		entry := cacheRefreshEcosystem{
+			Ecosystem:     res.Ecosystem,
+			Unchanged:     res.Unchanged,
+			WroteShards:   res.WroteShards,
+			RemovedShards: res.RemovedShards,
+		}
+		if res.Err != nil {
+			failed++
+			entry.Error = res.Err.Error()
+		} else {
+			meta := res.Meta
+			entry.Meta = &meta
+		}
+		report.Ecosystems = append(report.Ecosystems, entry)
+	}
+
+	if a.Opts.Format == "json" {
+		if err := a.writeJSON(report); err != nil {
+			return err
+		}
+	} else if err := a.writeRefreshLines(&report); err != nil {
+		return err
+	}
+	if failed > 0 {
+		// A refresh that could not reach a source is the same condition
+		// on_data_unavailable describes: the data is not there, and a later run
+		// may succeed. The messages went to stdout with the rest of the report,
+		// so the exit carries no second copy.
+		return Exit(ExitUnavailable, nil)
+	}
+	return nil
+}
+
+// writeRefreshLines prints one line per ecosystem.
+func (a *App) writeRefreshLines(report *cacheRefreshReport) error {
+	for i := range report.Ecosystems {
+		e := &report.Ecosystems[i]
+		var line string
+		switch {
+		case e.Error != "":
+			line = fmt.Sprintf("  %-6s failed: %s", e.Ecosystem, e.Error)
+		case e.Unchanged:
+			line = fmt.Sprintf("  %-6s unchanged, %d advisories for %d packages", e.Ecosystem, e.Meta.Advisories, e.Meta.Packages)
+		default:
+			line = fmt.Sprintf("  %-6s %d advisories for %d packages, %s indexed from %s downloaded",
+				e.Ecosystem, e.Meta.Advisories, e.Meta.Packages, formatBytes(e.Meta.IndexBytes), formatBytes(e.Meta.ArchiveBytes))
+			if e.WroteShards == 0 && e.RemovedShards == 0 {
+				line += ", index unchanged"
+			}
+		}
+		if _, err := fmt.Fprintln(a.Stdout, line); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintf(a.Stdout, "Advisory index in %s\n", osvindex.Dir(report.Dir))
+	return err
+}
+
+// refreshEcosystems decides what "cache refresh" downloads: --ecosystem when
+// given, otherwise the ecosystems the policy configures, otherwise every
+// ecosystem OSV publishes an archive for. An ecosystem OSV does not index (Deno,
+// JSR) is a usage error when it was asked for by name and is quietly left out
+// when it only came from the policy, since a policy that configures Deno is not
+// asking for an advisory archive that does not exist.
+func (a *App) refreshEcosystems(flag []string) ([]model.Ecosystem, error) {
+	if len(flag) > 0 {
+		out := make([]model.Ecosystem, 0, len(flag))
+		for _, name := range flag {
+			eco, err := model.ParseEcosystem(name)
+			if err != nil {
+				return nil, Usagef("--ecosystem: %v", err)
+			}
+			if osvindex.OSVEcosystem(eco) == "" {
+				return nil, Usagef("--ecosystem: OSV publishes no advisory archive for %s (it indexes %s)",
+					eco, joinEcosystemNames(osvindex.Indexable()))
+			}
+			if !slices.Contains(out, eco) {
+				out = append(out, eco)
+			}
+		}
+		return out, nil
+	}
+	pol, _, err := a.loadPolicyOrDefault()
+	if err != nil {
+		return nil, err
+	}
+	var configured []model.Ecosystem
+	if pol != nil {
+		for _, eco := range osvindex.Indexable() {
+			if _, ok := pol.Ecosystems[eco]; ok {
+				configured = append(configured, eco)
+			}
+		}
+	}
+	if len(configured) > 0 {
+		a.Opts.Log.Debug("refreshing the ecosystems the policy configures", "ecosystems", configured)
+		return configured, nil
+	}
+	return osvindex.Indexable(), nil
+}
+
+// joinEcosystemNames renders an ecosystem list for a message.
+func joinEcosystemNames(ecosystems []model.Ecosystem) string {
+	names := make([]string, len(ecosystems))
+	for i, eco := range ecosystems {
+		names[i] = string(eco)
+	}
+	return strings.Join(names, ", ")
 }
 
 func (a *App) writeJSON(v any) error {

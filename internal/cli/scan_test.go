@@ -300,7 +300,6 @@ func TestScanUsageErrors(t *testing.T) {
 		{name: "no lockfile under the path", args: []string{"scan"}, want: "no lockfile found under"},
 		{name: "path that does not exist", args: []string{"scan", "no-such-directory"}, want: "no-such-directory"},
 		{name: "file no parser reads", args: []string{"scan", "notes.txt"}, want: "no parser reads"},
-		{name: "update-baseline", args: []string{"scan", "--update-baseline"}, want: "later release"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

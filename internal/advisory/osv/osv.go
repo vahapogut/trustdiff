@@ -81,6 +81,7 @@ import (
 	"time"
 
 	"github.com/vahapogut/trustdiff/internal/advisory"
+	"github.com/vahapogut/trustdiff/internal/advisory/osvindex"
 	"github.com/vahapogut/trustdiff/internal/httpcache"
 	"github.com/vahapogut/trustdiff/internal/model"
 )
@@ -138,12 +139,26 @@ func WithLogger(log *slog.Logger) Option {
 	}
 }
 
+// WithIndex makes the client answer from the offline advisory index instead of
+// the API. A nil reader with a non-nil error means there is no index, and every
+// call then fails with that error, whose message begins with "offline", so the
+// checks report themselves as skipped with that reason. The pair is what
+// osvindex.Open returns, so a caller passes it straight through.
+func WithIndex(idx *osvindex.Reader, err error) Option {
+	return func(c *Client) { c.index, c.indexErr = idx, err }
+}
+
 // Client is the OSV.dev client. All requests go through internal/httpcache. It
 // holds no state of its own and is safe for concurrent use.
 type Client struct {
 	http *httpcache.Client
 	base string
 	log  *slog.Logger
+	// index answers instead of the API when the caller opened one, which is what
+	// --offline does. indexErr is what to say when the caller looked for an index
+	// and there is none: it reaches the checks as the reason a check was skipped.
+	index    *osvindex.Reader
+	indexErr error
 }
 
 // New returns a client using the shared HTTP cache, which must not be nil.
@@ -224,6 +239,14 @@ func (c *Client) Advisories(ctx context.Context, refs []model.PackageRef) (map[m
 	}
 	if len(unsupported) > 0 {
 		c.log.Debug("osv skipping ecosystems it does not index", "ecosystems", unsupported)
+	}
+	// The index is asked after the ecosystems have been filtered, so a Deno or JSR
+	// ref still gets ErrUnsupported and not a complaint about a missing index.
+	if c.indexErr != nil {
+		return nil, fmt.Errorf("osv: %w", c.indexErr)
+	}
+	if c.index != nil {
+		return c.advisoriesFromIndex(distinct)
 	}
 
 	lost := &advisory.PartialError{Source: "osv", Refs: map[model.PackageRef]error{}}
@@ -478,6 +501,61 @@ func (c *Client) fallback(id string, listed batchVuln, reason string) *advisory.
 	c.log.Warn("malicious-package advisory answered from the batch entry", "id", id, "reason", reason)
 	a := c.toAdvisory(id, &vulnRecord{Modified: listed.Modified})
 	return &a
+}
+
+// advisoriesFromIndex answers from the offline index, losing a ref the index
+// cannot answer for in the same *advisory.PartialError the network path uses, so
+// a caller cannot tell the two paths apart by the shape of what comes back.
+func (c *Client) advisoriesFromIndex(refs []model.PackageRef) (map[model.PackageRef][]advisory.Advisory, error) {
+	out := make(map[model.PackageRef][]advisory.Advisory, len(refs))
+	lost := &advisory.PartialError{Source: "osv", Refs: map[model.PackageRef]error{}}
+	for _, ref := range refs {
+		records, err := c.index.Lookup(ref.Ecosystem, ref.Name, ref.Version)
+		if err != nil {
+			if lost.Cause == nil {
+				lost.Cause = err
+			}
+			lost.Refs[ref] = err
+			continue
+		}
+		list := make([]advisory.Advisory, 0, len(records))
+		for i := range records {
+			list = append(list, c.advisoryFromRecord(&records[i]))
+		}
+		if len(list) > 0 {
+			out[ref] = list
+		}
+	}
+	switch {
+	case len(lost.Refs) == 0:
+		return out, nil
+	case len(lost.Refs) == len(refs):
+		return nil, lost.Cause
+	default:
+		return out, lost
+	}
+}
+
+// advisoryFromRecord rebuilds the record the severity rule expects out of what
+// the index stored, so that toAdvisory decides offline exactly as it decides
+// online. The severity rule lives in one place on purpose: an offline run that
+// disagreed with an online one about how bad an advisory is would be worse than
+// no offline run at all.
+func (c *Client) advisoryFromRecord(r *osvindex.Record) advisory.Advisory {
+	rec := &vulnRecord{ID: r.ID, Aliases: r.Aliases, Summary: r.Summary}
+	if r.SeverityLabel != "" {
+		if label, err := json.Marshal(r.SeverityLabel); err == nil {
+			rec.DatabaseSpecific = map[string]json.RawMessage{"severity": label}
+		}
+	}
+	if r.CVSSv3 != "" {
+		rec.Severity = []vulnSeverity{{Type: "CVSS_V3", Score: r.CVSSv3}}
+	}
+	a := c.toAdvisory(r.ID, rec)
+	// The index parsed the timestamps when it was built, so they are not parsed
+	// again from strings that are no longer there.
+	a.Published, a.Modified = r.Published, r.Modified
+	return a
 }
 
 // toAdvisory maps one record onto advisory.Advisory; id is the id the batch

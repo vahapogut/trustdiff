@@ -9,14 +9,8 @@ import (
 	"github.com/vahapogut/trustdiff/internal/version"
 )
 
-func (a *App) newBaselineCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "baseline",
-		Short: "Snapshot the current trust signals of all locked packages",
-		Args:  cobra.NoArgs,
-		RunE:  notImplemented("baseline"),
-	}
-}
+// The baseline command lives in baseline.go, with the package that reads and
+// writes the file it is named after.
 
 func (a *App) newVersionCommand() *cobra.Command {
 	return &cobra.Command{

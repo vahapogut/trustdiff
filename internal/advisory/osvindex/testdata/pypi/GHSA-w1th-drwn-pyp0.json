@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.7.5",
+  "id": "GHSA-w1th-drwn-pyp0",
+  "published": "2026-01-20T00:00:00Z",
+  "modified": "2026-02-11T12:00:00Z",
+  "withdrawn": "2026-02-11T12:00:00Z",
+  "summary": "Withdrawn: requests advisory raised against the wrong package",
+  "database_specific": {"severity": "HIGH"},
+  "affected": [
+    {
+      "package": {"name": "requests", "ecosystem": "PyPI", "purl": "pkg:pypi/requests"},
+      "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}]}]
+    }
+  ]
+}

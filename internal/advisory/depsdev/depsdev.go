@@ -83,8 +83,29 @@ type VersionFacts struct {
 	// (npm provenance or PyPI PEP 740); SLSAVerified when it verified SLSA provenance.
 	AttestationVerified bool `json:"attestation_verified"`
 	SLSAVerified        bool `json:"slsa_verified"`
+	// SourceRepositories are the repositories the verified attestations name,
+	// distinct and in the order deps.dev returned them. It is what tells a
+	// migration to trusted publishing from a takeover: both change the publishing
+	// identity, and only one of them keeps building the package from the
+	// repository it was always built from.
+	SourceRepositories []string `json:"source_repositories,omitempty"`
 	// CooldownEnd is the end of the deps.dev cooldown window when one is reported.
 	CooldownEnd time.Time `json:"cooldown_end,omitempty"`
+}
+
+// addSource records a repository a verified attestation names, once. An
+// unverified attestation is not recorded at all: what it claims about its source
+// is exactly what an attacker would claim.
+func (f *VersionFacts) addSource(repo string) {
+	if repo == "" {
+		return
+	}
+	for _, have := range f.SourceRepositories {
+		if strings.EqualFold(have, repo) {
+			return
+		}
+	}
+	f.SourceRepositories = append(f.SourceRepositories, repo)
 }
 
 // Finding is one deps.dev finding for a version.
@@ -346,11 +367,13 @@ func (c *Client) facts(ref model.PackageRef, v *versionDoc) VersionFacts {
 	for _, a := range v.Attestations {
 		if a.Verified {
 			f.AttestationVerified = true
+			f.addSource(a.SourceRepository)
 		}
 	}
 	for _, p := range v.SLSAProvenances {
 		if p.Verified {
 			f.SLSAVerified = true
+			f.addSource(p.SourceRepository)
 		}
 	}
 	if v.Cooldown != nil {

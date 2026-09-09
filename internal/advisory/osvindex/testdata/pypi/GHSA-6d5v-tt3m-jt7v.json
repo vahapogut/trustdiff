@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.7.5",
+  "id": "GHSA-6d5v-tt3m-jt7v",
+  "published": "2026-02-14T21:30:40Z",
+  "modified": "2026-02-20T18:26:14Z",
+  "aliases": ["CVE-2026-24580"],
+  "summary": "Django denial of service in the multipart parser",
+  "details": "Django 3.2 through 3.2.18 is vulnerable to a denial of service in the multipart form parser.",
+  "database_specific": {"severity": "MODERATE"},
+  "affected": [
+    {
+      "package": {"name": "Django", "ecosystem": "PyPI", "purl": "pkg:pypi/django"},
+      "ranges": [
+        {"type": "ECOSYSTEM", "events": [{"introduced": "3.2"}, {"last_affected": "3.2.18"}]}
+      ]
+    }
+  ]
+}

@@ -35,13 +35,6 @@ Locations are relative to the path given here.`,
 }
 
 func (a *App) runScan(cmd *cobra.Command, args []string) error {
-	update, err := cmd.Flags().GetBool("update-baseline")
-	if err != nil {
-		return Usagef("--update-baseline: %v", err)
-	}
-	if update {
-		return Usagef("--update-baseline: the baseline arrives with the baseline command in a later release")
-	}
 	root := "."
 	if len(args) == 1 {
 		root = args[0]
@@ -92,7 +85,7 @@ func (a *App) runScan(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	incomplete := len(read) < len(paths) || len(unreadable) > 0
-	return a.evaluate(cmd.Context(), st, inputs, incomplete)
+	return a.evaluateWithBaseline(cmd.Context(), cmd, st, inputs, incomplete, dir)
 }
 
 // scanTargets returns the directory to read from, the lockfiles under it, named

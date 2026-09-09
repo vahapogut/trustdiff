@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.7.3",
+  "id": "MAL-2025-20690",
+  "published": "2025-08-14T18:52:04Z",
+  "modified": "2025-08-14T18:52:04Z",
+  "summary": "Malicious code in flatmap-stream (npm)",
+  "details": "The package flatmap-stream was found to contain malicious code.",
+  "database_specific": {"malicious-packages-origins": null},
+  "affected": [
+    {
+      "package": {"name": "flatmap-stream", "ecosystem": "npm", "purl": "pkg:npm/flatmap-stream"},
+      "ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}]}]
+    }
+  ]
+}

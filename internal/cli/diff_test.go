@@ -752,7 +752,6 @@ func TestDiffUsageErrors(t *testing.T) {
 		{name: "path without a base file", args: []string{"diff", "package-lock.json"}, want: "only with --base-file"},
 		{name: "base file no parser reads", args: []string{"diff", "--base-file", notALockfile}, want: "no parser for this lockfile"},
 		{name: "base file the repository has no head for", args: []string{"diff", "--base-file", otherFormat}, want: "no lockfile found"},
-		{name: "update-baseline", args: []string{"diff", "--update-baseline"}, want: "later release"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

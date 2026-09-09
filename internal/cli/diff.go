@@ -61,13 +61,6 @@ func (a *App) runDiff(cmd *cobra.Command, args []string) error {
 	if base != "" && baseFile != "" {
 		return Usagef("--base and --base-file cannot be combined: the base is either a git ref or a file, not both")
 	}
-	update, err := cmd.Flags().GetBool("update-baseline")
-	if err != nil {
-		return Usagef("--update-baseline: %v", err)
-	}
-	if update {
-		return Usagef("--update-baseline: the baseline arrives with the baseline command in a later release")
-	}
 	if len(args) == 1 && baseFile == "" {
 		return Usagef("diff takes a path only with --base-file, which says what to compare %s against", args[0])
 	}
@@ -118,7 +111,7 @@ func (a *App) runDiff(cmd *cobra.Command, args []string) error {
 	if err := a.writeNotes(append(notes, extra...)); err != nil {
 		return err
 	}
-	return a.evaluate(ctx, st, inputs, incomplete)
+	return a.evaluateWithBaseline(ctx, cmd, st, inputs, incomplete, ".")
 }
 
 // comparison is one lockfile seen from both sides.

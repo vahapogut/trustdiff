@@ -10,6 +10,7 @@ import (
 	"github.com/vahapogut/trustdiff/internal/advisory"
 	"github.com/vahapogut/trustdiff/internal/advisory/depsdev"
 	"github.com/vahapogut/trustdiff/internal/advisory/osv"
+	"github.com/vahapogut/trustdiff/internal/advisory/osvindex"
 	"github.com/vahapogut/trustdiff/internal/httpcache"
 	"github.com/vahapogut/trustdiff/internal/model"
 	"github.com/vahapogut/trustdiff/internal/registry"
@@ -215,7 +216,10 @@ func (l *DataLoader) prefetchFindings(ctx context.Context, refs []model.PackageR
 // not index, a source the run was built without) is already stated in the report
 // as the skipped reason and only goes to the debug log.
 func (l *DataLoader) logBatchFailure(msg string, refs int, err error) {
-	if definite(err) || errors.Is(err, httpcache.ErrOffline) {
+	// An offline run with no advisory index is the same kind of thing as an
+	// offline run with a cold cache: expected, already said in every skipped
+	// reason, and not something to print a warning about above the report.
+	if definite(err) || errors.Is(err, httpcache.ErrOffline) || errors.Is(err, osvindex.ErrNoIndex) {
 		l.log.Debug(msg, "refs", refs, "error", err)
 		return
 	}

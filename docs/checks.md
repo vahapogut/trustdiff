@@ -95,9 +95,13 @@ allow:
 
 ## TD002 publisher-changed
 
-**Detects.** A version whose publishing account is not among the accounts that published the previous N releases, N being `previous_versions_window` (default 5). The window is built from the registry's version list by publish time, without prereleases and yanked versions, so a backport is compared with the releases that came before it, not with the highest version numbers. Account names are compared case-insensitively. Skipped when the version or its predecessors carry no publisher, or when there is no earlier release. Applies to npm (`_npmUser` per version) and crates.io (`published_by` per version); PyPI records no per-version publisher and gets this check through the baseline in 0.4.0.
+**Detects.** A version whose publishing account is not among the accounts that published the previous N releases, N being `previous_versions_window` (default 5). The window is built from the registry's version list by publish time, without prereleases and yanked versions, so a backport is compared with the releases that came before it, not with the highest version numbers. Account names are compared case-insensitively. Skipped when the version or its predecessors carry no publisher, or when there is no earlier release. Applies to npm (`_npmUser` per version) and crates.io (`published_by` per version). PyPI records no per-version publisher at all, and is answered from the baseline instead: the identity a PEP 740 attestation names is compared with the identity `.trustdiff/baseline.json` recorded, and a release with no attestation has no identity to compare, which is reported as skipped rather than as a pass.
 
 **Why it matters.** The event-stream backdoor of 2018 started with a change of hands. The author had stopped maintaining the package, gave publish rights to a volunteer, and the volunteer's release `3.3.6` pulled in the malicious `flatmap-stream` that stole Copay wallets ([npm, 26 November 2018](https://blog.npmjs.org/post/180565383195/details-about-the-event-stream-incident), [Snyk post mortem](https://snyk.io/blog/a-post-mortem-of-the-malicious-event-stream-backdoor/)). The registry still shows the handover: `3.3.5` is the first release by `right9ctrl` after years of releases by `dominictarr`, and that is the example below. The check does not fire when the legitimate account itself is used with a stolen token, as with axios in 2026 and ua-parser-js in 2021; TD004, TD005 and TD007 are there for that case.
+
+**The one case reported below its level.** A package that moves to trusted publishing changes its publishing identity, which is exactly the shape this check is built to catch, and it is also the single most common publisher change happening right now: five of fifty entries of npm's own lockfile were in the middle of that migration on 2026-09-09. Blocking on it teaches people to turn the check off.
+
+So when the evaluated version and the release before it both carry an attestation deps.dev verified, and both name the same source repository, the finding is reported at `info` whatever level the policy sets: the package is still built where it was always built, and it is harder to compromise than it was, not easier. Where there is no such attestation, or where it names a different repository, the finding keeps its level. That is also what an account takeover with a trusted publisher of the attacker's own looks like, and nothing in the registry tells the two apart.
 
 **Evidence.**
 
@@ -107,6 +111,7 @@ allow:
 | `previous_publishers` | distinct accounts of the previous releases, newest first |
 | `previous_versions` | the previous releases that were compared, newest first |
 | `previous_releases` | one object per previous release: `version`, `publisher` (empty when not recorded) and `published_at` (RFC 3339) |
+| `attested_repository` | the repository a verified attestation names for both this version and the one before it, present only for a migration to trusted publishing that kept building from it |
 | `window` | the configured lookback (`previous_versions_window`) |
 
 **Example.** The 2018 handover, as the registry records it today:
@@ -135,7 +140,11 @@ A larger `previous_versions_window` tolerates packages with several rotating pub
 
 ## TD003 maintainers-changed
 
-**Detects.** A version whose maintainer set differs from the set recorded at the previous version, listing who was added and who was removed. Names are compared case-insensitively. Skipped without a previous version and when either version records no maintainers at all, since an empty set is more likely missing data than a package that lost every maintainer. Applies to every ecosystem, but only npm records the maintainer set per version (`versions[<v>].maintainers` in the packument). crates.io owners and PyPI roles are current state only, so for those two ecosystems the check reports `skipped: baseline required (arrives in M4)` until 0.4.0, when `trustdiff baseline` gives it a previous set to compare with.
+**Detects.** A version whose maintainer set differs from the set recorded at the previous version, listing who was added and who was removed. Names are compared case-insensitively. Skipped without a previous version and when either version records no maintainers at all, since an empty set is more likely missing data than a package that lost every maintainer. Applies to every ecosystem, but only npm records the maintainer set per version (`versions[<v>].maintainers` in the packument). crates.io owners and PyPI roles are current state only, so those two are answered from the baseline: `trustdiff baseline` records the set it saw, and the check compares the registry's set now with the set recorded then.
+
+The baseline way is not tied to a version, which is what makes it worth having: a package whose maintainer set changed while the locked version did not move is invisible to everything else here, and the finding says so in as many words. A record older than the window a project refreshes in is still an answer, and the finding carries how old it is.
+
+A pull request can also edit the record itself, which is exactly what somebody with commit access would do. When the change under review rewrote or deleted a package's entry, the comparison uses the entry as it stands on the base revision, and the finding says the record was rewritten and what it now claims.
 
 **Why it matters.** Before a new account publishes, it is usually added as a maintainer. In the event-stream case `right9ctrl` appears in the maintainer list at `3.3.5`, next to the original author, one release before the backdoor ([npm, 26 November 2018](https://blog.npmjs.org/post/180565383195/details-about-the-event-stream-incident)). A removed maintainer matters too: it is what a takeover looks like once the attacker cleans up.
 

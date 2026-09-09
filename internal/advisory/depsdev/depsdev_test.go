@@ -308,8 +308,11 @@ func TestVersionsFixture(t *testing.T) {
 			CooldownEnd:  ts(t, "2024-06-03T15:37:47Z"),
 		}},
 		{ref("npm:@sigstore/bundle@3.1.0"), &VersionFacts{
-			Found:               true,
-			PublishedAt:         ts(t, "2025-02-04T20:35:48Z"),
+			Found:       true,
+			PublishedAt: ts(t, "2025-02-04T20:35:48Z"),
+			// The repository the verified attestation names, which is what tells a
+			// migration to trusted publishing from an account takeover.
+			SourceRepositories:  []string{"https://github.com/sigstore/sigstore-js"},
 			AttestationVerified: true,
 			SLSAVerified:        true,
 			CooldownEnd:         ts(t, "2025-02-19T20:35:48Z"),

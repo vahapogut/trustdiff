@@ -1,0 +1,65 @@
+{
+  "schema": "trustdiff.baseline/1",
+  "updated_at": "2026-09-09T12:00:00Z",
+  "packages": [
+    {
+      "ecosystem": "cargo",
+      "name": "example-crate",
+      "version": "1.0.200",
+      "observed_at": "2026-09-07T12:00:00Z",
+      "maintainers": [
+        "dave",
+        "github:example:crates"
+      ],
+      "publisher": "github:example/example-crate",
+      "publisher_source": "registry",
+      "provenance": {
+        "kind": "trusted-publisher",
+        "verified": false,
+        "identity": "github:example/example-crate"
+      }
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@example/scoped",
+      "version": "2.0.0",
+      "observed_at": "2026-08-31T12:00:00Z",
+      "maintainers": [
+        "alice",
+        "bob-ci"
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "example-lib",
+      "version": "4.19.2",
+      "observed_at": "2026-09-07T12:00:00Z",
+      "maintainers": [
+        "alice"
+      ],
+      "publisher": "alice",
+      "publisher_source": "registry",
+      "provenance": {
+        "kind": "none",
+        "verified": false
+      }
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "example-tool",
+      "version": "2.32.3",
+      "observed_at": "2026-09-07T12:00:00Z",
+      "maintainers": [
+        "carol",
+        "org:example"
+      ],
+      "publisher": "github:example/example-tool/publish.yml",
+      "publisher_source": "provenance",
+      "provenance": {
+        "kind": "attestation",
+        "verified": true,
+        "identity": "github:example/example-tool/publish.yml"
+      }
+    }
+  ]
+}

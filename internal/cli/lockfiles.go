@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -88,52 +87,6 @@ func (a *App) settle() (*settings, error) {
 		return nil, Usagef("%v", err)
 	}
 	return &settings{pol: pol, policyPath: policyPath, cooldown: cooldown, now: now, failOn: failOn, writer: writer}, nil
-}
-
-// evaluate runs the checks over the inputs, writes the report and returns the
-// exit code as an error, the way check does: 1 for findings at or above
-// --fail-on, 3 when a data source was unavailable and the policy says fail.
-// A run with no inputs still writes a report, so a document format always gets a
-// document.
-//
-// incomplete says that something the run should have looked at could not be read:
-// a lockfile no parser got through, a directory the walk was refused. The notes
-// name it, and the exit code follows on_data_unavailable, because a report that
-// covers less than it was asked to is the same kind of partial answer as one a
-// registry did not respond to.
-func (a *App) evaluate(ctx context.Context, st *settings, inputs []checks.Input, incomplete bool) error {
-	loader, err := loaderFactory(a)
-	if err != nil {
-		return Usagef("%v", err)
-	}
-	runner := &checks.Runner{
-		Loader:  loader,
-		Policy:  st.pol,
-		Jobs:    a.Opts.Jobs,
-		Timeout: checkTimeout,
-		Now:     st.now,
-		Log:     a.Opts.Log,
-	}
-	outcomes := runner.Evaluate(ctx, inputs)
-
-	rep := report.Build(checks.Subjects(outcomes), report.CurrentTool(), report.Policy{
-		Path:     st.policyPath,
-		Cooldown: st.cooldown,
-		FailOn:   a.Opts.FailOn,
-	}, st.failOn)
-	// Exit code 1 says there is something to act on now, 3 that the answer is
-	// incomplete. When both apply the findings win.
-	if rep.Summary.ExitCode == ExitOK && (dataUnavailableFails(st.pol, outcomes) || unreadFails(st.pol, incomplete)) {
-		rep.SetExitCode(ExitUnavailable)
-	}
-
-	if err := st.writer.Write(a.Stdout, rep); err != nil {
-		return fmt.Errorf("write report: %w", err)
-	}
-	if rep.Summary.ExitCode != ExitOK {
-		return Exit(rep.Summary.ExitCode, nil)
-	}
-	return nil
 }
 
 // unreadFails reports whether something the run could not read should make the

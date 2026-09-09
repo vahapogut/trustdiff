@@ -6,23 +6,24 @@ Version 0.3.0 ships `check` for single packages, `diff` for pull requests with t
 
 ## Demo
 
-Two commands against the live registries, captured on 2026-09-09:
+Two commands against the live registries, captured on 2026-09-09. The four lines about a lockfile entry that a ref named on the command line does not have are trimmed here:
 
 ```
 $ trustdiff check npm:express@4.19.2 pypi:requests cargo:serde
 npm:express@4.19.2  OK
 
 pypi:requests@2.34.2  OK
-  skipped TD003: baseline required (arrives in M4)
+  skipped TD002: pypi records no publisher per version; the run read no baseline
+  skipped TD003: pypi records no maintainer set per version; the run read no baseline
 
 cargo:serde@1.0.229  WARN
   warn
     TD006 install-script-present: Runs code at install time: build.rs
       1.0.229 ships a build script (build.rs), which cargo compiles and runs before building the
       crate
-  skipped TD003: baseline required (arrives in M4)
+  skipped TD003: cargo records no maintainer set per version; the run read no baseline
 
-3 subjects, 0 block, 1 warn, 0 info, 2 skipped checks. Exit code 0 (no blocking findings).
+3 subjects, 0 block, 1 warn, 0 info, 9 skipped checks. Exit code 0 (no blocking findings).
 ```
 
 `flatmap-stream@0.1.1` is the package that carried the 2018 event-stream backdoor. npm removed it from the registry, so the history checks have nothing to compare and say so; the advisory and download checks still run (the other seven skipped lines are trimmed here):
@@ -174,7 +175,7 @@ $ trustdiff --format json check cargo:serde@1.0.210
       "skipped": [
         {
           "check": "TD003",
-          "reason": "baseline required (arrives in M4)"
+          "reason": "pypi records no maintainer set per version; the run read no baseline"
         }
       ],
       "findings": [

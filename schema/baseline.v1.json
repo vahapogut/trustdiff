@@ -1,0 +1,102 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/vahapogut/trustdiff/main/schema/baseline.v1.json",
+  "title": "trustdiff baseline, schema version 1",
+  "description": "The record a project keeps of the trust signals it has observed for the packages it locks, written to .trustdiff/baseline.json by trustdiff baseline and by diff and scan with --update-baseline. It exists because a registry answers about now: PyPI records no publisher per version and crates.io keeps no maintainer history, so a project that wants to be told when either changed has to remember what it saw. One shape serves every ecosystem. Within schema version 1 fields are added, never renamed or removed; a breaking change bumps the version in the schema field and in this file's name.",
+  "type": "object",
+  "required": ["schema", "updated_at", "packages"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "description": "Identifies the document format. Always trustdiff.baseline/1 for documents that match this schema.",
+      "const": "trustdiff.baseline/1"
+    },
+    "updated_at": {
+      "description": "When the file was last written, in RFC 3339 with second precision in UTC. It is the run's clock, not the wall clock of the file system, so a rewrite that observed nothing new produces no diff beyond this line.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "packages": {
+      "description": "One entry per package, sorted by ecosystem and then by name, so a rewrite produces the smallest possible diff and a repository does not churn. A package appears at most once, whatever the number of lockfiles that lock it.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/package"
+      }
+    }
+  },
+  "definitions": {
+    "package": {
+      "description": "The trust signals observed for one package at one moment: who maintained it, who published the release that was looked at, and what provenance that release carried.",
+      "type": "object",
+      "required": ["ecosystem", "name", "version", "observed_at"],
+      "additionalProperties": false,
+      "properties": {
+        "ecosystem": {
+          "description": "Registry the package lives in. deno and jsr are accepted from milestone M4 on.",
+          "type": "string",
+          "enum": ["npm", "pypi", "cargo", "deno", "jsr"]
+        },
+        "name": {
+          "description": "Package name in the registry's canonical spelling: PEP 503 normalized for pypi, unchanged elsewhere. Scoped npm and jsr names keep their @scope/ prefix.",
+          "type": "string",
+          "pattern": "^[^\\s]+$"
+        },
+        "version": {
+          "description": "The release the observation was taken from, which is the version the project locked when the entry was written. A package locked at several versions in one project is recorded once, at the first version in ref order, and the run says so.",
+          "type": "string",
+          "pattern": "^[^\\s]+$"
+        },
+        "observed_at": {
+          "description": "When the signals below were read from the registry, in RFC 3339 with second precision in UTC. A finding built on this entry states its age, because an old record still answers but says less about when a change happened.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "maintainers": {
+          "description": "The maintainer or owner set the registry showed at observed_at, sorted and without repeats: npm maintainers, PyPI roles and organization, crates.io owners including teams. Absent when the set could not be read, which is not the same as a package with no maintainers: a check that finds it absent reports itself as skipped rather than reading it as an empty set.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "description": "One maintainer, owner or team as the registry names it, for example alice, org:pypa or github:rust-lang:libs.",
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "publisher": {
+          "description": "The identity that published the release named in version. Absent when the registry exposes none and the release carries no attestation either. publisher_source says which of the two it is, and a check compares only identities from the same source.",
+          "type": "string",
+          "minLength": 1
+        },
+        "publisher_source": {
+          "description": "Where the publisher value came from: registry for an account the registry itself recorded (npm _npmUser, crates.io published_by), provenance for the identity of the release's attestation or trusted publisher, which is the only publishing identity PyPI exposes. Present whenever publisher is.",
+          "type": "string",
+          "enum": ["registry", "provenance"]
+        },
+        "provenance": {
+          "$ref": "#/definitions/provenance"
+        }
+      }
+    },
+    "provenance": {
+      "description": "The publishing evidence the observed release carried. Absent when the registry could not be asked, so that a later run does not read a failed lookup as evidence that the release had none.",
+      "type": "object",
+      "required": ["kind", "verified"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "The strongest kind of evidence the release carried: none, signature for a registry signature, attestation for a build attestation (npm provenance, PEP 740, SLSA), trusted-publisher for a trusted publishing identity the registry recorded.",
+          "type": "string",
+          "enum": ["none", "signature", "attestation", "trusted-publisher"]
+        },
+        "verified": {
+          "description": "True when the registry or deps.dev verified the evidence rather than only carrying it.",
+          "type": "boolean"
+        },
+        "identity": {
+          "description": "The workflow or repository the evidence names, for example github:pypa/sampleproject/release.yml. Absent when the evidence names none.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

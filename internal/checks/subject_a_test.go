@@ -260,7 +260,7 @@ func TestChecksTD001ToTD007Registered(t *testing.T) {
 		ecosystems []model.Ecosystem
 	}{
 		{"TD001", "young-version", model.LevelWarn, nil},
-		{"TD002", "publisher-changed", model.LevelBlock, []model.Ecosystem{model.NPM, model.Cargo}},
+		{"TD002", "publisher-changed", model.LevelBlock, []model.Ecosystem{model.NPM, model.PyPI, model.Cargo}},
 		{"TD003", "maintainers-changed", model.LevelWarn, nil},
 		{"TD004", "trust-downgrade", model.LevelBlock, []model.Ecosystem{model.NPM, model.PyPI, model.Cargo}},
 		{"TD005", "install-script-introduced", model.LevelBlock, []model.Ecosystem{model.NPM}},

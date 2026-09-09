@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.7.3",
+  "id": "RUSTSEC-2026-0001",
+  "published": "2026-05-19T12:00:00Z",
+  "modified": "2026-05-19T12:00:00Z",
+  "summary": "Serde derive shipped a precompiled binary",
+  "affected": [
+    {
+      "package": {"name": "Serde", "ecosystem": "crates.io", "purl": "pkg:cargo/serde"},
+      "ranges": [
+        {"type": "SEMVER", "events": [{"introduced": "1.0.0"}, {"fixed": "1.0.100"}]}
+      ]
+    }
+  ]
+}

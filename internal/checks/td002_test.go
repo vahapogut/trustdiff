@@ -2,9 +2,12 @@ package checks
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/vahapogut/trustdiff/internal/advisory/depsdev"
+	"github.com/vahapogut/trustdiff/internal/baseline"
 	"github.com/vahapogut/trustdiff/internal/model"
 )
 
@@ -389,10 +392,108 @@ func TestTD002UsesTheRegistryRefWhenTheSubjectRefIsBare(t *testing.T) {
 	wantTextA(t, "explanation", f.Explanation, "1.1.0 was published by bob-ci")
 }
 
-func TestTD002NotApplicableToPyPI(t *testing.T) {
+// PyPI is answered through the baseline from milestone M4 on. The registry names
+// no uploader, so the only publishing identity there is the one the release's
+// attestation carries, and the check compares it with the identity the project
+// recorded.
+func TestTD002AppliesToPyPIThroughTheBaseline(t *testing.T) {
 	c, _ := Lookup("TD002")
-	if AppliesTo(c, model.PyPI) {
-		t.Error("TD002 applies to pypi; the brief routes PyPI through the baseline")
+	if !AppliesTo(c, model.PyPI) {
+		t.Fatal("TD002 does not apply to pypi; the brief routes PyPI through the baseline")
+	}
+
+	// Without a record there is nothing to compare with, and the reason names both
+	// halves of the answer rather than passing the release.
+	bare := runA(t, "TD002", subjectA(model.PyPI, "requests", "2.32.0"), outcomeA{skip: "pypi records no publisher per version"})
+	if !strings.Contains(bare.Skipped.Reason, "the run read no baseline") {
+		t.Errorf("reason = %q, want the baseline's half too", bare.Skipped.Reason)
+	}
+}
+
+// attestedA gives the evaluated version a verified PEP 740 attestation naming a
+// repository, which is what a PyPI release published from a workflow carries.
+func attestedA(s *Subject, identity string) *Subject {
+	s.Version.Provenance = model.Provenance{Kind: model.ProvenanceAttestation, Verified: true, Identity: identity}
+	return s
+}
+
+func TestTD002FromTheBaselineForPyPI(t *testing.T) {
+	const was = "github:psf/requests/publish.yml"
+	const now = "github:mallory/requests/publish.yml"
+
+	// A release built somewhere else than the one that was recorded is the finding
+	// this exists for.
+	s := attestedA(subjectA(model.PyPI, "requests", "2.32.0"), now)
+	withBaselineT(s, publishedByT(entryT("pypi:requests@2.31.0", 20, "alice"), was, baseline.FromProvenance))
+	f := runA(t, "TD002", s, outcomeA{findings: 1}).Findings[0]
+	if f.Level != model.LevelBlock {
+		t.Errorf("level = %s, want block", f.Level)
+	}
+	if f.Evidence["baseline_publisher"] != was || f.Evidence["publisher"] != now {
+		t.Errorf("evidence = %v, want both identities", f.Evidence)
+	}
+	if f.Evidence["publisher_source"] != string(baseline.FromProvenance) {
+		t.Errorf("publisher_source = %v, want provenance", f.Evidence["publisher_source"])
+	}
+	if f.Evidence["baseline_version"] != "2.31.0" || f.Evidence["baseline_age_days"] != 20 {
+		t.Errorf("evidence = %v, want the record's version and age", f.Evidence)
+	}
+	// The identity is rendered the way the check renders every trusted publishing
+	// identity, so a PyPI attestation reads like a crates.io trustpub entry.
+	wantTextA(t, "explanation", f.Explanation, "when it was observed, 20 days ago", "mallory/requests/publish.yml")
+
+	// The same identity is a pass.
+	same := attestedA(subjectA(model.PyPI, "requests", "2.32.0"), was)
+	withBaselineT(same, publishedByT(entryT("pypi:requests@2.31.0", 20, "alice"), was, baseline.FromProvenance))
+	runA(t, "TD002", same, outcomeA{})
+}
+
+// A release with no attestation has no publishing identity of any kind on PyPI,
+// and that is a skip with a reason, never a pass.
+func TestTD002BaselineSkipsAReleaseWithoutAnIdentity(t *testing.T) {
+	s := subjectA(model.PyPI, "requests", "2.32.0")
+	withBaselineT(s, publishedByT(entryT("pypi:requests@2.31.0", 4, "alice"), "github:psf/requests/publish.yml", baseline.FromProvenance))
+	runA(t, "TD002", s, outcomeA{skip: "2.32.0 carries no publishing identity to compare with the baseline"})
+}
+
+// An account name and the repository an attestation names are different kinds of
+// thing, so a record made from one is never compared with the other.
+func TestTD002BaselineRefusesToMixIdentitySources(t *testing.T) {
+	s := attestedA(subjectA(model.PyPI, "requests", "2.32.0"), "github:psf/requests/publish.yml")
+	withBaselineT(s, publishedByT(entryT("pypi:requests@2.31.0", 4, "alice"), "alice", baseline.FromRegistry))
+	runA(t, "TD002", s, outcomeA{skip: "which are not comparable"})
+}
+
+// The record the base revision holds is what a pull request is measured against,
+// because the change under review may have written the record itself.
+func TestTD002ComparesTheBaseRevisionWhenTheChangeRewroteTheEntry(t *testing.T) {
+	const was = "github:psf/requests/publish.yml"
+	const now = "github:mallory/requests/publish.yml"
+	s := attestedA(subjectA(model.PyPI, "requests", "2.32.0"), now)
+	withRewrittenBaselineT(s,
+		[]*baseline.Entry{publishedByT(entryT("pypi:requests@2.32.0", 0, "alice"), now, baseline.FromProvenance)},
+		[]*baseline.Entry{publishedByT(entryT("pypi:requests@2.31.0", 30, "alice"), was, baseline.FromProvenance)})
+
+	f := runA(t, "TD002", s, outcomeA{findings: 1}).Findings[0]
+	if f.Evidence["baseline_publisher"] != was || f.Evidence["baseline_rewritten"] != true {
+		t.Errorf("evidence = %v, want the base revision's record and the rewrite", f.Evidence)
+	}
+	if f.Evidence["baseline_rewritten_publisher"] != now {
+		t.Errorf("baseline_rewritten_publisher = %v, want %q", f.Evidence["baseline_rewritten_publisher"], now)
+	}
+	wantTextA(t, "explanation", f.Explanation, "the change under review rewrote this package's baseline entry")
+}
+
+// npm and crates.io keep a publisher per version, so the release history answers
+// and the baseline is not consulted at all.
+func TestTD002PrefersTheRegistryHistory(t *testing.T) {
+	s := historyA(model.NPM,
+		releaseA{"1.0.0", "alice", 40, false, false},
+		releaseA{"1.1.0", "bob-ci", 1, false, false})
+	withBaselineT(s, publishedByT(entryT("npm:lib@1.1.0", 1, "alice"), "bob-ci", baseline.FromRegistry))
+	f := runA(t, "TD002", s, outcomeA{findings: 1}).Findings[0]
+	if _, ok := f.Evidence["baseline_publisher"]; ok {
+		t.Errorf("evidence = %v, want the release history and not the baseline", f.Evidence)
 	}
 }
 
@@ -419,5 +520,56 @@ func TestParsePublisher(t *testing.T) {
 					tt.name, id.trusted(), id.provider, id.text(), tt.trusted, tt.provider, tt.text)
 			}
 		})
+	}
+}
+
+// A package that moved to trusted publishing and is still built from the
+// repository it was always built from has become harder to compromise, not easier.
+// Blocking that teaches people to turn the check off, and the packages doing it
+// right now are the ones everybody depends on: five of fifty entries of npm's own
+// lockfile were in the middle of that migration on 2026-09-09.
+func TestTD002MigrationToTrustedPublishingFromTheSameRepository(t *testing.T) {
+	const repo = "https://github.com/example/lib"
+	build := func(before, after string) *Subject {
+		s := historyA(model.NPM,
+			releaseA{"1.0.0", "alice", 40, false, false},
+			releaseA{"1.1.0", "alice", 20, false, false},
+			releaseA{"1.2.0", "github-trusted-publisher:0dd1c2e3", 1, false, false})
+		s.DepsDev = &depsdev.VersionFacts{Found: true, AttestationVerified: true, SourceRepositories: []string{after}}
+		s.Loader = &loaderA{depsDev: map[string]*depsdev.VersionFacts{
+			"npm:lib@1.1.0": {Found: true, AttestationVerified: true, SourceRepositories: []string{before}},
+		}}
+		return s
+	}
+
+	// The same repository on both sides: the change is worth seeing and is not a
+	// reason to fail a gate.
+	f := runA(t, "TD002", build(repo, repo), outcomeA{findings: 1}).Findings[0]
+	if f.Level != model.LevelInfo {
+		t.Errorf("level = %s, want info for a migration that kept its repository", f.Level)
+	}
+	if f.Evidence["attested_repository"] != repo {
+		t.Errorf("evidence = %v, want the repository named", f.Evidence)
+	}
+	wantTextA(t, "explanation", f.Explanation, "the repository the previous release was built from")
+
+	// A different repository is what a stolen account with a trusted publisher of
+	// its own looks like, and it keeps the level the policy sets.
+	other := runA(t, "TD002", build(repo, "https://github.com/attacker/lib"), outcomeA{findings: 1}).Findings[0]
+	if other.Level != model.LevelBlock {
+		t.Errorf("level = %s, want block when the attestation names another repository", other.Level)
+	}
+	if _, ok := other.Evidence["attested_repository"]; ok {
+		t.Errorf("evidence names a repository although the two disagree: %v", other.Evidence)
+	}
+
+	// No verified attestation at all is the same answer: nothing says where this
+	// release was built.
+	none := historyA(model.NPM,
+		releaseA{"1.0.0", "alice", 40, false, false},
+		releaseA{"1.2.0", "github-trusted-publisher:0dd1c2e3", 1, false, false})
+	none.Loader = &loaderA{}
+	if got := runA(t, "TD002", none, outcomeA{findings: 1}).Findings[0]; got.Level != model.LevelBlock {
+		t.Errorf("level = %s, want block with no attestation to compare", got.Level)
 	}
 }
