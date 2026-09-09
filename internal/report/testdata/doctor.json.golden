@@ -17,6 +17,7 @@
     {
       "id": "npm",
       "version": "11.16.0",
+      "version_exact": true,
       "version_source": "the packageManager field",
       "root": ".",
       "evidence": [

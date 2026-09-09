@@ -75,6 +75,11 @@ type DoctorManager struct {
 	// Version is the version the repository pins or the machine has, omitted when
 	// nothing said so. The rules that need one then report not applicable.
 	Version string `json:"version,omitempty"`
+	// VersionExact says whether Version is the version this project runs, which a
+	// packageManager pin, a committed release or the binary itself answers. It is
+	// omitted, and false, when Version came from a lockfile format marker, which
+	// gives only a floor: pnpm 10 and pnpm 11 both write lockfileVersion 9.0.
+	VersionExact bool `json:"version_exact,omitempty"`
 	// VersionSource says where Version came from, in the words the scorecard prints,
 	// and is omitted when no version was found.
 	VersionSource string `json:"version_source,omitempty"`
@@ -498,6 +503,7 @@ func doctorManager(m *doctor.Manager) DoctorManager {
 	return DoctorManager{
 		ID:            string(m.ID),
 		Version:       m.Version,
+		VersionExact:  m.VersionExact,
 		VersionSource: m.VersionSource,
 		Root:          doctorRoot(m.Root),
 		Evidence:      slices.Clone(m.Evidence),
@@ -593,8 +599,13 @@ func doctorStatusColor(res *DoctorResult) string {
 // doctorManagerTitle names a manager and its version, which is the version every rule
 // of the block was judged against.
 func doctorManagerTitle(m *DoctorManager) string {
-	if m.Version == "" {
+	switch {
+	case m.Version == "":
 		return m.ID
+	case !m.VersionExact:
+		// A lockfile marker gives a floor, and a title that printed it as the
+		// version would be the same mistake the rules used to make.
+		return m.ID + " at least " + m.Version
 	}
 	return m.ID + " " + m.Version
 }

@@ -128,6 +128,10 @@
           "description": "The version the repository pins or the machine has. Absent when nothing said, and every rule that names a version it needs then reports not applicable rather than guessing.",
           "type": "string"
         },
+        "version_exact": {
+          "description": "True when the version is the one this project runs, which a packageManager pin, a committed release or the manager itself answers. Absent, and false, when the version came from a lockfile format marker, which says only that the manager is no older than that: pnpm 10 and pnpm 11 both write lockfileVersion 9.0. A rule that needs a version is judged against an exact one and assumed against a floor.",
+          "type": "boolean"
+        },
         "version_source": {
           "description": "Where the version came from, in the words the scorecard prints, for example the packageManager field, pnpm-lock.yaml or pnpm --version. Absent when no version was found.",
           "type": "string"

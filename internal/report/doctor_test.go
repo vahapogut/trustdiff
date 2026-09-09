@@ -46,6 +46,7 @@ func fixtureScorecard() *doctor.Scorecard {
 		ID:            doctor.NPM,
 		Root:          ".",
 		Version:       "11.16.0",
+		VersionExact:  true,
 		VersionSource: "the packageManager field",
 		Evidence:      []string{"package-lock.json", "the packageManager field of package.json"},
 		Files:         []string{".npmrc", "package.json"},
@@ -234,7 +235,7 @@ func TestDoctorHumanBlocks(t *testing.T) {
 	}
 	for _, want := range []string{
 		"npm 11.16.0  (version from the packageManager field)",
-		"pnpm 10.16.1  (version from apps/web/pnpm-lock.yaml, apps/web)",
+		"pnpm at least 10.16.1  (version from apps/web/pnpm-lock.yaml, apps/web)",
 		"+strict-allow-scripts=true",
 	} {
 		if !strings.Contains(out, want) {
@@ -306,13 +307,13 @@ func TestDoctorMarkdownComment(t *testing.T) {
 		{"Manager", "Rule", "Status", "Setting", "Location"},
 		{"---", "---", "---", "---", "---"},
 		{"npm 11.16.0", "DR001 npm-min-release-age", "wrong", "1, want 3, which is 3 days in days", ".npmrc:3"},
-		{"pnpm 10.16.1 (apps/web)", "DR010 pnpm-minimum-release-age", "wrong", "7, want 4320, which is 3 days in minutes", "apps/web/pnpm-workspace.yaml:4"},
+		{"pnpm at least 10.16.1 (apps/web)", "DR010 pnpm-minimum-release-age", "wrong", "7, want 4320, which is 3 days in minutes", "apps/web/pnpm-workspace.yaml:4"},
 		{"npm 11.16.0", "DR003 npm-allow-git", "missing", "want false", ".npmrc"},
-		{"pnpm 10.16.1 (apps/web)", "DR011 pnpm-strict-dep-builds", "unreadable", "", "apps/web/pnpm-workspace.yaml:9"},
+		{"pnpm at least 10.16.1 (apps/web)", "DR011 pnpm-strict-dep-builds", "unreadable", "", "apps/web/pnpm-workspace.yaml:9"},
 		{"npm 11.16.0", "DR002 npm-strict-allow-scripts", "set", "true", ".npmrc:6"},
 		{"npm 11.16.0", "DR004 npm-allow-remote", "set", "false", ".npmrc:4"},
 		{"npm 11.16.0", "DR031 bun-security-scanner", "advice", "", ".npmrc"},
-		{"pnpm 10.16.1 (apps/web)", "DR015 pnpm-trust-policy", "not applicable", "", ""},
+		{"pnpm at least 10.16.1 (apps/web)", "DR015 pnpm-trust-policy", "not applicable", "", ""},
 	}
 	if len(rows) != len(want) {
 		t.Fatalf("table has %d rows, want %d:\n%s", len(rows), len(want), out)
@@ -707,7 +708,7 @@ func TestDoctorJSONWritesEveryRequiredField(t *testing.T) {
 	}
 	// The fixture has to reach every optional field too, or the schema documents
 	// something nothing writes.
-	optional := []string{"version", "version_source", "evidence", "files", "file", "line", "current", "want", "detail", "fixed", "docs", "verified"}
+	optional := []string{"version", "version_exact", "version_source", "evidence", "files", "file", "line", "current", "want", "detail", "fixed", "docs", "verified"}
 	written := writtenKeys(out)
 	for _, key := range optional {
 		if !written[key] {
