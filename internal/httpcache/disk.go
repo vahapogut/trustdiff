@@ -22,7 +22,8 @@ const (
 // os.CreateTemp, verified 2026-09-09 on go1.26). Clear removes nothing else.
 var entryFileName = regexp.MustCompile(`^[0-9a-f]{64}\.(json|body)(\.[0-9]+\.tmp)?$`)
 
-// entryMeta is the metadata half of a cache entry.
+// entryMeta is the metadata half of a cache entry. TTL records what the writer
+// asked for, for cache status; freshness is decided by the current request.
 type entryMeta struct {
 	URL          string
 	Accept       string
@@ -32,6 +33,10 @@ type entryMeta struct {
 	TTL          time.Duration
 	Status       int
 	ContentType  string
+	// Length is the body size in bytes. A body file of any other length was
+	// truncated by a power loss or interleaved with another process's write, and
+	// is a miss.
+	Length int64
 }
 
 // metaJSON is the on-disk form of entryMeta. The TTL is a duration string so the
@@ -45,6 +50,7 @@ type metaJSON struct {
 	TTL          string    `json:"ttl"`
 	Status       int       `json:"status"`
 	ContentType  string    `json:"content_type,omitempty"`
+	Length       int64     `json:"length"`
 }
 
 const foreverWord = "forever"
@@ -63,6 +69,7 @@ func (m *entryMeta) marshal() ([]byte, error) {
 		TTL:          ttl,
 		Status:       m.Status,
 		ContentType:  m.ContentType,
+		Length:       m.Length,
 	}, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("encoding cache metadata: %w", err)
@@ -80,6 +87,9 @@ func parseMeta(data []byte) (entryMeta, error) {
 	if w.URL == "" || w.FetchedAt.IsZero() || w.Status == 0 || w.TTL == "" {
 		return entryMeta{}, errors.New("decoding cache metadata: missing url, fetched_at, ttl or status")
 	}
+	if w.Length < 0 {
+		return entryMeta{}, fmt.Errorf("decoding cache metadata: negative length %d", w.Length)
+	}
 	ttl := Forever
 	if w.TTL != foreverWord {
 		var err error
@@ -96,15 +106,18 @@ func parseMeta(data []byte) (entryMeta, error) {
 		TTL:          ttl,
 		Status:       w.Status,
 		ContentType:  w.ContentType,
+		Length:       w.Length,
 	}, nil
 }
 
-// fresh reports whether the entry may be served at now without revalidation.
-func (m *entryMeta) fresh(now time.Time) bool {
-	if m.TTL == Forever {
+// fresh reports whether the entry may be served at now without revalidation
+// under the freshness ttl the current caller asked for. The TTL stored with the
+// entry is not consulted: another caller may have asked for a longer one.
+func (m *entryMeta) fresh(now time.Time, ttl time.Duration) bool {
+	if ttl == Forever {
 		return true
 	}
-	return now.Before(m.FetchedAt.Add(m.TTL))
+	return now.Before(m.FetchedAt.Add(ttl))
 }
 
 // entry is a complete cache entry read from disk.
@@ -167,12 +180,19 @@ func (c *Client) readEntry(key, rawURL, accept string) *entry {
 		c.log.Debug("cache body unreadable", "path", filepath.Join(c.dir, key+bodySuffix), "error", err)
 		return nil
 	}
+	if int64(len(body)) != meta.Length {
+		c.log.Debug("ignoring cache entry with a mismatched body", "path", filepath.Join(c.dir, key+bodySuffix), "want", meta.Length, "got", len(body))
+		return nil
+	}
 	return &entry{meta: meta, body: body}
 }
 
 // writeEntry stores body then metadata, each atomically, so a reader that finds
-// valid metadata always finds the body it describes.
+// valid metadata always finds the body it describes. The metadata records the
+// body length, so a body that was truncated or overwritten by another process
+// after the fact is detected on read.
 func (c *Client) writeEntry(key string, meta *entryMeta, body []byte) error {
+	meta.Length = int64(len(body))
 	if err := writeFileAtomic(c.dir, key+bodySuffix, body); err != nil {
 		return err
 	}
@@ -188,7 +208,10 @@ func (c *Client) writeMeta(key string, meta *entryMeta) error {
 }
 
 // writeFileAtomic writes data to a temporary file in dir and renames it over
-// name, so readers see either the old content or the new one, never a partial file.
+// name, so readers see either the old content or the new one, never a partial
+// file. The data is synced before the rename: the rename alone protects against a
+// process crash, but after a power loss the file system may have made the rename
+// durable before the data, leaving an empty or truncated file under a valid name.
 func writeFileAtomic(dir, name string, data []byte) error {
 	tmp, err := os.CreateTemp(dir, name+".*.tmp")
 	if err != nil {
@@ -199,6 +222,11 @@ func writeFileAtomic(dir, name string, data []byte) error {
 		_ = tmp.Close()
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("writing %s: %w", tmpName, err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("syncing %s: %w", tmpName, err)
 	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmpName)

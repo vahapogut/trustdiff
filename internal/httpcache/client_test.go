@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -202,6 +203,32 @@ func TestNewCreatesDirUnlessNoCache(t *testing.T) {
 	}
 	if _, err := os.Stat(dir); err != nil {
 		t.Fatalf("cache directory not created: %v", err)
+	}
+}
+
+// TestNewNoCacheDoesNotNeedUserCacheDir covers minimal CI containers and users
+// without a home directory: a client that never touches the cache must not fail
+// because the platform cache directory cannot be located.
+func TestNewNoCacheDoesNotNeedUserCacheDir(t *testing.T) {
+	t.Setenv(EnvDir, "")
+	if runtime.GOOS == "windows" {
+		t.Setenv("LocalAppData", "")
+	} else {
+		t.Setenv("HOME", "")
+		t.Setenv("XDG_CACHE_HOME", "")
+	}
+	if _, err := os.UserCacheDir(); err == nil {
+		t.Skip("os.UserCacheDir still resolves on this platform")
+	}
+	c, err := New(Options{UserAgent: "x", NoCache: true})
+	if err != nil {
+		t.Fatalf("New with NoCache must not need the user cache directory: %v", err)
+	}
+	if c.Dir() != "" {
+		t.Errorf("Dir() = %q, want empty for a NoCache client without Options.Dir", c.Dir())
+	}
+	if _, err := New(Options{UserAgent: "x"}); err == nil {
+		t.Fatal("New without NoCache must report the missing user cache directory")
 	}
 }
 
@@ -419,6 +446,45 @@ func TestGetForeverNeverExpires(t *testing.T) {
 	}
 }
 
+// TestGetRequestTTLGovernsFreshness pins that the TTL of the current request, not
+// the one stored by whichever caller wrote the entry, decides whether the entry is
+// served without revalidation.
+func TestGetRequestTTLGovernsFreshness(t *testing.T) {
+	ts := newTestServer(t, okHandler("body"))
+	env := newTestEnv(t, ts, nil)
+	ctx := context.Background()
+
+	if _, err := env.client.Get(ctx, ts.URL, Request{TTL: Forever}); err != nil {
+		t.Fatal(err)
+	}
+	env.clock.advance(time.Hour)
+	resp, err := env.client.Get(ctx, ts.URL, Request{TTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.FromCache || ts.calls.Load() != 2 {
+		t.Fatalf("a Forever entry was served to a caller asking for 1m: %+v, calls %d", resp, ts.calls.Load())
+	}
+	// The refetch stored the entry again, and a long TTL is satisfied by it.
+	env.clock.advance(time.Minute)
+	if resp, err := env.client.Get(ctx, ts.URL, Request{TTL: Forever}); err != nil || !resp.FromCache {
+		t.Fatalf("fresh entry not served under Forever: %+v, %v", resp, err)
+	}
+
+	// The same holds between two finite TTLs.
+	env.clock.advance(10 * time.Minute)
+	if resp, err := env.client.Get(ctx, ts.URL, Request{TTL: time.Hour}); err != nil || !resp.FromCache {
+		t.Fatalf("11m old entry not served under 1h: %+v, %v", resp, err)
+	}
+	resp, err = env.client.Get(ctx, ts.URL, Request{TTL: 5 * time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.FromCache || ts.calls.Load() != 3 {
+		t.Fatalf("11m old entry served under 5m: %+v, calls %d", resp, ts.calls.Load())
+	}
+}
+
 func TestGetCaches404(t *testing.T) {
 	ts := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, `{"error":"Not found"}`, http.StatusNotFound)
@@ -441,22 +507,120 @@ func TestGetCaches404(t *testing.T) {
 	}
 }
 
+// TestGet404IsNeverCachedForever covers a version fetched before the registry
+// replicated it, or mistyped once: the negative answer must expire even when the
+// caller asked for Forever, so the positive answer can replace it.
+func TestGet404IsNeverCachedForever(t *testing.T) {
+	var published atomic.Bool
+	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if !published.Load() {
+			http.Error(w, `{"error":"Not found"}`, http.StatusNotFound)
+			return
+		}
+		okHandler(`{"version":"1.0.0"}`)(w, r)
+	})
+	env := newTestEnv(t, ts, nil)
+	ctx := context.Background()
+	u := ts.URL + "/pkg/1.0.0"
+
+	first, err := env.client.Get(ctx, u, Request{TTL: Forever})
+	if err != nil || first.StatusCode != http.StatusNotFound {
+		t.Fatalf("first = %+v, %v", first, err)
+	}
+	// Within DefaultTTL the 404 is a cache hit like any other answer.
+	env.clock.advance(30 * time.Minute)
+	hit, err := env.client.Get(ctx, u, Request{TTL: Forever})
+	if err != nil || !hit.FromCache || hit.StatusCode != http.StatusNotFound || ts.calls.Load() != 1 {
+		t.Fatalf("404 within DefaultTTL: %+v, %v, calls %d", hit, err, ts.calls.Load())
+	}
+
+	published.Store(true)
+	env.clock.advance(2 * time.Hour)
+	second, err := env.client.Get(ctx, u, Request{TTL: Forever})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.FromCache || second.StatusCode != http.StatusOK || ts.calls.Load() != 2 {
+		t.Fatalf("a 404 stored under Forever was pinned: %+v, calls %d", second, ts.calls.Load())
+	}
+	// The 200 that replaced it is immutable as requested.
+	env.clock.advance(30 * time.Minute)
+	third, err := env.client.Get(ctx, u, Request{TTL: Forever})
+	if err != nil || !third.FromCache || third.StatusCode != http.StatusOK || ts.calls.Load() != 2 {
+		t.Fatalf("200 after the 404: %+v, %v, calls %d", third, err, ts.calls.Load())
+	}
+}
+
+// TestGet404RefreshedBy304IsNotPinned covers the other write path: a 404 with a
+// validator that the server confirms with 304 must keep expiring after the refresh.
+func TestGet404RefreshedBy304IsNotPinned(t *testing.T) {
+	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("If-None-Match") == `"gone"` {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", `"gone"`)
+		http.Error(w, `{"error":"Not found"}`, http.StatusNotFound)
+	})
+	env := newTestEnv(t, ts, nil)
+	ctx := context.Background()
+	u := ts.URL + "/pkg/9.9.9"
+
+	if _, err := env.client.Get(ctx, u, Request{TTL: Forever}); err != nil {
+		t.Fatal(err)
+	}
+	env.clock.advance(2 * time.Hour)
+	resp, err := env.client.Get(ctx, u, Request{TTL: Forever})
+	if err != nil || !resp.FromCache || resp.StatusCode != http.StatusNotFound || ts.calls.Load() != 2 {
+		t.Fatalf("revalidated 404 = %+v, %v, calls %d", resp, err, ts.calls.Load())
+	}
+	env.clock.advance(2 * time.Hour)
+	if _, err := env.client.Get(ctx, u, Request{TTL: Forever}); err != nil {
+		t.Fatal(err)
+	}
+	if got := ts.calls.Load(); got != 3 {
+		t.Fatalf("server calls = %d, want 3: the 304 refresh must not pin the 404", got)
+	}
+	// The stored TTL, which cache status reports, carries the cap as well.
+	for _, n := range entryFiles(t, env.dir) {
+		if !strings.HasSuffix(n, metaSuffix) {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(env.dir, n))
+		if err != nil {
+			t.Fatal(err)
+		}
+		meta, err := parseMeta(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if meta.TTL != DefaultTTL {
+			t.Fatalf("stored TTL for a 404 = %v, want %v", meta.TTL, DefaultTTL)
+		}
+	}
+}
+
 func TestGetDoesNotCacheOtherStatuses(t *testing.T) {
 	tests := []struct {
 		name    string
 		status  int
+		noCache bool
 		wantErr bool
 	}{
 		{name: "204", status: http.StatusNoContent},
 		{name: "403", status: http.StatusForbidden, wantErr: true},
 		{name: "410", status: http.StatusGone, wantErr: true},
+		// A 304 is only meaningful as the answer to a conditional request; on a
+		// miss and with NoCache no validators were sent, so it is a server error.
+		{name: "304 on a miss", status: http.StatusNotModified, wantErr: true},
+		{name: "304 with NoCache", status: http.StatusNotModified, noCache: true, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ts := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tt.status)
 			})
-			env := newTestEnv(t, ts, nil)
+			env := newTestEnv(t, ts, func(o *Options) { o.NoCache = tt.noCache })
 			ctx := context.Background()
 			resp, err := env.client.Get(ctx, ts.URL, Request{})
 			var se *StatusError
@@ -507,25 +671,53 @@ func TestGetBackoffGrowsAndIsCapped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var prev time.Duration
+	// Each attempt has a deterministic window: the upper half of the doubled base,
+	// capped at maxBackoff. A backoff that stops growing fails at attempt 1 and a
+	// missing cap fails from attempt 7 on.
 	for attempt := range 12 {
 		d := c.backoff(attempt, 0)
-		if d <= 0 {
-			t.Fatalf("attempt %d: backoff %v, want positive", attempt, d)
+		want := min(baseBackoff<<min(attempt, 7), maxBackoff)
+		if d < want/2 || d > want {
+			t.Fatalf("attempt %d: backoff %v outside [%v, %v]", attempt, d, want/2, want)
 		}
-		if d > maxBackoff {
-			t.Fatalf("attempt %d: backoff %v exceeds cap %v", attempt, d, maxBackoff)
-		}
-		if attempt > 0 && attempt < 5 && d <= prev/2 {
-			t.Fatalf("attempt %d: backoff %v did not grow from %v", attempt, d, prev)
-		}
-		prev = d
 	}
 	if got := c.backoff(0, 7*time.Second); got != 7*time.Second {
 		t.Fatalf("Retry-After 7s gave %v", got)
 	}
 	if got := c.backoff(0, 10*time.Minute); got != maxRetryAfter {
 		t.Fatalf("Retry-After 10m gave %v, want the cap %v", got, maxRetryAfter)
+	}
+}
+
+func TestParseRetryAfter(t *testing.T) {
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		value string
+		want  time.Duration
+	}{
+		{value: "", want: 0},
+		{value: " ", want: 0},
+		{value: "abc", want: 0},
+		{value: "-5", want: 0},
+		{value: "0", want: 0},
+		{value: "7.5", want: 0},
+		{value: "7", want: 7 * time.Second},
+		{value: " 7 ", want: 7 * time.Second},
+		{value: now.Add(-time.Minute).Format(http.TimeFormat), want: 0},
+		{value: now.Format(http.TimeFormat), want: 0},
+		{value: now.Add(30 * time.Second).Format(http.TimeFormat), want: 30 * time.Second},
+		// Huge values are clamped before the multiplication so they cannot
+		// overflow into a negative duration; backoff caps them anyway.
+		{value: "9223372036854775807", want: maxRetryAfter},
+		{value: "99999999999999999999", want: maxRetryAfter},
+		{value: "-99999999999999999999", want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.value, func(t *testing.T) {
+			if got := parseRetryAfter(tt.value, now); got != tt.want {
+				t.Fatalf("parseRetryAfter(%q) = %v, want %v", tt.value, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -622,6 +814,46 @@ func TestGetRetriesTransportErrors(t *testing.T) {
 	}
 }
 
+// TestGetBodyCap lowers the cap so the test does not need a 128 MiB body: a body
+// exactly at the cap is accepted, one byte more is ErrBodyTooLarge, and an
+// oversized body is neither retried nor cached.
+func TestGetBodyCap(t *testing.T) {
+	const limit = 16
+	t.Run("at the cap", func(t *testing.T) {
+		ts := newTestServer(t, okHandler(strings.Repeat("x", limit)))
+		env := newTestEnv(t, ts, nil)
+		env.client.maxBody = limit
+		resp, err := env.client.Get(context.Background(), ts.URL, Request{})
+		if err != nil {
+			t.Fatalf("a body of exactly %d bytes must be accepted: %v", limit, err)
+		}
+		if len(resp.Body) != limit {
+			t.Fatalf("body length = %d, want %d", len(resp.Body), limit)
+		}
+		if names := entryFiles(t, env.dir); len(names) != 2 {
+			t.Fatalf("cache files = %v, want the entry", names)
+		}
+	})
+	t.Run("one byte over", func(t *testing.T) {
+		ts := newTestServer(t, okHandler(strings.Repeat("x", limit+1)))
+		env := newTestEnv(t, ts, nil)
+		env.client.maxBody = limit
+		_, err := env.client.Get(context.Background(), ts.URL, Request{})
+		if !errors.Is(err, ErrBodyTooLarge) || !strings.Contains(err.Error(), "exceeds") {
+			t.Fatalf("err = %v, want ErrBodyTooLarge naming the cap", err)
+		}
+		if !strings.Contains(err.Error(), ts.URL) {
+			t.Errorf("error should name the URL: %v", err)
+		}
+		if got := ts.calls.Load(); got != 1 {
+			t.Fatalf("server calls = %d, want 1: an oversized body must not be retried", got)
+		}
+		if len(env.sleeps.recorded()) != 0 || len(entryFiles(t, env.dir)) != 0 {
+			t.Fatal("oversized body was retried or cached")
+		}
+	})
+}
+
 func TestGetNoRetriesWhenDisabled(t *testing.T) {
 	ts := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -671,6 +903,26 @@ func TestGetTimeoutPerAttempt(t *testing.T) {
 	var se *StatusError
 	if errors.As(err, &se) {
 		t.Fatalf("a timeout must not be a StatusError: %v", err)
+	}
+}
+
+// TestGetRetriesAfterAttemptTimeout pins that the timeout bounds one attempt and
+// leaves the parent context intact, so a single slow response is retried.
+func TestGetRetriesAfterAttemptTimeout(t *testing.T) {
+	var n atomic.Int32
+	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if n.Add(1) == 1 {
+			time.Sleep(300 * time.Millisecond)
+		}
+		okHandler("second try")(w, r)
+	})
+	env := newTestEnv(t, ts, func(o *Options) { o.Timeout = 50 * time.Millisecond })
+	resp, err := env.client.Get(context.Background(), ts.URL, Request{})
+	if err != nil {
+		t.Fatalf("a per-attempt timeout must be retried: %v", err)
+	}
+	if string(resp.Body) != "second try" || ts.calls.Load() != 2 || len(env.sleeps.recorded()) != 1 {
+		t.Fatalf("resp = %+v, calls = %d, sleeps = %v", resp, ts.calls.Load(), env.sleeps.recorded())
 	}
 }
 
@@ -855,6 +1107,56 @@ func TestMissingBodyIsAMiss(t *testing.T) {
 	resp, err := env.client.Get(ctx, ts.URL, Request{})
 	if err != nil || resp.FromCache || ts.calls.Load() != 2 {
 		t.Fatalf("resp = %+v, err = %v, calls = %d", resp, err, ts.calls.Load())
+	}
+}
+
+// TestTruncatedBodyIsAMiss covers a power loss after the rename or two processes
+// writing the same key: a body that does not match its metadata must not be
+// served, even for a Forever entry, and the next fetch must repair it.
+func TestTruncatedBodyIsAMiss(t *testing.T) {
+	const full = `{"name":"express","versions":{}}`
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "truncated", body: `{"name":"ex`},
+		{name: "empty", body: ""},
+		{name: "longer", body: full + `{"name":"other"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ts := newTestServer(t, okHandler(full))
+			env := newTestEnv(t, ts, nil)
+			ctx := context.Background()
+			if _, err := env.client.Get(ctx, ts.URL, Request{TTL: Forever}); err != nil {
+				t.Fatal(err)
+			}
+			var bodyPath string
+			for _, n := range entryFiles(t, env.dir) {
+				if strings.HasSuffix(n, bodySuffix) {
+					bodyPath = filepath.Join(env.dir, n)
+				}
+			}
+			if bodyPath == "" {
+				t.Fatal("no body file written")
+			}
+			if err := os.WriteFile(bodyPath, []byte(tt.body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			env.clock.advance(365 * 24 * time.Hour)
+			resp, err := env.client.Get(ctx, ts.URL, Request{TTL: Forever})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resp.FromCache || string(resp.Body) != full || ts.calls.Load() != 2 {
+				t.Fatalf("mismatched body was served: %+v, calls %d", resp, ts.calls.Load())
+			}
+			// The entry was rewritten and is valid again.
+			again, err := env.client.Get(ctx, ts.URL, Request{TTL: Forever})
+			if err != nil || !again.FromCache || string(again.Body) != full || ts.calls.Load() != 2 {
+				t.Fatalf("entry not repaired: %+v, %v, calls %d", again, err, ts.calls.Load())
+			}
+		})
 	}
 }
 

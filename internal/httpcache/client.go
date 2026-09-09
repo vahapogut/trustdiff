@@ -18,15 +18,13 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// errBodyTooLarge is not retried: a second download would not be smaller.
-var errBodyTooLarge = fmt.Errorf("response body exceeds %d bytes", maxBodyBytes)
-
-// Get fetches rawURL through the cache. A fresh entry is served without a request;
-// an expired one is revalidated with If-None-Match or If-Modified-Since and a 304
-// refreshes it. Status 200 and 404 responses are cached (a 404 is a real answer from
-// a registry); other 2xx statuses are returned but not cached; everything else is a
-// *StatusError after retries. In offline mode the cache is served regardless of TTL
-// and a miss is ErrOffline.
+// Get fetches rawURL through the cache. A fresh entry, under the TTL of this
+// request, is served without a request; an expired one is revalidated with
+// If-None-Match or If-Modified-Since and a 304 refreshes it. Status 200 and 404
+// responses are cached (a 404 is a real answer from a registry, though never for
+// longer than DefaultTTL); other 2xx statuses are returned but not cached;
+// everything else is a *StatusError after retries. In offline mode the cache is
+// served regardless of TTL and a miss is ErrOffline.
 func (c *Client) Get(ctx context.Context, rawURL string, req Request) (*Response, error) {
 	u, err := parseURL(rawURL)
 	if err != nil {
@@ -51,7 +49,7 @@ func (c *Client) Get(ctx context.Context, rawURL string, req Request) (*Response
 	defer unlock()
 
 	cached := c.readEntry(key, rawURL, accept)
-	if cached != nil && (c.offline || cached.meta.fresh(c.now())) {
+	if cached != nil && (c.offline || cached.meta.fresh(c.now(), effectiveTTL(req.TTL, cached.meta.Status))) {
 		c.log.Debug("cache hit", "url", rawURL, "fetched_at", cached.meta.FetchedAt)
 		return cached.response(), nil
 	}
@@ -72,11 +70,10 @@ func (c *Client) Get(ctx context.Context, rawURL string, req Request) (*Response
 	}
 
 	if resp.StatusCode == http.StatusNotModified {
-		if cached == nil {
-			return nil, &StatusError{URL: rawURL, StatusCode: resp.StatusCode}
-		}
+		// fetch admits a 304 only for a conditional request, and validators are
+		// sent only when cached is set, so the entry is always there to refresh.
 		cached.meta.FetchedAt = resp.FetchedAt
-		cached.meta.TTL = req.TTL
+		cached.meta.TTL = effectiveTTL(req.TTL, cached.meta.Status)
 		if v := resp.Header.Get("ETag"); v != "" {
 			cached.meta.ETag = v
 		}
@@ -96,7 +93,7 @@ func (c *Client) Get(ctx context.Context, rawURL string, req Request) (*Response
 			ETag:         resp.Header.Get("ETag"),
 			LastModified: resp.Header.Get("Last-Modified"),
 			FetchedAt:    resp.FetchedAt,
-			TTL:          req.TTL,
+			TTL:          effectiveTTL(req.TTL, resp.StatusCode),
 			Status:       resp.StatusCode,
 			ContentType:  resp.Header.Get("Content-Type"),
 		}
@@ -105,6 +102,18 @@ func (c *Client) Get(ctx context.Context, rawURL string, req Request) (*Response
 		}
 	}
 	return resp, nil
+}
+
+// effectiveTTL is the freshness window for an answer with the given status under
+// the TTL the caller asked for. A "not found" is never immutable, whatever the
+// caller's TTL: the version may be published or replicated a moment later, and
+// the caller cannot choose a TTL per status because it picks one before the
+// status is known. So a 404 is revalidated after DefaultTTL at the latest.
+func effectiveTTL(ttl time.Duration, status int) time.Duration {
+	if status == http.StatusNotFound {
+		return min(ttl, DefaultTTL)
+	}
+	return ttl
 }
 
 // fetch performs the request with rate limiting and retries. It returns the final
@@ -118,12 +127,12 @@ func (c *Client) fetch(ctx context.Context, u *url.URL, rawURL, accept string, e
 		}
 		resp, err := c.attempt(ctx, rawURL, accept, extra, validators)
 		if err == nil && !retryableStatus(resp.StatusCode) {
-			if acceptableStatus(resp.StatusCode) {
+			if acceptableStatus(resp.StatusCode, validators != nil) {
 				return resp, nil
 			}
 			return nil, &StatusError{URL: rawURL, StatusCode: resp.StatusCode}
 		}
-		if errors.Is(err, errBodyTooLarge) {
+		if errors.Is(err, ErrBodyTooLarge) {
 			return nil, fmt.Errorf("GET %s: %w", rawURL, err)
 		}
 		// Never retry once the caller gave up; a per-attempt timeout is retried
@@ -182,12 +191,13 @@ func (c *Client) attempt(ctx context.Context, rawURL, accept string, extra http.
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes+1))
+	// One byte past the cap tells an oversized body from one that is exactly at it.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, c.maxBody+1))
 	if err != nil {
 		return nil, fmt.Errorf("reading body: %w", err)
 	}
-	if len(body) > maxBodyBytes {
-		return nil, errBodyTooLarge
+	if int64(len(body)) > c.maxBody {
+		return nil, fmt.Errorf("%w: exceeds %d bytes", ErrBodyTooLarge, c.maxBody)
 	}
 	return &Response{
 		Body:       body,
@@ -197,9 +207,11 @@ func (c *Client) attempt(ctx context.Context, rawURL, accept string, extra http.
 	}, nil
 }
 
-// acceptableStatus reports whether a status is returned to the caller as a Response.
-func acceptableStatus(status int) bool {
-	return (status >= 200 && status < 300) || status == http.StatusNotModified || status == http.StatusNotFound
+// acceptableStatus reports whether a status is returned to the caller as a
+// Response. A 304 counts only for a conditional request: without validators there
+// is nothing it could confirm, so it is a server error like any other.
+func acceptableStatus(status int, conditional bool) bool {
+	return (status >= 200 && status < 300) || (conditional && status == http.StatusNotModified) || status == http.StatusNotFound
 }
 
 // retryableStatus reports whether a status is worth another attempt.
@@ -225,16 +237,21 @@ func (c *Client) backoff(attempt int, retryAfter time.Duration) time.Duration {
 
 // parseRetryAfter handles both forms of the header, seconds and an HTTP date.
 // Anything unparsable or in the past yields zero, which means "use backoff".
+// Seconds are clamped to maxRetryAfter before the multiplication, so a huge value
+// cannot overflow into a negative duration; backoff caps them there anyway.
 func parseRetryAfter(value string, now time.Time) time.Duration {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return 0
 	}
-	if secs, err := strconv.Atoi(value); err == nil {
+	secs, err := strconv.ParseInt(value, 10, 64)
+	if err == nil || errors.Is(err, strconv.ErrRange) {
+		// ParseInt saturates on ErrRange, so the sign of an out-of-range value
+		// survives and it is treated like any other very large or negative one.
 		if secs <= 0 {
 			return 0
 		}
-		return time.Duration(secs) * time.Second
+		return time.Duration(min(secs, int64(maxRetryAfter/time.Second))) * time.Second
 	}
 	if at, err := http.ParseTime(value); err == nil {
 		if d := at.Sub(now); d > 0 {

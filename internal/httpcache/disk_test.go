@@ -220,7 +220,7 @@ func TestMetadataRoundTrip(t *testing.T) {
 		name string
 		meta entryMeta
 	}{
-		{name: "hour", meta: entryMeta{URL: "u", Accept: "*/*", ETag: `"e"`, LastModified: "lm", FetchedAt: time.Date(2026, 9, 9, 1, 2, 3, 0, time.UTC), TTL: time.Hour, Status: 200, ContentType: "text/plain"}},
+		{name: "hour", meta: entryMeta{URL: "u", Accept: "*/*", ETag: `"e"`, LastModified: "lm", FetchedAt: time.Date(2026, 9, 9, 1, 2, 3, 0, time.UTC), TTL: time.Hour, Status: 200, ContentType: "text/plain", Length: 12345}},
 		{name: "forever", meta: entryMeta{URL: "u", Accept: "a", FetchedAt: time.Date(2026, 9, 9, 1, 2, 3, 0, time.UTC), TTL: Forever, Status: 404}},
 	}
 	for _, tt := range tests {
@@ -232,6 +232,10 @@ func TestMetadataRoundTrip(t *testing.T) {
 			if tt.meta.TTL == Forever && !strings.Contains(string(data), `"ttl": "forever"`) {
 				t.Errorf("Forever not written as the word forever: %s", data)
 			}
+			// An empty body is a real length, so it is written even when zero.
+			if !strings.Contains(string(data), `"length": `) {
+				t.Errorf("length not written: %s", data)
+			}
 			got, err := parseMeta(data)
 			if err != nil {
 				t.Fatalf("parse: %v\n%s", err, data)
@@ -240,6 +244,13 @@ func TestMetadataRoundTrip(t *testing.T) {
 				t.Fatalf("round trip = %+v, want %+v", got, tt.meta)
 			}
 		})
+	}
+}
+
+func TestParseMetaRejectsNegativeLength(t *testing.T) {
+	data := `{"url":"u","accept":"*/*","fetched_at":"2026-09-09T12:00:00Z","ttl":"1h0m0s","status":200,"length":-1}`
+	if _, err := parseMeta([]byte(data)); err == nil || !strings.Contains(err.Error(), "length") {
+		t.Fatalf("parseMeta error = %v, want it to mention the length", err)
 	}
 }
 
@@ -259,9 +270,10 @@ func TestMetaFresh(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := entryMeta{FetchedAt: at, TTL: tt.ttl}
-			if got := m.fresh(tt.now); got != tt.want {
-				t.Fatalf("fresh() = %v, want %v", got, tt.want)
+			// The entry was stored as Forever; only the requested ttl may count.
+			m := entryMeta{FetchedAt: at, TTL: Forever}
+			if got := m.fresh(tt.now, tt.ttl); got != tt.want {
+				t.Fatalf("fresh(now, %v) = %v, want %v", tt.ttl, got, tt.want)
 			}
 		})
 	}

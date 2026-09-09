@@ -8,8 +8,9 @@
 // The cache is a flat directory of plain files. Each entry is a metadata file
 // <sha256>.json and a body file <sha256>.body, where the hash covers the method, the
 // URL and the Accept header. Both are written atomically, and an entry whose metadata
-// does not parse is treated as a miss. Stat and Clear operate on such a directory;
-// Clear refuses to touch a directory that holds anything this package did not write.
+// does not parse, or whose body is not the length the metadata recorded, is treated
+// as a miss. Stat and Clear operate on such a directory; Clear refuses to touch a
+// directory that holds anything this package did not write.
 package httpcache
 
 import (
@@ -31,7 +32,9 @@ const (
 	// DefaultTTL is used when a Request leaves TTL at zero.
 	DefaultTTL = time.Hour
 	// Forever marks immutable data, for example per-version publish times: the
-	// entry is served from the cache for as long as it exists.
+	// entry is served from the cache for as long as it exists. A 404 is never
+	// immutable, whatever the caller asked for: the version may be published or
+	// replicated a moment later, so Get caps its freshness at DefaultTTL.
 	Forever = time.Duration(math.MaxInt64)
 	// EnvDir names the environment variable that overrides the cache directory.
 	EnvDir = "TRUSTDIFF_CACHE_DIR"
@@ -63,6 +66,12 @@ var ErrOffline = errors.New("offline and not in the cache")
 // or subdirectories this package did not write, so a wrong directory is never wiped.
 var ErrForeignFiles = errors.New("refusing to clear a directory trustdiff did not fill")
 
+// ErrBodyTooLarge is returned (wrapped) by Get when a response body exceeds the
+// size cap. The request is not retried, because a second download would not be
+// smaller, and nothing is cached. Callers use errors.Is to report the reason
+// distinctly from a transport error.
+var ErrBodyTooLarge = errors.New("response body too large")
+
 // StatusError is returned by Get for a final status that is neither 2xx nor 404,
 // after retries were exhausted for 429 and 5xx. Callers use errors.As.
 type StatusError struct {
@@ -77,7 +86,8 @@ func (e *StatusError) Error() string {
 // Options configures a Client. The zero value of every field except UserAgent
 // selects the documented default.
 type Options struct {
-	// Dir is the cache directory. Empty means DefaultDir().
+	// Dir is the cache directory. Empty means DefaultDir(), resolved only when the
+	// cache is used, so a NoCache client works without a user cache directory.
 	Dir string
 	// Offline serves the cache regardless of TTL and never touches the network.
 	Offline bool
@@ -113,7 +123,10 @@ type Request struct {
 	// Header holds additional headers. User-Agent and Accept always win over it.
 	Header http.Header
 	// TTL is how long a cached copy is served without revalidation. Zero means
-	// DefaultTTL; Forever means the entry never expires.
+	// DefaultTTL; Forever means the entry never expires. The TTL of the current
+	// request decides freshness, so a caller asking for a short TTL revalidates an
+	// entry that another caller stored under a longer one. A 404 is capped at
+	// DefaultTTL, see Forever.
 	TTL time.Duration
 }
 
@@ -138,10 +151,12 @@ type Client struct {
 	userAgent string
 	timeout   time.Duration
 	retries   int
-	hostRPS   map[string]float64
-	http      *http.Client
-	log       *slog.Logger
-	now       func() time.Time
+	// maxBody caps one response body; it is maxBodyBytes outside tests.
+	maxBody int64
+	hostRPS map[string]float64
+	http    *http.Client
+	log     *slog.Logger
+	now     func() time.Time
 	// sleep waits between retries; tests replace it to assert delays.
 	sleep func(ctx context.Context, d time.Duration) error
 
@@ -181,8 +196,11 @@ func New(opts Options) (*Client, error) { //nolint:gocritic // Options by value 
 		}
 		hostRPS[strings.ToLower(host)] = rps
 	}
+	// The directory is only resolved when it will be used: a NoCache client must
+	// work where the platform cache directory cannot be located, such as a
+	// minimal container without a home directory.
 	dir := opts.Dir
-	if dir == "" {
+	if dir == "" && !opts.NoCache {
 		var err error
 		if dir, err = DefaultDir(); err != nil {
 			return nil, fmt.Errorf("httpcache: %w", err)
@@ -212,6 +230,7 @@ func New(opts Options) (*Client, error) { //nolint:gocritic // Options by value 
 		userAgent: opts.UserAgent,
 		timeout:   opts.Timeout,
 		retries:   retries,
+		maxBody:   maxBodyBytes,
 		hostRPS:   hostRPS,
 		http:      &http.Client{Transport: transport},
 		log:       logger,
@@ -222,7 +241,8 @@ func New(opts Options) (*Client, error) { //nolint:gocritic // Options by value 
 	}, nil
 }
 
-// Dir returns the cache directory the client reads and writes.
+// Dir returns the cache directory the client reads and writes. It is empty for a
+// NoCache client that did not set Options.Dir, since no directory was resolved.
 func (c *Client) Dir() string { return c.dir }
 
 // sleepContext waits for d or until ctx is done.
