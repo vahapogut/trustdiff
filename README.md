@@ -2,7 +2,7 @@
 
 trustdiff is a single-binary command line tool that finds trust regressions in a project's dependency tree before they land. A trust regression is not a change in a package's code but a change in the signals that made the package trustworthy: a version published by an account that never published one before, a release that lost the provenance every earlier release had, a version that adds an install script or a dependency the previous one did not have, a name one keystroke away from a popular package, a version with a known malicious or vulnerable advisory. Each of these preceded a real incident (event-stream in 2018, ua-parser-js in 2021, Shai-Hulud in 2025, axios in 2026), and each is visible in registry metadata before anyone has looked at the code. Cooldowns buy time and malware feeds catch what is already known; trustdiff tells you, across npm (npm, pnpm, yarn, bun), PyPI (pip, uv, poetry) and crates.io, in one binary with no account and no telemetry, that a dependency's trust signals regressed relative to its own history.
 
-Version 0.1.0 ships `check`. The lockfile diff for pull requests (`diff`, 0.2.0), the package manager hardening audit (`doctor`, 0.3.0) and Deno/JSR support (0.4.0) follow; see the [roadmap](#roadmap).
+Version 0.2.0 ships `check` for single packages and `diff` for pull requests, with the GitHub Action, the pre-commit hook and SARIF output. The package manager hardening audit (`doctor`, 0.3.0) and Deno/JSR support (0.4.0) follow; see the [roadmap](#roadmap).
 
 ## Demo
 
@@ -63,7 +63,7 @@ With a Go toolchain (1.26 or newer):
 go install github.com/vahapogut/trustdiff/cmd/trustdiff@latest
 ```
 
-Or download a release from the [releases page](https://github.com/vahapogut/trustdiff/releases). Every release ships one archive per platform (`trustdiff_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows), `checksums.txt`, its cosign bundle `checksums.txt.sigstore.json`, an SPDX SBOM per archive and GitHub build provenance. Download the archive for your platform together with the two checksum files and verify before you unpack; substitute the archive you downloaded for `trustdiff_0.1.0_linux_amd64.tar.gz`.
+Or download a release from the [releases page](https://github.com/vahapogut/trustdiff/releases). Every release ships one archive per platform (`trustdiff_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows), `checksums.txt`, its cosign bundle `checksums.txt.sigstore.json`, an SPDX SBOM per archive and GitHub build provenance. Download the archive for your platform together with the two checksum files and verify before you unpack; substitute the archive you downloaded for `trustdiff_0.2.0_linux_amd64.tar.gz`.
 
 1. Verify the signature on the checksum file (cosign v3 or later). The identity is the release workflow of this repository, running on a version tag.
 
@@ -85,14 +85,14 @@ Or download a release from the [releases page](https://github.com/vahapogut/trus
    On Windows, compare the two outputs by eye:
 
    ```powershell
-   (Get-FileHash .\trustdiff_0.1.0_windows_amd64.zip -Algorithm SHA256).Hash
+   (Get-FileHash .\trustdiff_0.2.0_windows_amd64.zip -Algorithm SHA256).Hash
    Select-String windows_amd64 .\checksums.txt
    ```
 
 3. Verify the build provenance with the GitHub CLI.
 
    ```sh
-   gh attestation verify trustdiff_0.1.0_linux_amd64.tar.gz \
+   gh attestation verify trustdiff_0.2.0_linux_amd64.tar.gz \
      --owner vahapogut \
      --signer-workflow vahapogut/trustdiff/.github/workflows/release.yml
    ```
@@ -205,15 +205,43 @@ $ trustdiff --format json check cargo:serde@1.0.210
 }
 ```
 
-### 2. A pull request gate (0.2.0)
+### 2. A pull request gate
 
-The `diff` command arrives in 0.2.0. It will evaluate only what a lockfile change adds or modifies (`package-lock.json`, `pnpm-lock.yaml`, `uv.lock` and `Cargo.lock` first), put every finding on the lockfile line it belongs to, and write SARIF for code scanning, so that a job like this fails on `block` findings and annotates the rest:
+`trustdiff diff` evaluates only what a lockfile change adds or modifies, against a git base that defaults to the merge base with `origin/main`. It reads `package-lock.json`, `pnpm-lock.yaml`, `uv.lock` and `Cargo.lock`, and every finding carries the lockfile line the entry sits on:
+
+```sh
+trustdiff diff --format markdown
+```
+
+```
+## trustdiff: 1 subject, 0 block, 2 warn, 0 info, 9 skipped checks
+
+| Package | Level | Check | Finding | Location |
+| --- | --- | --- | --- | --- |
+| npm:demo-crypto-helper@1.0.2 | warn | TD001 young-version | Published 2d2h47m15s ago, inside the 3d cooldown | package-lock.json:32 |
+| npm:demo-crypto-helper@1.0.2 | warn | TD006 install-script-present | Runs code at install time: postinstall | package-lock.json:32 |
+
+Exit code 0 (no blocking findings).
+```
+
+In a workflow, write SARIF instead and let code scanning put those findings on the diff:
+
+```yaml
+- uses: vahapogut/trustdiff@v0.2.0
+  with:
+    fail-on: block
+    format: sarif
+```
+
+The action downloads the pinned release, verifies it against checksums signed with cosign before running it, and uploads the SARIF. Or run the binary yourself:
 
 ```sh
 trustdiff diff --base "$BASE_SHA" --format sarif > trustdiff.sarif
 ```
 
-A composite GitHub Action, a pre-commit hook and `trustdiff hook install` for git hooks ship with it. Exceptions live in `.trustdiff.yaml` with a reason and an expiry date and are reviewed like code. Today `trustdiff diff` exits with code 2 and prints `trustdiff: diff: not implemented in <version>`; `--format sarif` and `--format markdown` are refused by every command until then.
+`trustdiff scan` evaluates every entry of every lockfile it finds, which is the first-adoption pass rather than the gate. `trustdiff hook install` writes a pre-commit hook that runs the same diff locally, and `.pre-commit-hooks.yaml` offers it to pre-commit users. Exceptions live in `.trustdiff.yaml` with a reason and an expiry date and are reviewed like code.
+
+A note on what the gate compares against: the previous version of a package is the release before the one you are getting, and separately the version your project actually had. Upgrading across several releases makes those differ, and `diff` uses both, so a postinstall script that arrived two releases ago is still reported as new to your project.
 
 ### 3. Auditing a monorepo (0.3.0)
 
@@ -245,8 +273,8 @@ Every check has a stable id, a name used in the policy file, a default level and
 | [TD010](docs/checks.md#td010-vulnerability) | `vulnerability` | OSV advisory at or above `min_severity` | block, min high | all |
 | [TD011](docs/checks.md#td011-deprecated-or-yanked) | `deprecated-or-yanked` | version deprecated or yanked, package deprecated | warn | all |
 | [TD012](docs/checks.md#td012-low-usage) | `low-usage` | weekly downloads below `min_weekly_downloads` | info | all |
-| [TD013](docs/checks.md#td013-exotic-source) | `exotic-source` | lockfile entry from git, tarball or http (0.2.0) | block | all |
-| [TD014](docs/checks.md#td014-integrity-missing) | `integrity-missing` | lockfile entry without a hash or over plain http (0.2.0) | warn | all |
+| [TD013](docs/checks.md#td013-exotic-source) | `exotic-source` | lockfile entry from git, a tarball or a local path | block | all |
+| [TD014](docs/checks.md#td014-integrity-missing) | `integrity-missing` | lockfile entry without a hash, or over plain http | warn | all |
 | [TD015](docs/checks.md#td015-version-anomaly) | `version-anomaly` | version number jumps past the package's cadence or is published out of order | info | all |
 
 An expired `allow` entry produces a warning of its own, [TD000](docs/checks.md#td000-expired-allow). Any check whose data is missing reports skipped with the reason, never a pass.

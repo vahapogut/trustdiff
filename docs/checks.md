@@ -531,11 +531,81 @@ npm:plain-crypto-js@4.2.1  BLOCK
 
 ## TD013 exotic-source
 
-Arrives in 0.2.0 with the `diff` and `scan` commands. It will report a lockfile entry resolved from a git repository, a tarball or an http URL instead of the registry, with the lockfile path and line in the finding's `location`. The policy already accepts `exotic-source` (default `block`) so that a policy file written today keeps validating.
+**Detects.** A lockfile entry that does not come from the ecosystem's registry: a git repository, a tarball or archive URL, a directory on the machine, or an origin the file does not state. Default `block`, every ecosystem. It reads the lockfile entry rather than the registry, so it is skipped for a ref named on the command line, which has none. A private registry or a mirror that serves the ecosystem's usual tarball layout is not exotic: the parsers recognize it and record the entry as a registry install.
+
+**Why it matters.** A version number is a promise that a registry keeps: the release is immutable, its hash is recorded, and a takedown reaches everyone who installs it later. A git or URL dependency keeps none of that. A branch or tag moves, so the code installed today is not the code reviewed yesterday, and nothing in this tool or in the registry can tell you it changed. It is also how a dependency escapes every other check here: a package installed from a URL has no publisher history, no provenance and no advisory to match. Real projects do use git dependencies deliberately, which is what the allow list is for; what this check refuses to do is let one arrive unnoticed in a pull request.
+
+**Evidence.**
+
+| Key | Meaning |
+|---|---|
+| `source` | where the entry was resolved from: `git`, `url`, `path` or `unknown` |
+| `resolved` | the location as the lockfile records it, absent when the file states none |
+| `lockfile` | the lockfile the entry came from, absent when the subject carries no location |
+
+**Example.**
+
+```
+npm:some-tool@2.1.0  BLOCK  (package-lock.json:412)
+  block
+    TD013 exotic-source: Installed from git, not from the registry
+      package-lock.json resolves some-tool@2.1.0 from
+      git+ssh://git@github.com/example/some-tool.git#4f2a1c9, not from the npm registry, so the
+      version number promises nothing about what is installed
+```
+
+**Fix.** Publish the dependency to the registry, or vendor it into the repository where it is reviewed like the rest of the code. A git dependency that has to stay should at least be pinned to a full commit, which is what TD014 checks.
+
+**Allow.** A workspace member or a deliberate git dependency:
+
+```yaml
+allow:
+  - check: exotic-source
+    package: "npm:@myorg/*"
+    reason: "workspace members, resolved from the repository itself"
+```
 
 ## TD014 integrity-missing
 
-Arrives in 0.2.0 with the `diff` and `scan` commands. It will report a lockfile entry without an integrity hash, or resolved over plain http, with the lockfile location. The policy already accepts `integrity-missing` (default `warn`).
+**Detects.** A lockfile entry with nothing to verify the download against. Two signals, each its own finding, both `warn` by default, every ecosystem:
+
+- `missing-hash`: the entry records no integrity hash. A git entry pinned to a full commit is not reported, because the commit is the hash.
+- `plain-http`: the entry is resolved over `http://`, so the download is neither confidential nor authenticated whatever the hash says.
+
+Like TD013 it reads the lockfile entry and is skipped for a ref named on the command line.
+
+**Why it matters.** The hash is what makes a lockfile a lock. Without it, an install repeats the resolution rather than the result: a registry that serves different bytes for the same version, a compromised mirror, or a proxy in between changes what you get and nothing notices. Plain http makes that trivial for anyone on the path.
+
+**Evidence.**
+
+| Key | Meaning |
+|---|---|
+| `signal` | `missing-hash` or `plain-http` |
+| `integrity` | the hash the entry records, absent when it records none |
+| `resolved` | the location as the lockfile records it, absent when the file states none |
+| `lockfile` | the lockfile the entry came from, absent when the subject carries no location |
+
+**Example.**
+
+```
+npm:internal-widget@1.4.0  WARN  (package-lock.json:88)
+  warn
+    TD014 integrity-missing: No integrity hash to verify the download against
+      package-lock.json records no integrity for internal-widget@1.4.0, so an install repeats the
+      resolution rather than the result and nothing checks that the bytes are the ones this
+      lockfile was written against
+```
+
+**Fix.** Re-run the package manager's install so it writes the hash, or move the dependency to a registry that provides one. For `plain-http`, change the registry URL to https.
+
+**Allow.** A local path dependency, which has no hash by nature:
+
+```yaml
+allow:
+  - check: integrity-missing
+    package: "npm:@myorg/ui"
+    reason: "workspace member resolved from a directory, no artifact to hash"
+```
 
 ## TD015 version-anomaly
 
