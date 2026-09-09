@@ -1,15 +1,21 @@
 package checks
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/vahapogut/trustdiff/internal/advisory"
 	"github.com/vahapogut/trustdiff/internal/advisory/depsdev"
+	"github.com/vahapogut/trustdiff/internal/advisory/osv"
+	"github.com/vahapogut/trustdiff/internal/httpcache"
 	"github.com/vahapogut/trustdiff/internal/model"
 	"github.com/vahapogut/trustdiff/internal/registry"
 )
@@ -244,12 +250,16 @@ func TestLoaderPrefetchAdvisories(t *testing.T) {
 	two := model.MustParseRef("npm:lib@1.1.0")
 	adv.results[one] = []advisory.Advisory{{ID: "GHSA-1"}}
 	l, _ := npmLoaderR(adv, nil)
-	l.Prefetch(context.Background(), []model.PackageRef{one, two, one, model.MustParseRef("npm:bare"), {Ecosystem: model.NPM, Name: "LIB", Version: "1.0.0"}})
+	deno := model.MustParseRef("deno:std@1.0.0")
+	// npm names keep their case: LIB is a package of its own, not a duplicate of
+	// lib, and OSV indexes it that way too.
+	upper := model.PackageRef{Ecosystem: model.NPM, Name: "LIB", Version: "1.0.0"}
+	l.Prefetch(context.Background(), []model.PackageRef{one, two, one, model.MustParseRef("npm:bare"), upper, deno})
 	if adv.count("advisories") != 1 {
 		t.Fatalf("advisory source called %d times by Prefetch, want 1", adv.count("advisories"))
 	}
-	if want := []model.PackageRef{one, two}; !slices.Equal(adv.batches[0], want) {
-		t.Errorf("batch = %v, want %v (deduplicated, normalized, versioned refs only)", adv.batches[0], want)
+	if want := []model.PackageRef{one, two, upper}; !slices.Equal(adv.batches[0], want) {
+		t.Errorf("batch = %v, want %v (deduplicated, versioned refs of indexed ecosystems only)", adv.batches[0], want)
 	}
 
 	got, err := l.Advisories(context.Background(), one)
@@ -259,6 +269,11 @@ func TestLoaderPrefetchAdvisories(t *testing.T) {
 	got, err = l.Advisories(context.Background(), two)
 	if err != nil || len(got) != 0 {
 		t.Errorf("Advisories(two) = %v, %v; want none and no error for a ref absent from the batch result", got, err)
+	}
+	// The source drops refs of ecosystems it does not index from a mixed batch;
+	// the loader must not read that silence as "no advisories".
+	if _, err := l.Advisories(context.Background(), deno); !errors.Is(err, osv.ErrUnsupported) || !errors.Is(err, registry.ErrUnsupported) {
+		t.Errorf("Advisories(deno) after a mixed Prefetch = %v, want an error wrapping osv.ErrUnsupported and registry.ErrUnsupported", err)
 	}
 	if adv.count("advisories") != 1 {
 		t.Errorf("advisory source called %d times after prefetched lookups, want still 1", adv.count("advisories"))
@@ -351,14 +366,16 @@ func TestLoaderPrefetchDepsDev(t *testing.T) {
 	if err != nil || len(findings) != 0 {
 		t.Errorf("DepsDevFindings(two) = %v, %v; want none", findings, err)
 	}
-	if _, err := l.DepsDev(context.Background(), deno); !errors.Is(err, depsdev.ErrUnsupported) {
-		t.Errorf("DepsDev(deno) = %v, want depsdev.ErrUnsupported", err)
+	// An ecosystem deps.dev does not index is a definite answer: the error matches
+	// the deps.dev sentinel and registry.ErrUnsupported alike.
+	if _, err := l.DepsDev(context.Background(), deno); !errors.Is(err, depsdev.ErrUnsupported) || !errors.Is(err, registry.ErrUnsupported) {
+		t.Errorf("DepsDev(deno) = %v, want depsdev.ErrUnsupported and registry.ErrUnsupported", err)
 	}
-	if _, err := l.DepsDevFindings(context.Background(), deno); !errors.Is(err, depsdev.ErrUnsupported) {
-		t.Errorf("DepsDevFindings(deno) = %v, want depsdev.ErrUnsupported", err)
+	if _, err := l.DepsDevFindings(context.Background(), deno); !errors.Is(err, depsdev.ErrUnsupported) || !errors.Is(err, registry.ErrUnsupported) {
+		t.Errorf("DepsDevFindings(deno) = %v, want depsdev.ErrUnsupported and registry.ErrUnsupported", err)
 	}
-	if _, err := l.SimilarNames(context.Background(), model.Deno, "std"); !errors.Is(err, depsdev.ErrUnsupported) {
-		t.Errorf("SimilarNames(deno) = %v, want depsdev.ErrUnsupported", err)
+	if _, err := l.SimilarNames(context.Background(), model.Deno, "std"); !errors.Is(err, depsdev.ErrUnsupported) || !errors.Is(err, registry.ErrUnsupported) {
+		t.Errorf("SimilarNames(deno) = %v, want depsdev.ErrUnsupported and registry.ErrUnsupported", err)
 	}
 	if dd.count("versions") != 1 || dd.count("findings") != 1 || dd.count("similar") != 0 {
 		t.Errorf("deps.dev calls after prefetched lookups: versions %d findings %d similar %d; want 1, 1, 0", dd.count("versions"), dd.count("findings"), dd.count("similar"))
@@ -373,18 +390,107 @@ func TestLoaderPrefetchDepsDev(t *testing.T) {
 	}
 }
 
+// A mixed batch of indexed and unindexed refs must give every ref the same
+// answer it would get on its own: the OSV client leaves unindexed refs out of
+// its map and returns ErrUnsupported only when every ref was unindexed, so a
+// loader that stored "no advisories" for the whole batch turned a jsr subject
+// into a false pass whenever an npm ref shared the command line.
+func TestLoaderMixedPrefetchReportsUnsupportedRefs(t *testing.T) {
+	adv := newFakeAdvisoriesR()
+	lib := model.MustParseRef("npm:lib@1.0.0")
+	jsr := model.MustParseRef("jsr:@std/path@1.0.0")
+	adv.results[lib] = []advisory.Advisory{{ID: "GHSA-1"}}
+	l, _ := npmLoaderR(adv, nil)
+	l.Prefetch(context.Background(), []model.PackageRef{lib, jsr})
+	if !slices.Equal(adv.batches[0], []model.PackageRef{lib}) {
+		t.Errorf("batch = %v, want the npm ref only", adv.batches[0])
+	}
+	if got, err := l.Advisories(context.Background(), lib); err != nil || len(got) != 1 {
+		t.Errorf("Advisories(lib) = %v, %v; want GHSA-1", got, err)
+	}
+	got, err := l.Advisories(context.Background(), jsr)
+	if !errors.Is(err, osv.ErrUnsupported) {
+		t.Fatalf("Advisories(jsr) = %v, %v; want an error wrapping osv.ErrUnsupported, not a silent empty answer", got, err)
+	}
+	if !errors.Is(err, registry.ErrUnsupported) {
+		t.Errorf("Advisories(jsr) = %v, want it to match registry.ErrUnsupported too", err)
+	}
+	if !strings.Contains(err.Error(), "jsr: ecosystem not indexed by OSV") {
+		t.Errorf("error text = %q, want it to name the ecosystem and the source", err)
+	}
+	if adv.count("advisories") != 1 {
+		t.Errorf("advisory source called %d times, want 1: an unindexed ref is answered without a request", adv.count("advisories"))
+	}
+	// A fresh loader asked on demand agrees.
+	l, _ = npmLoaderR(newFakeAdvisoriesR(), nil)
+	if _, err := l.Advisories(context.Background(), jsr); !errors.Is(err, osv.ErrUnsupported) {
+		t.Errorf("on-demand Advisories(jsr) = %v, want osv.ErrUnsupported", err)
+	}
+}
+
+// A failed batch is worth a warning on stderr when the source could not be
+// reached; an expected condition is stated in the report already and only goes
+// to the debug log, so an offline run does not print three warnings.
+func TestLoaderBatchFailureLogLevel(t *testing.T) {
+	ref := model.MustParseRef("npm:lib@1.0.0")
+	tests := []struct {
+		name     string
+		err      error
+		wantWarn bool
+	}{
+		{name: "outage", err: errors.New("503 after 3 attempts"), wantWarn: true},
+		{name: "offline miss", err: fmt.Errorf("GET https://osv.example/querybatch: %w", httpcache.ErrOffline)},
+		{name: "not indexed", err: fmt.Errorf("osv: %w: jsr", osv.ErrUnsupported)},
+		{name: "not configured", err: fmt.Errorf("osv: %w", ErrNotConfigured)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+			adv := newFakeAdvisoriesR()
+			adv.err = tt.err
+			dd := newFakeDepsDevR()
+			dd.err = tt.err
+			src := newFakeSourceR(model.NPM)
+			l := newDataLoader(registry.Registry{model.NPM: src}, adv, dd, log)
+			l.Prefetch(context.Background(), []model.PackageRef{ref})
+			if _, err := l.Advisories(context.Background(), ref); !errors.Is(err, tt.err) {
+				t.Errorf("Advisories = %v, want the batch error memoized whatever the log level", err)
+			}
+			warned := strings.Contains(buf.String(), "level=WARN")
+			if warned != tt.wantWarn {
+				t.Errorf("stderr = %q, want a warning: %v", buf.String(), tt.wantWarn)
+			}
+			if tt.wantWarn {
+				for _, msg := range []string{"advisory batch failed", "deps.dev version batch failed", "deps.dev findings batch failed"} {
+					if !strings.Contains(buf.String(), msg) {
+						t.Errorf("stderr lacks %q:\n%s", msg, buf.String())
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestLoaderSimilarNamesMemoized(t *testing.T) {
 	dd := newFakeDepsDevR()
 	dd.similar["lib"] = []depsdev.Similar{{Name: "lіb", Popularity: 9}}
 	l, _ := npmLoaderR(nil, dd)
 	for range 3 {
-		got, err := l.SimilarNames(context.Background(), model.NPM, "LIB")
+		got, err := l.SimilarNames(context.Background(), model.NPM, "lib")
 		if err != nil || len(got) != 1 {
 			t.Fatalf("SimilarNames = %v, %v", got, err)
 		}
 	}
 	if dd.count("similar") != 1 {
 		t.Errorf("deps.dev similar called %d times, want 1", dd.count("similar"))
+	}
+	// A different spelling is a different npm package, so it is a lookup of its own.
+	if _, err := l.SimilarNames(context.Background(), model.NPM, "LIB"); err != nil {
+		t.Fatalf("SimilarNames(LIB) = %v", err)
+	}
+	if dd.count("similar") != 2 {
+		t.Errorf("deps.dev similar called %d times after asking for LIB, want 2", dd.count("similar"))
 	}
 }
 

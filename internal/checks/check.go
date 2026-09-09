@@ -17,6 +17,7 @@ import (
 
 	"github.com/vahapogut/trustdiff/internal/advisory"
 	"github.com/vahapogut/trustdiff/internal/advisory/depsdev"
+	"github.com/vahapogut/trustdiff/internal/advisory/osv"
 	"github.com/vahapogut/trustdiff/internal/model"
 	"github.com/vahapogut/trustdiff/internal/policy"
 	"github.com/vahapogut/trustdiff/internal/registry"
@@ -24,9 +25,13 @@ import (
 
 // Loader fetches what checks need and memoizes it per run, so one packument serves
 // every check. Prefetch warms the batch endpoints (OSV querybatch, deps.dev
-// versionbatch, npm bulk downloads) for every subject of a run before checks start.
-// Every method returns registry.ErrNotFound, registry.ErrUnsupported, or a wrapped
-// httpcache error; a check turns those into a skipped entry, never into a pass.
+// versionbatch and findingsbatch) for every subject of a run before checks start.
+// A failure is a wrapped sentinel the checks can classify: registry.ErrNotFound and
+// registry.ErrUnsupported from the registries, osv.ErrUnsupported and
+// depsdev.ErrUnsupported for an ecosystem those sources do not index,
+// ErrNotConfigured for a source the run was built without, or a transport error
+// (typically wrapping an httpcache error). A check turns any of them into a
+// skipped entry, never into a pass; Subject.Skipped words them.
 type Loader interface {
 	Prefetch(ctx context.Context, refs []model.PackageRef)
 	Versions(ctx context.Context, eco model.Ecosystem, name string) (*registry.VersionList, error)
@@ -40,7 +45,15 @@ type Loader interface {
 
 // Data source names used as keys of Subject.Unavailable and in skipped reasons.
 const (
-	SourceRegistry  = "registry"
+	SourceRegistry = "registry"
+	// SourcePrevious is the previous version's own detail (dependencies, install
+	// scripts, provenance), which takes a request of its own. When that request
+	// fails the runner keeps the version-list entry as Subject.Previous, for its
+	// publish time and publisher, and records the failure under this name; a check
+	// that compares the two versions' detail (TD003, TD004, TD005, TD007) skips
+	// with the reason instead of reading facts the list entry may not carry (PyPI
+	// and crates.io list entries have no dependencies or provenance).
+	SourcePrevious  = "previous"
 	SourceOwners    = "owners"
 	SourceDownloads = "downloads"
 	SourceOSV       = "osv"
@@ -106,16 +119,40 @@ func (s *Subject) Skipped(source string) (string, bool) {
 	return "", false
 }
 
-// sourceProblem words a data source failure. A definite answer from the source
-// (not found, not provided) is stated as such; anything else is "unavailable",
-// which is the wording on_data_unavailable: fail reacts to.
-func sourceProblem(source string, err error) string {
-	switch {
-	case errors.Is(err, registry.ErrNotFound), errors.Is(err, registry.ErrUnsupported):
-		return fmt.Sprintf("%s: %v", source, err)
-	default:
-		return fmt.Sprintf("%s unavailable: %v", source, err)
+// outageReasons returns the reasons Skipped gives for the sources that could not
+// be consulted, leaving out definite answers, sorted by source. The runner uses
+// them to tell which skipped checks on_data_unavailable: fail should count.
+func (s *Subject) outageReasons() []string {
+	var out []string
+	for source, err := range s.Unavailable {
+		if err != nil && !definite(err) {
+			out = append(out, sourceProblem(source, err))
+		}
 	}
+	sort.Strings(out)
+	return out
+}
+
+// sourceProblem words a data source failure. A definite answer from the source
+// (not found, not indexed, not provided, not configured) is stated as such;
+// anything else is "unavailable": the source could not be reached or answered
+// with an error, which is the condition on_data_unavailable: fail reacts to.
+func sourceProblem(source string, err error) string {
+	if definite(err) {
+		return fmt.Sprintf("%s: %v", source, err)
+	}
+	return fmt.Sprintf("%s unavailable: %v", source, err)
+}
+
+// definite reports whether a data source failure is an answer rather than an
+// outage: the registry has no such package or version or does not provide the
+// data, OSV or deps.dev do not index the ecosystem, or the run was built without
+// the source. Every other error means the source could not be consulted, and a
+// later run may succeed.
+func definite(err error) bool {
+	return errors.Is(err, registry.ErrNotFound) || errors.Is(err, registry.ErrUnsupported) ||
+		errors.Is(err, osv.ErrUnsupported) || errors.Is(err, depsdev.ErrUnsupported) ||
+		errors.Is(err, ErrNotConfigured)
 }
 
 // Result is what one check returns for one subject: any findings, or the reason it

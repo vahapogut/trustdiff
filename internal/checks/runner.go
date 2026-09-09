@@ -3,10 +3,12 @@ package checks
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,13 +40,16 @@ type Input struct {
 	Direct   bool
 }
 
-// Runner evaluates subjects. Run resolves bare refs to their latest stable
+// Runner evaluates subjects. Evaluate resolves bare refs to their latest stable
 // version, asks the Loader to prefetch the batch sources once, assembles a
 // Subject per input with bounded concurrency, runs every applicable check under a
-// timeout and applies the policy. It returns one report.Subject per input, in
-// input order, with the findings sorted by id then title; report.Build adds the
-// verdicts. A ref that had no version comes back with the resolved one, which is
-// how the caller tells that resolution happened.
+// timeout and applies the policy. It returns one Outcome per input, in input
+// order, whose report.Subject has the findings sorted by id then title;
+// report.Build adds the verdicts. A ref that had no version comes back with the
+// resolved one, which is how the caller tells that resolution happened. A package
+// or version the registry does not have gets every check skipped with that
+// answer: the advisory and deps.dev checks must not vouch for a version that does
+// not exist.
 //
 // How a check plugs in. A check is one file in this package named after its
 // policy name (young_version.go for young-version) that defines a type
@@ -59,8 +64,11 @@ type Input struct {
 //   - read what it needs from the Subject and never fetch on its own; a check
 //     that needs another package goes through s.Loader, which memoizes per run;
 //   - return Skip(id, reason) when a source it needs is unavailable, taking the
-//     reason from s.Skipped(SourceRegistry) and its siblings, never an empty
-//     Result: an unavailable source is reported as skipped, not as a pass;
+//     reason from s.Skipped(SourceRegistry) and its siblings verbatim (a reason
+//     may join several, as TD009 does, but must contain them: that is how the
+//     runner tells an outage from a definite answer for on_data_unavailable),
+//     never an empty Result: an unavailable source is reported as skipped, not
+//     as a pass;
 //   - build findings with NewFinding so the id, name, effective level, ref and
 //     location are set, with an Evidence map whose keys docs/checks.md documents;
 //   - honor ctx: the runner cancels it at the per-check timeout and reports the
@@ -72,8 +80,10 @@ type Input struct {
 // The runner handles the rest: it skips checks that do not apply to the
 // ecosystem or whose effective level is off, drops findings covered by an allow
 // entry, skips young-version for packages under cooldown_exclude, and emits the
-// expired-allow finding for stale entries. Tests build a Subject by hand or run a
-// fake Loader through the Runner.
+// expired-allow finding for stale entries. It does not merge deps.dev's
+// verification into the provenance it loads: TD004 does that for the versions it
+// compares, so the finding can say who verified. Tests build a Subject by hand
+// or run a fake Loader through the Runner.
 type Runner struct {
 	// Loader supplies the data; NewLoader builds the real one. It is required.
 	Loader Loader
@@ -104,20 +114,45 @@ type run struct {
 	log     *slog.Logger
 }
 
-// resolution is what the first phase of Run decided for one input.
+// Outcome is what Evaluate produced for one input: the report subject, and the
+// one fact the report schema does not carry.
+type Outcome struct {
+	Subject report.Subject
+	// Unavailable is true when a check was skipped because a data source could
+	// not be consulted (a failed request, a timeout, a canceled run) rather than
+	// because the source gave a definite answer (not found, not indexed, not
+	// provided). It is the condition on_data_unavailable: fail reacts to; the
+	// skipped reasons in the report word the two cases differently, but they are
+	// prose.
+	Unavailable bool
+}
+
+// Subjects extracts the report subjects of outcomes, in the same order.
+func Subjects(outcomes []Outcome) []report.Subject {
+	out := make([]report.Subject, len(outcomes))
+	for i := range outcomes {
+		out[i] = outcomes[i].Subject
+	}
+	return out
+}
+
+// resolution is what the first phase of Evaluate decided for one input.
 type resolution struct {
 	ref model.PackageRef
 	// latest is true when the input had no version and ref carries the resolved one.
 	latest bool
 	// skip is the reason nothing can be evaluated; empty when evaluation proceeds.
 	skip string
+	// unavailable is true when skip stems from a source that could not be
+	// consulted rather than from a definite answer.
+	unavailable bool
 }
 
-// Run evaluates every input and returns one report.Subject per input, in the
-// same order. It never returns an error: whatever could not be fetched or run
-// is reported inside the subjects as skipped checks. A canceled ctx ends the run
+// Evaluate evaluates every input and returns one Outcome per input, in the same
+// order. It never returns an error: whatever could not be fetched or run is
+// reported inside the subjects as skipped checks. A canceled ctx ends the run
 // early with the remaining checks skipped.
-func (r *Runner) Run(ctx context.Context, inputs []Input) []report.Subject {
+func (r *Runner) Evaluate(ctx context.Context, inputs []Input) []Outcome {
 	rn := r.prepare()
 	resolved := make([]resolution, len(inputs))
 	rn.forEach(len(inputs), func(i int) {
@@ -132,11 +167,16 @@ func (r *Runner) Run(ctx context.Context, inputs []Input) []report.Subject {
 	}
 	rn.loader.Prefetch(ctx, refs)
 
-	out := make([]report.Subject, len(inputs))
+	out := make([]Outcome, len(inputs))
 	rn.forEach(len(inputs), func(i int) {
 		out[i] = rn.evaluate(ctx, &inputs[i], &resolved[i])
 	})
 	return out
+}
+
+// Run is Evaluate for a caller that wants the report subjects only.
+func (r *Runner) Run(ctx context.Context, inputs []Input) []report.Subject {
+	return Subjects(r.Evaluate(ctx, inputs))
 }
 
 func (r *Runner) prepare() *run {
@@ -197,7 +237,7 @@ func (rn *run) resolve(ctx context.Context, in *Input) resolution {
 	list, err := rn.loader.Versions(ctx, ref.Ecosystem, ref.Name)
 	if err != nil {
 		rn.log.Debug("cannot resolve latest version", "package", ref.String(), "error", err)
-		return resolution{ref: ref, skip: sourceProblem(SourceRegistry, err)}
+		return resolution{ref: ref, skip: sourceProblem(SourceRegistry, err), unavailable: !definite(err)}
 	}
 	latest := registry.LatestStable(list)
 	if latest == nil {
@@ -209,8 +249,8 @@ func (rn *run) resolve(ctx context.Context, in *Input) resolution {
 }
 
 // evaluate assembles the Subject for one input and runs the checks over it.
-func (rn *run) evaluate(ctx context.Context, in *Input, res *resolution) report.Subject {
-	out := report.Subject{Ref: res.ref, Location: in.Location, Direct: in.Direct}
+func (rn *run) evaluate(ctx context.Context, in *Input, res *resolution) Outcome {
+	out := Outcome{Subject: report.Subject{Ref: res.ref, Location: in.Location, Direct: in.Direct}}
 	s := &Subject{
 		Ref:            res.ref,
 		Location:       in.Location,
@@ -224,29 +264,31 @@ func (rn *run) evaluate(ctx context.Context, in *Input, res *resolution) report.
 	}
 	applicable := rn.applicable(s)
 	if res.skip != "" {
-		for _, c := range applicable {
-			out.Skipped = append(out.Skipped, model.Skipped{Check: c.ID(), Reason: res.skip})
-		}
-		finish(&out)
-		return out
+		return skipAll(&out, applicable, res.skip, res.unavailable)
+	}
+	if reason := rn.load(ctx, s); reason != "" {
+		return skipAll(&out, applicable, reason, false)
 	}
 
-	rn.load(ctx, s)
-	out.Findings = append(out.Findings, rn.expiredAllows(s)...)
+	outages := s.outageReasons()
+	out.Subject.Findings = append(out.Subject.Findings, rn.expiredAllows(s)...)
 	for _, c := range applicable {
 		if c.Name() == cooldownExcludedCheck && rn.policy.CooldownExcluded(s.Ref) {
-			out.Skipped = append(out.Skipped, model.Skipped{Check: c.ID(), Reason: "excluded by cooldown_exclude"})
+			out.Subject.Skipped = append(out.Subject.Skipped, model.Skipped{Check: c.ID(), Reason: "excluded by cooldown_exclude"})
 			continue
 		}
-		result := rn.runCheck(ctx, c, s)
+		result, unfinished := rn.runCheck(ctx, c, s)
 		if result.Skipped != nil {
 			skipped := *result.Skipped
 			// The report schema wants the TD id, whatever the check wrote.
 			skipped.Check = c.ID()
-			out.Skipped = append(out.Skipped, skipped)
+			out.Subject.Skipped = append(out.Subject.Skipped, skipped)
+			if unfinished || namesOutage(skipped.Reason, outages) {
+				out.Unavailable = true
+			}
 			continue
 		}
-		out.Evaluated = append(out.Evaluated, c.ID())
+		out.Subject.Evaluated = append(out.Subject.Evaluated, c.ID())
 		if len(result.Findings) == 0 {
 			continue
 		}
@@ -256,10 +298,36 @@ func (rn *run) evaluate(ctx context.Context, in *Input, res *resolution) report.
 				"package", entry.Package.String(), "reason", entry.Reason, "expires", entry.Expires.String())
 			continue
 		}
-		out.Findings = append(out.Findings, result.Findings...)
+		out.Subject.Findings = append(out.Subject.Findings, result.Findings...)
 	}
-	finish(&out)
+	finish(&out.Subject)
 	return out
+}
+
+// skipAll marks every applicable check skipped with one reason, for a subject
+// nothing can be evaluated for. The outcome counts as unavailable only when the
+// reason is an outage and a check was actually skipped for it.
+func skipAll(out *Outcome, applicable []Check, reason string, unavailable bool) Outcome {
+	for _, c := range applicable {
+		out.Subject.Skipped = append(out.Subject.Skipped, model.Skipped{Check: c.ID(), Reason: reason})
+	}
+	out.Unavailable = unavailable && len(applicable) > 0
+	finish(&out.Subject)
+	return *out
+}
+
+// namesOutage reports whether a check's skip reason carries the wording
+// Subject.Skipped gave for a source that could not be consulted. Checks build
+// their reasons from those strings (see the Runner doc), so the match is exact:
+// a reason that merely uses the word "unavailable" does not count, and a
+// definite answer such as not found never does.
+func namesOutage(reason string, outages []string) bool {
+	for _, outage := range outages {
+		if strings.Contains(reason, outage) {
+			return true
+		}
+	}
+	return false
 }
 
 // applicable returns the checks that apply to the subject's ecosystem and whose
@@ -281,35 +349,35 @@ func (rn *run) applicable(s *Subject) []Check {
 }
 
 // load fetches everything the checks may need, recording per source what could
-// not be fetched. Sources are loaded one after the other; the batch sources were
+// not be fetched. It returns a reason when the registry has no such package or
+// version, in which case nothing else is fetched: the caller skips every check
+// with it. Sources are loaded one after the other; the batch sources were
 // prefetched, so most of these are memo hits.
-func (rn *run) load(ctx context.Context, s *Subject) {
+func (rn *run) load(ctx context.Context, s *Subject) string {
 	ref := s.Ref
 	if list, err := rn.loader.Versions(ctx, ref.Ecosystem, ref.Name); err != nil {
+		if errors.Is(err, registry.ErrNotFound) {
+			return sourceProblem(SourceRegistry, err)
+		}
 		s.Unavailable[SourceRegistry] = err
 	} else {
 		s.Package = list
 		s.Previous = registry.Previous(list, ref)
-		// The list entry carries what the package-level response had; the checks
-		// that compare against the previous version (dependencies, install
-		// scripts, provenance) need its full detail, which may take another
-		// request. Fall back to the list entry when that request fails.
-		if s.Previous != nil {
-			if prev, err := rn.loader.VersionInfo(ctx, s.Previous.Ref); err != nil {
-				rn.log.Debug("previous version details unavailable, using the list entry", "ref", s.Previous.Ref.String(), "error", err)
-			} else {
-				copied := *prev
-				s.Previous = &copied
-			}
-		}
+		rn.loadPrevious(ctx, s)
 	}
 	if info, err := rn.loader.VersionInfo(ctx, ref); err != nil {
+		// A version the registry does not have is not a reason to skip the checks
+		// that do not read the registry. Removing a malicious release is how a
+		// registry reacts to it (npm leaves a security holding placeholder where
+		// flatmap-stream 0.1.1 was), while OSV and deps.dev keep the advisory, so
+		// the checks that read them must still run and report it. The checks that
+		// need the version skip themselves on the reason recorded here.
 		if _, seen := s.Unavailable[SourceRegistry]; !seen {
 			s.Unavailable[SourceRegistry] = err
 		}
 	} else {
-		// The loader hands the same pointer to every subject; copy before the
-		// provenance verification below writes to it.
+		// The loader hands the same pointer to every subject; copy it so that a
+		// check writing to the subject's version cannot reach the memo entry.
 		copied := *info
 		s.Version = &copied
 	}
@@ -347,23 +415,28 @@ func (rn *run) load(ctx context.Context, s *Subject) {
 	for source, err := range s.Unavailable {
 		rn.log.Debug("source unavailable", "source", source, "ref", ref.String(), "error", err)
 	}
-	applyVerification(s)
+	return ""
 }
 
-// applyVerification marks the version's provenance verified when deps.dev
-// verified an attestation or SLSA provenance and the registry reported evidence
-// of a kind that verification applies to.
-func applyVerification(s *Subject) {
-	if s.Version == nil || s.DepsDev == nil {
+// loadPrevious replaces the previous version's list entry with its full detail.
+// The list carries what the package-level response had, while the comparisons
+// (dependencies, install scripts, provenance) need the per-version answer, which
+// may take another request. When that request fails the list entry stays, for
+// its publish time and publisher, and the failure is recorded under
+// SourcePrevious so the comparing checks skip instead of reading facts the entry
+// may not carry.
+func (rn *run) loadPrevious(ctx context.Context, s *Subject) {
+	if s.Previous == nil {
 		return
 	}
-	if !s.DepsDev.AttestationVerified && !s.DepsDev.SLSAVerified {
+	prev, err := rn.loader.VersionInfo(ctx, s.Previous.Ref)
+	if err != nil {
+		rn.log.Debug("previous version details unavailable, keeping the list entry", "ref", s.Previous.Ref.String(), "error", err)
+		s.Unavailable[SourcePrevious] = err
 		return
 	}
-	switch s.Version.Provenance.Kind {
-	case model.ProvenanceAttestation, model.ProvenanceTrustedPublisher:
-		s.Version.Provenance.Verified = true
-	}
+	copied := *prev
+	s.Previous = &copied
 }
 
 // expiredAllows builds one expired-allow finding per expired entry whose package
@@ -386,7 +459,9 @@ func (rn *run) expiredAllows(s *Subject) []model.Finding {
 // runCheck runs one check under the per-check timeout and recovers a panic. The
 // check runs in its own goroutine so that a check ignoring ctx cannot hold the
 // subject; the result channel is buffered so that goroutine can always finish.
-func (rn *run) runCheck(ctx context.Context, c Check, s *Subject) Result {
+// unfinished is true when the check did not return in time (timeout, canceled
+// run): the data was not available to it, whatever the reason says.
+func (rn *run) runCheck(ctx context.Context, c Check, s *Subject) (result Result, unfinished bool) {
 	cctx, cancel := context.WithTimeout(ctx, rn.timeout)
 	defer cancel()
 	done := make(chan Result, 1)
@@ -401,13 +476,13 @@ func (rn *run) runCheck(ctx context.Context, c Check, s *Subject) Result {
 	}()
 	select {
 	case result := <-done:
-		return result
+		return result, false
 	case <-cctx.Done():
 		if ctx.Err() != nil {
-			return Skip(c.ID(), fmt.Sprintf("run canceled: %v", ctx.Err()))
+			return Skip(c.ID(), fmt.Sprintf("run canceled: %v", ctx.Err())), true
 		}
 		rn.log.Warn("check timed out", "check", c.ID(), "ref", s.Ref.String(), "timeout", rn.timeout)
-		return Skip(c.ID(), fmt.Sprintf("timed out after %s", rn.timeout))
+		return Skip(c.ID(), fmt.Sprintf("timed out after %s", rn.timeout)), true
 	}
 }
 

@@ -26,6 +26,10 @@ import (
 // the command can be exercised without registries.
 var loaderFactory = func(a *App) (checks.Loader, error) { return a.defaultLoader() }
 
+// checkTimeout bounds one check for one subject; zero means checks.DefaultTimeout.
+// Tests shorten it to exercise the timed-out path.
+var checkTimeout time.Duration
+
 // nowEnv overrides the run's clock for tests and the demo, as RFC 3339.
 const nowEnv = "TRUSTDIFF_NOW"
 
@@ -68,36 +72,44 @@ func (a *App) runCheck(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Everything that can reject the command line is settled before the loader
+	// is built, so a format the writer does not have yet fails at once instead
+	// of after the full network run.
+	failOn, err := report.ParseFailOn(a.Opts.FailOn)
+	if err != nil {
+		return Usagef("%v", err)
+	}
+	writer, err := report.New(a.Opts.Format, report.Options{Color: a.Opts.Color, Width: a.Opts.Width})
+	if err != nil {
+		return Usagef("%v", err)
+	}
+
 	loader, err := loaderFactory(a)
 	if err != nil {
 		return Usagef("%v", err)
 	}
 	runner := &checks.Runner{
-		Loader: loader,
-		Policy: pol,
-		Jobs:   a.Opts.Jobs,
-		Now:    now,
-		Log:    a.Opts.Log,
+		Loader:  loader,
+		Policy:  pol,
+		Jobs:    a.Opts.Jobs,
+		Timeout: checkTimeout,
+		Now:     now,
+		Log:     a.Opts.Log,
 	}
-	subjects := runner.Run(cmd.Context(), inputs)
+	outcomes := runner.Evaluate(cmd.Context(), inputs)
 
-	failOn, err := report.ParseFailOn(a.Opts.FailOn)
-	if err != nil {
-		return Usagef("%v", err)
-	}
-	rep := report.Build(subjects, report.CurrentTool(), report.Policy{
+	rep := report.Build(checks.Subjects(outcomes), report.CurrentTool(), report.Policy{
 		Path:     policyPath,
 		Cooldown: cooldownSpelling,
 		FailOn:   a.Opts.FailOn,
 	}, failOn)
-	if dataUnavailableFails(pol, subjects) {
+	// Exit code 1 says there is something to act on now, 3 that the answer is
+	// incomplete. When both apply the findings win: a script that retries on 3
+	// must not retry past a block.
+	if rep.Summary.ExitCode == ExitOK && dataUnavailableFails(pol, outcomes) {
 		rep.SetExitCode(ExitUnavailable)
 	}
 
-	writer, err := report.New(a.Opts.Format, report.Options{Color: a.Opts.Color, Width: a.Opts.Width})
-	if err != nil {
-		return Usagef("%v", err)
-	}
 	if err := writer.Write(a.Stdout, rep); err != nil {
 		return fmt.Errorf("write report: %w", err)
 	}
@@ -189,19 +201,19 @@ func runClock(value string) (time.Time, error) {
 	return t, nil
 }
 
-// dataUnavailableFails reports whether a data source was unavailable for a
-// subject whose ecosystem policy says on_data_unavailable: fail. Checks phrase
-// those reasons as "<source> unavailable: ..." through Subject.Skipped.
-func dataUnavailableFails(pol *policy.Policy, subjects []report.Subject) bool {
-	for i := range subjects {
-		s := &subjects[i]
-		if pol.Effective(s.Ref.Ecosystem).OnDataUnavailable != policy.OnDataUnavailableFail {
+// dataUnavailableFails reports whether a check was skipped because a data source
+// could not be consulted, for a subject whose ecosystem policy says
+// on_data_unavailable: fail. The runner decides that per outcome from the errors
+// it saw (a timeout counts, a definite not-found or not-indexed answer does not);
+// the wording of the skipped reasons is for people.
+func dataUnavailableFails(pol *policy.Policy, outcomes []checks.Outcome) bool {
+	for i := range outcomes {
+		o := &outcomes[i]
+		if !o.Unavailable {
 			continue
 		}
-		for _, sk := range s.Skipped {
-			if strings.Contains(sk.Reason, "unavailable") {
-				return true
-			}
+		if pol.Effective(o.Subject.Ref.Ecosystem).OnDataUnavailable == policy.OnDataUnavailableFail {
+			return true
 		}
 	}
 	return false

@@ -13,6 +13,7 @@ import (
 
 	"github.com/vahapogut/trustdiff/internal/advisory"
 	"github.com/vahapogut/trustdiff/internal/advisory/depsdev"
+	"github.com/vahapogut/trustdiff/internal/advisory/osv"
 	"github.com/vahapogut/trustdiff/internal/model"
 	"github.com/vahapogut/trustdiff/internal/policy"
 	"github.com/vahapogut/trustdiff/internal/registry"
@@ -55,10 +56,18 @@ func TestRunResolvesLatestStable(t *testing.T) {
 	})
 	prerelease.Latest = "2.0.0-rc.1"
 	loader.add(prerelease)
+	// A package whose only version is the prerelease the registry names as latest
+	// still resolves: that is what installing the bare name fetches, and it is the
+	// shape of an npm security holding placeholder, whose note must reach the checks.
 	onlyPre := stableListR(model.NPM, "only-pre")
 	onlyPre.Versions = []model.VersionInfo{{Ref: model.MustParseRef("npm:only-pre@1.0.0-beta"), PublishedAt: dayR(1), Prerelease: true}}
 	onlyPre.Latest = "1.0.0-beta"
 	loader.add(onlyPre)
+	// Without a latest to fall back on there is nothing to resolve to.
+	noLatest := stableListR(model.NPM, "no-latest")
+	noLatest.Versions = []model.VersionInfo{{Ref: model.MustParseRef("npm:no-latest@1.0.0-beta"), PublishedAt: dayR(1), Prerelease: true}}
+	noLatest.Latest = ""
+	loader.add(noLatest)
 
 	var seen sync.Map
 	check := fakeCheckR{id: "TD001", name: "young-version", run: func(_ context.Context, s *Subject) Result {
@@ -77,8 +86,13 @@ func TestRunResolvesLatestStable(t *testing.T) {
 		{name: "versioned ref passes through", input: "npm:lib@1.0.0", wantRef: "npm:lib@1.0.0"},
 		{name: "bare ref resolves to the registry latest", input: "npm:lib", wantRef: "npm:lib@2.0.0", wantLatest: true},
 		{name: "prerelease latest falls back to the highest stable", input: "npm:pre", wantRef: "npm:pre@1.1.0", wantLatest: true},
-		{name: "no stable version skips every check", input: "npm:only-pre", wantRef: "npm:only-pre", wantSkipped: "no stable version"},
+		{name: "prerelease latest resolves when there is no stable version", input: "npm:only-pre", wantRef: "npm:only-pre@1.0.0-beta", wantLatest: true},
+		{name: "no version to resolve to skips every check", input: "npm:no-latest", wantRef: "npm:no-latest", wantSkipped: "no stable version"},
 		{name: "unknown package skips every check", input: "npm:missing", wantRef: "npm:missing", wantSkipped: "registry: not found in the registry"},
+		// A package the registry has never heard of leaves nothing to evaluate.
+		// A version it no longer lists is different, see
+		// TestRunUnknownVersionStillRunsAdvisoryChecks.
+		{name: "unknown package with a version skips every check", input: "npm:missing@1.0.0", wantRef: "npm:missing@1.0.0", wantSkipped: "registry: not found in the registry"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -108,6 +122,42 @@ func TestRunResolvesLatestStable(t *testing.T) {
 				t.Errorf("Subject.ResolvedLatest = %v (seen %v), want %v", got, ok, tt.wantLatest)
 			}
 		})
+	}
+}
+
+// Taking a malicious release down is how a registry reacts to it: npm left a
+// security holding placeholder where flatmap-stream 0.1.1 was, so the version is
+// gone from the packument while OSV and deps.dev keep the advisory. The checks
+// that read the registry skip themselves, the ones that read the advisories must
+// still run and report, or the most important case of all would pass silently.
+func TestRunUnknownVersionStillRunsAdvisoryChecks(t *testing.T) {
+	loader := libLoaderR()
+	registryCheck := skipsOn(SourceRegistry) // TD001, the shape every registry-reading check has
+	var sawAdvisories bool
+	advisoryCheck := fakeCheckR{id: "TD009", name: "malicious-advisory", run: func(_ context.Context, s *Subject) Result {
+		sawAdvisories = true
+		if _, down := s.Skipped(SourceOSV); down {
+			return Skip("TD009", "osv unavailable")
+		}
+		return Result{Findings: []model.Finding{NewFinding(fakeCheckR{id: "TD009", name: "malicious-advisory"}, s, "malicious", "advisory found", nil)}}
+	}}
+
+	out := newRunnerR(loader, registryCheck, advisoryCheck).Run(context.Background(), inputsR("npm:lib@9.9.9"))
+	if len(out) != 1 {
+		t.Fatalf("Run returned %d subjects, want 1", len(out))
+	}
+	s := &out[0]
+	if !sawAdvisories {
+		t.Fatal("the advisory check never ran for a version the registry does not list")
+	}
+	if got := skippedReasonsR(s)["TD001"]; got != "registry: not found in the registry" {
+		t.Errorf("TD001 skipped with %q, want the registry reason", got)
+	}
+	if !slices.Equal(findingIDsR(s), []string{"TD009"}) {
+		t.Errorf("findings = %v, want the advisory finding", findingIDsR(s))
+	}
+	if !slices.Equal(s.Evaluated, []string{"TD009"}) {
+		t.Errorf("evaluated = %v, want TD009 only", s.Evaluated)
 	}
 }
 
@@ -409,13 +459,74 @@ func TestRunFillsPreviousVersionDetails(t *testing.T) {
 		t.Fatal("Previous points at the loader's memoized entry")
 	}
 
-	// When the detail request fails, the list entry still serves as the previous version.
-	loader.infos[prev] = nil
-	delete(loader.infos, prev)
-	got = nil
-	newRunnerR(loader, check).Run(context.Background(), inputsR("npm:lib@2.0.0"))
-	if got == nil || got.Ref != prev || got.Dependencies != nil {
-		t.Fatalf("fallback Previous = %+v, want the plain list entry for 1.1.0", got)
+	// When the detail request fails, the list entry still serves as the previous
+	// version for its publish time and publisher, and the failure is recorded
+	// under SourcePrevious: a check comparing the two versions' detail skips on
+	// it instead of reading dependencies the list entry does not carry.
+	tests := []struct {
+		name            string
+		err             error
+		wantReason      string
+		wantUnavailable bool
+	}{
+		{name: "outage", err: errors.New("503"), wantReason: "previous unavailable: 503", wantUnavailable: true},
+		{name: "not found", err: registry.ErrNotFound, wantReason: "previous: not found in the registry"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			loader.failInfo[prev] = tt.err
+			got = nil
+			var reason string
+			var recorded bool
+			comparing := fakeCheckR{id: "TD007", name: "new-dependency-introduced", run: func(_ context.Context, s *Subject) Result {
+				got = s.Previous
+				reason, recorded = s.Skipped(SourcePrevious)
+				if recorded {
+					return Skip("TD007", reason)
+				}
+				return Result{}
+			}}
+			out := newRunnerR(loader, comparing).Evaluate(context.Background(), inputsR("npm:lib@2.0.0"))
+			if got == nil || got.Ref != prev || got.Dependencies != nil || got.PublishedAt.IsZero() || got.Publisher == nil {
+				t.Fatalf("fallback Previous = %+v, want the plain list entry for 1.1.0 with its publish time and publisher", got)
+			}
+			if !recorded || reason != tt.wantReason {
+				t.Errorf("Skipped(previous) = %q, %v; want %q", reason, recorded, tt.wantReason)
+			}
+			if want := map[string]string{"TD007": tt.wantReason}; fmt.Sprint(skippedReasonsR(&out[0].Subject)) != fmt.Sprint(want) {
+				t.Errorf("skipped = %v, want %v", out[0].Subject.Skipped, want)
+			}
+			if out[0].Unavailable != tt.wantUnavailable {
+				t.Errorf("Outcome.Unavailable = %v, want %v", out[0].Unavailable, tt.wantUnavailable)
+			}
+		})
+	}
+}
+
+// The real TD007 must not report every dependency of the evaluated version as
+// new when the previous version's detail could not be fetched: the list entry
+// it falls back to says nothing about dependencies.
+func TestRunPreviousDetailFailureSkipsTD007(t *testing.T) {
+	td007, ok := Lookup("TD007")
+	if !ok {
+		t.Fatal("TD007 is not registered")
+	}
+	loader := libLoaderR()
+	prev := model.MustParseRef("npm:lib@1.1.0")
+	cur := model.MustParseRef("npm:lib@2.0.0")
+	for _, ref := range []model.PackageRef{prev, cur} {
+		detailed := *loader.infos[ref]
+		detailed.Dependencies = map[string]string{"a": "^1.0.0"}
+		loader.infos[ref] = &detailed
+	}
+	loader.failInfo[prev] = errors.New("503")
+	out := newRunnerR(loader, td007).Run(context.Background(), inputsR("npm:lib@2.0.0"))
+	if got := findingIDsR(&out[0]); len(got) != 0 {
+		t.Errorf("findings = %v, want none: 1.1.0 declared the same dependency, its detail just could not be fetched", got)
+	}
+	want := map[string]string{"TD007": "previous unavailable: 503"}
+	if got := skippedReasonsR(&out[0]); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("skipped = %v, want %v", got, want)
 	}
 }
 
@@ -648,46 +759,163 @@ func TestRunFindingsErrorMarksDepsDevUnavailable(t *testing.T) {
 	}
 }
 
-func TestRunAppliesDepsDevVerification(t *testing.T) {
+// The runner hands the provenance to the checks as the registry reported it. A
+// deps.dev verification is TD004's to merge, for both versions it compares, so
+// that the finding can say who verified; a runner that upgraded the evaluated
+// version beforehand made every verification look like the registry's own.
+func TestRunLeavesProvenanceVerificationToTD004(t *testing.T) {
+	loader := newFakeLoaderR()
+	list := stableListR(model.NPM, "lib", "1.0.0")
+	list.Versions[0].Provenance = model.Provenance{Kind: model.ProvenanceAttestation}
+	loader.add(list)
+	ref := model.MustParseRef("npm:lib@1.0.0")
+	loader.facts[ref] = &depsdev.VersionFacts{Found: true, AttestationVerified: true, SLSAVerified: true}
+	var got *Subject
+	capture := fakeCheckR{id: "TD004", name: "trust-downgrade", run: func(_ context.Context, s *Subject) Result {
+		got = s
+		return Result{}
+	}}
+	newRunnerR(loader, capture).Run(context.Background(), inputsR("npm:lib@1.0.0"))
+	if got == nil || got.Version == nil || got.DepsDev == nil {
+		t.Fatalf("subject = %+v, want a loaded version with deps.dev facts", got)
+	}
+	if got.Version.Provenance.Verified {
+		t.Error("Provenance.Verified = true: the runner merged the deps.dev verification, which is TD004's job")
+	}
+	if !got.DepsDev.AttestationVerified {
+		t.Error("the deps.dev facts did not reach the subject")
+	}
+}
+
+// Outcome.Unavailable is what on_data_unavailable: fail reacts to. It must be
+// set for a source that could not be consulted and for a check that did not
+// finish, and stay unset for a definite answer, however a check words its skip.
+// skipsOn returns a check that skips with the joined reasons of the sources that
+// failed, the way the checks in this package do.
+func skipsOn(sources ...string) fakeCheckR {
+	return fakeCheckR{id: "TD001", name: "young-version", run: func(_ context.Context, s *Subject) Result {
+		var reasons []string
+		for _, source := range sources {
+			if reason, down := s.Skipped(source); down {
+				reasons = append(reasons, reason)
+			}
+		}
+		if len(reasons) > 0 {
+			return Skip("TD001", strings.Join(reasons, "; "))
+		}
+		return Result{}
+	}}
+}
+
+func TestEvaluateReportsUnavailable(t *testing.T) {
+	boom := errors.New("boom")
 	tests := []struct {
-		name  string
-		kind  model.ProvenanceKind
-		facts *depsdev.VersionFacts
-		want  bool
+		name       string
+		input      string
+		fail       map[string]error
+		check      fakeCheckR
+		timeout    time.Duration
+		cancel     bool
+		wantReason string
+		want       bool
 	}{
-		{name: "attestation verified by deps.dev", kind: model.ProvenanceAttestation, facts: &depsdev.VersionFacts{Found: true, AttestationVerified: true}, want: true},
-		{name: "trusted publisher with SLSA verified", kind: model.ProvenanceTrustedPublisher, facts: &depsdev.VersionFacts{Found: true, SLSAVerified: true}, want: true},
-		{name: "signature is not upgraded", kind: model.ProvenanceSignature, facts: &depsdev.VersionFacts{Found: true, AttestationVerified: true}, want: false},
-		{name: "none is not upgraded", kind: model.ProvenanceNone, facts: &depsdev.VersionFacts{Found: true, SLSAVerified: true}, want: false},
-		{name: "attestation not verified stays unverified", kind: model.ProvenanceAttestation, facts: &depsdev.VersionFacts{Found: true}, want: false},
-		{name: "no deps.dev facts leave it alone", kind: model.ProvenanceAttestation, facts: nil, want: false},
+		{name: "registry outage", input: "npm:lib@1.0.0", fail: map[string]error{SourceRegistry: boom}, check: skipsOn(SourceRegistry), wantReason: "registry unavailable: boom", want: true},
+		{name: "downloads not provided", input: "npm:lib@1.0.0", check: skipsOn(SourceDownloads), wantReason: "downloads: not provided by this registry"},
+		{name: "deps.dev does not index the ecosystem", input: "npm:lib@1.0.0", fail: map[string]error{SourceDepsDev: fmt.Errorf("deno: %w", depsdev.ErrUnsupported)}, check: skipsOn(SourceDepsDev), wantReason: "deps.dev: deno: ecosystem not indexed by deps.dev"},
+		{name: "osv does not index the ecosystem", input: "npm:lib@1.0.0", fail: map[string]error{SourceOSV: fmt.Errorf("jsr: %w", osv.ErrUnsupported)}, check: skipsOn(SourceOSV), wantReason: "osv: jsr: ecosystem not indexed by OSV"},
+		{name: "osv not configured", input: "npm:lib@1.0.0", fail: map[string]error{SourceOSV: fmt.Errorf("osv: %w", ErrNotConfigured)}, check: skipsOn(SourceOSV), wantReason: "osv: osv: data source not configured"},
+		{name: "one outage among joined reasons", input: "npm:lib@1.0.0", fail: map[string]error{SourceOSV: fmt.Errorf("jsr: %w", osv.ErrUnsupported), SourceDepsDev: boom}, check: skipsOn(SourceOSV, SourceDepsDev), wantReason: "osv: jsr: ecosystem not indexed by OSV; deps.dev unavailable: boom", want: true},
+		{name: "a check's own wording does not count", input: "npm:lib@1.0.0", check: fakeCheckR{id: "TD001", name: "young-version", run: func(context.Context, *Subject) Result {
+			return Skip("TD001", "baseline unavailable for comparison")
+		}}, wantReason: "baseline unavailable for comparison"},
+		// The unfinished checks return a while after ctx ends, so the runner's
+		// select sees the context first and the outcome does not depend on scheduling.
+		{name: "timed out check", input: "npm:lib@1.0.0", timeout: 20 * time.Millisecond, check: fakeCheckR{id: "TD001", name: "young-version", run: func(ctx context.Context, _ *Subject) Result {
+			<-ctx.Done()
+			time.Sleep(50 * time.Millisecond)
+			return Result{}
+		}}, wantReason: "timed out after 20ms", want: true},
+		{name: "canceled run", input: "npm:lib@1.0.0", cancel: true, check: fakeCheckR{id: "TD001", name: "young-version", run: func(ctx context.Context, _ *Subject) Result {
+			<-ctx.Done()
+			time.Sleep(50 * time.Millisecond)
+			return Result{}
+		}}, wantReason: "run canceled: context canceled", want: true},
+		{name: "panic is a bug, not an outage", input: "npm:lib@1.0.0", check: fakeCheckR{id: "TD001", name: "young-version", run: func(context.Context, *Subject) Result {
+			panic("boom")
+		}}, wantReason: "check panicked: boom"},
+		{name: "bare ref with a registry outage", input: "npm:lib", fail: map[string]error{SourceRegistry: boom}, check: passCheckR("TD001", "young-version"), wantReason: "registry unavailable: boom", want: true},
+		{name: "bare ref of an unknown package", input: "npm:missing", check: passCheckR("TD001", "young-version"), wantReason: "registry: not found in the registry"},
+		{name: "unknown version", input: "npm:lib@9.9.9", check: skipsOn(SourceRegistry), wantReason: "registry: not found in the registry"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := newFakeLoaderR()
-			list := stableListR(model.NPM, "lib", "1.0.0")
-			list.Versions[0].Provenance = model.Provenance{Kind: tt.kind}
-			loader.add(list)
-			ref := model.MustParseRef("npm:lib@1.0.0")
-			if tt.facts != nil {
-				loader.facts[ref] = tt.facts
-			} else {
-				loader.fail[SourceDepsDev] = errors.New("down")
+			loader := libLoaderR()
+			for source, err := range tt.fail {
+				loader.fail[source] = err
 			}
-			var got *Subject
-			capture := fakeCheckR{id: "TD004", name: "trust-downgrade", run: func(_ context.Context, s *Subject) Result {
-				got = s
-				return Result{}
-			}}
-			newRunnerR(loader, capture).Run(context.Background(), inputsR("npm:lib@1.0.0"))
-			if got == nil || got.Version == nil {
-				t.Fatalf("subject = %+v, want a loaded version", got)
+			r := newRunnerR(loader, tt.check, passCheckR("TD006", "install-script-present"))
+			if tt.timeout > 0 {
+				r.Timeout = tt.timeout
 			}
-			if got.Version.Provenance.Verified != tt.want {
-				t.Errorf("Provenance.Verified = %v, want %v", got.Version.Provenance.Verified, tt.want)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tt.cancel {
+				cancel()
 			}
-			if loader.infos[ref].Provenance.Verified {
-				t.Error("the loader's VersionInfo was modified; the runner must work on a copy")
+			out := r.Evaluate(ctx, inputsR(tt.input))
+			if got := skippedReasonsR(&out[0].Subject)["TD001"]; got != tt.wantReason {
+				t.Errorf("TD001 skipped with %q, want %q", got, tt.wantReason)
+			}
+			if out[0].Unavailable != tt.want {
+				t.Errorf("Outcome.Unavailable = %v, want %v (skipped: %v)", out[0].Unavailable, tt.want, out[0].Subject.Skipped)
+			}
+		})
+	}
+}
+
+func TestRunSubjectsMatchEvaluate(t *testing.T) {
+	loader := libLoaderR()
+	loader.fail[SourceOSV] = errors.New("osv down")
+	check := fakeCheckR{id: "TD010", name: "vulnerability", run: func(_ context.Context, s *Subject) Result {
+		if reason, down := s.Skipped(SourceOSV); down {
+			return Skip("TD010", reason)
+		}
+		return Result{}
+	}}
+	inputs := inputsR("npm:lib@1.0.0", "npm:missing")
+	outcomes := newRunnerR(loader, check).Evaluate(context.Background(), inputs)
+	subjects := newRunnerR(loader, check).Run(context.Background(), inputs)
+	if fmt.Sprint(Subjects(outcomes)) != fmt.Sprint(subjects) {
+		t.Errorf("Run = %v\nEvaluate subjects = %v", subjects, Subjects(outcomes))
+	}
+	if !outcomes[0].Unavailable || outcomes[1].Unavailable {
+		t.Errorf("Unavailable = %v, %v; want true for the OSV outage and false for the unknown package", outcomes[0].Unavailable, outcomes[1].Unavailable)
+	}
+}
+
+func TestSourceProblemWording(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "not found", err: fmt.Errorf("versions of npm:x: %w", registry.ErrNotFound), want: "registry: versions of npm:x: not found in the registry"},
+		{name: "not provided", err: registry.ErrUnsupported, want: "registry: not provided by this registry"},
+		{name: "osv does not index", err: fmt.Errorf("jsr: %w", osv.ErrUnsupported), want: "registry: jsr: ecosystem not indexed by OSV"},
+		{name: "deps.dev does not index", err: fmt.Errorf("deno: %w", depsdev.ErrUnsupported), want: "registry: deno: ecosystem not indexed by deps.dev"},
+		{name: "not configured", err: ErrNotConfigured, want: "registry: data source not configured"},
+		{name: "outage", err: errors.New("503 after 3 attempts"), want: "registry unavailable: 503 after 3 attempts"},
+		{name: "context deadline", err: context.DeadlineExceeded, want: "registry unavailable: context deadline exceeded"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := sourceProblem(SourceRegistry, tt.err); got != tt.want {
+				t.Errorf("sourceProblem = %q, want %q", got, tt.want)
+			}
+			s := &Subject{Unavailable: map[string]error{SourceRegistry: tt.err}}
+			wantOutage := strings.Contains(tt.want, "unavailable")
+			if got := s.outageReasons(); (len(got) == 1) != wantOutage {
+				t.Errorf("outageReasons = %v, want an entry: %v", got, wantOutage)
 			}
 		})
 	}
@@ -742,12 +970,13 @@ func TestRunNilLoaderPanics(t *testing.T) {
 
 func TestRunOutputFeedsReportBuild(t *testing.T) {
 	loader := libLoaderR()
-	onlyPre := stableListR(model.NPM, "only-pre")
-	onlyPre.Versions = []model.VersionInfo{{Ref: model.MustParseRef("npm:only-pre@1.0.0-beta"), PublishedAt: dayR(1), Prerelease: true}}
-	onlyPre.Latest = "1.0.0-beta"
-	loader.add(onlyPre)
+	// Nothing to resolve to: no stable version and no latest to fall back on.
+	noLatest := stableListR(model.NPM, "no-latest")
+	noLatest.Versions = []model.VersionInfo{{Ref: model.MustParseRef("npm:no-latest@1.0.0-beta"), PublishedAt: dayR(1), Prerelease: true}}
+	noLatest.Latest = ""
+	loader.add(noLatest)
 	out := newRunnerR(loader, passCheckR("TD001", "young-version"), findingCheckR("TD006", "install-script-present", "runs postinstall")).
-		Run(context.Background(), inputsR("npm:lib@1.0.0", "npm:only-pre"))
+		Run(context.Background(), inputsR("npm:lib@1.0.0", "npm:no-latest"))
 	r := report.Build(out, report.Tool{}, report.Policy{}, model.LevelBlock)
 	if len(r.Subjects) != 2 {
 		t.Fatalf("report has %d subjects, want 2", len(r.Subjects))
@@ -756,7 +985,7 @@ func TestRunOutputFeedsReportBuild(t *testing.T) {
 		t.Errorf("lib verdict = %s, want warn", r.Subjects[0].Verdict)
 	}
 	if r.Subjects[1].Verdict != report.VerdictSkipped || r.Summary.Skipped != 2 {
-		t.Errorf("only-pre verdict = %s with %d skipped, want skipped with 2", r.Subjects[1].Verdict, r.Summary.Skipped)
+		t.Errorf("no-latest verdict = %s with %d skipped, want skipped with 2", r.Subjects[1].Verdict, r.Summary.Skipped)
 	}
 	if r.Summary.ExitCode != 0 {
 		t.Errorf("exit code = %d, want 0 for a warn finding under fail-on block", r.Summary.ExitCode)

@@ -9,6 +9,8 @@ import (
 
 	"github.com/vahapogut/trustdiff/internal/advisory"
 	"github.com/vahapogut/trustdiff/internal/advisory/depsdev"
+	"github.com/vahapogut/trustdiff/internal/advisory/osv"
+	"github.com/vahapogut/trustdiff/internal/httpcache"
 	"github.com/vahapogut/trustdiff/internal/model"
 	"github.com/vahapogut/trustdiff/internal/registry"
 )
@@ -98,10 +100,12 @@ func newDataLoader(reg registry.Registry, adv advisory.Source, dd depsDevSource,
 
 // Prefetch warms the OSV and deps.dev batches for every ref that carries a
 // version. Refs without a version are skipped: the batch endpoints answer per
-// version, and the runner resolves bare refs before it calls Prefetch. The three
-// batches run concurrently. A batch that fails stores its error for every ref it
-// covered, so the source is not asked again for them; a batch that failed because
-// ctx ended stores nothing.
+// version, and the runner resolves bare refs before it calls Prefetch. Refs of an
+// ecosystem a source does not index are left out of its batch, as the source
+// itself would leave them out of its answer; the per-ref methods report them as
+// unsupported without a request. The three batches run concurrently. A batch that
+// fails stores its error for every ref it covered, so the source is not asked
+// again for them; a batch that failed because ctx ended stores nothing.
 func (l *DataLoader) Prefetch(ctx context.Context, refs []model.PackageRef) {
 	versioned := uniqueVersioned(refs)
 	if len(versioned) == 0 {
@@ -141,7 +145,8 @@ func uniqueVersioned(refs []model.PackageRef) []model.PackageRef {
 }
 
 func (l *DataLoader) prefetchAdvisories(ctx context.Context, refs []model.PackageRef) {
-	if l.adv == nil {
+	refs = osvSupported(refs)
+	if l.adv == nil || len(refs) == 0 {
 		return
 	}
 	l.log.Debug("prefetching advisories", "refs", len(refs))
@@ -150,7 +155,7 @@ func (l *DataLoader) prefetchAdvisories(ctx context.Context, refs []model.Packag
 		if ctx.Err() != nil {
 			return
 		}
-		l.log.Warn("advisory batch failed", "refs", len(refs), "error", err)
+		l.logBatchFailure("advisory batch failed", len(refs), err)
 	}
 	for _, ref := range refs {
 		if err != nil {
@@ -172,7 +177,7 @@ func (l *DataLoader) prefetchFacts(ctx context.Context, refs []model.PackageRef)
 		if ctx.Err() != nil {
 			return
 		}
-		l.log.Warn("deps.dev version batch failed", "refs", len(refs), "error", err)
+		l.logBatchFailure("deps.dev version batch failed", len(refs), err)
 	}
 	for _, ref := range refs {
 		if err != nil {
@@ -194,7 +199,7 @@ func (l *DataLoader) prefetchFindings(ctx context.Context, refs []model.PackageR
 		if ctx.Err() != nil {
 			return
 		}
-		l.log.Warn("deps.dev findings batch failed", "refs", len(refs), "error", err)
+		l.logBatchFailure("deps.dev findings batch failed", len(refs), err)
 	}
 	for _, ref := range refs {
 		if err != nil {
@@ -203,6 +208,29 @@ func (l *DataLoader) prefetchFindings(ctx context.Context, refs []model.PackageR
 		}
 		l.findings.store(ref, results[ref], nil)
 	}
+}
+
+// logBatchFailure reports a failed batch. An outage is worth a warning on stderr;
+// an expected condition (offline with a cold cache, an ecosystem the source does
+// not index, a source the run was built without) is already stated in the report
+// as the skipped reason and only goes to the debug log.
+func (l *DataLoader) logBatchFailure(msg string, refs int, err error) {
+	if definite(err) || errors.Is(err, httpcache.ErrOffline) {
+		l.log.Debug(msg, "refs", refs, "error", err)
+		return
+	}
+	l.log.Warn(msg, "refs", refs, "error", err)
+}
+
+// osvSupported keeps the refs of ecosystems OSV indexes.
+func osvSupported(refs []model.PackageRef) []model.PackageRef {
+	out := make([]model.PackageRef, 0, len(refs))
+	for _, ref := range refs {
+		if osv.Ecosystem(ref.Ecosystem) != "" {
+			out = append(out, ref)
+		}
+	}
+	return out
 }
 
 // depsDevSupported keeps the refs of ecosystems deps.dev indexes.
@@ -215,6 +243,19 @@ func depsDevSupported(refs []model.PackageRef) []model.PackageRef {
 	}
 	return out
 }
+
+// unsupportedError says a batch source does not index an ecosystem. It matches
+// the source's own sentinel (osv.ErrUnsupported, depsdev.ErrUnsupported) through
+// Unwrap and registry.ErrUnsupported through Is, so a check sees the same
+// definite answer whichever sentinel it tests for.
+type unsupportedError struct {
+	eco      model.Ecosystem
+	sentinel error
+}
+
+func (e *unsupportedError) Error() string   { return fmt.Sprintf("%s: %v", e.eco, e.sentinel) }
+func (e *unsupportedError) Unwrap() error   { return e.sentinel }
+func (e *unsupportedError) Is(t error) bool { return t == registry.ErrUnsupported }
 
 // factsFor returns the batch entry for a ref, or facts with Found false when
 // deps.dev did not list the version.
@@ -297,14 +338,13 @@ func (l *DataLoader) Downloads(ctx context.Context, eco model.Ecosystem, name st
 	return count, nil
 }
 
-// Advisories implements Loader. A ref Prefetch did not cover is queried on its own.
+// Advisories implements Loader. Ecosystems OSV does not index get
+// osv.ErrUnsupported without a request, whether or not Prefetch saw the ref; a
+// ref Prefetch did not cover is queried on its own.
 func (l *DataLoader) Advisories(ctx context.Context, ref model.PackageRef) ([]advisory.Advisory, error) {
 	key := normalizeRef(ref)
-	if l.adv == nil {
-		return nil, fmt.Errorf("advisories for %s: %s: %w", key, SourceOSV, ErrNotConfigured)
-	}
-	if key.Version == "" {
-		return nil, fmt.Errorf("advisories for %s: %w", key, ErrNoVersion)
+	if err := l.advisoryReady(key); err != nil {
+		return nil, fmt.Errorf("advisories for %s: %w", key, err)
 	}
 	advisories, err := l.advisories.do(ctx, key, func(ctx context.Context) ([]advisory.Advisory, error) {
 		l.log.Debug("fetching advisories", "ref", key.String())
@@ -378,6 +418,21 @@ func (l *DataLoader) SimilarNames(ctx context.Context, eco model.Ecosystem, name
 	return similar, nil
 }
 
+// advisoryReady reports why an advisory lookup cannot proceed: no source, an
+// ecosystem OSV does not index, or a missing version.
+func (l *DataLoader) advisoryReady(ref model.PackageRef) error {
+	if l.adv == nil {
+		return fmt.Errorf("%s: %w", SourceOSV, ErrNotConfigured)
+	}
+	if osv.Ecosystem(ref.Ecosystem) == "" {
+		return &unsupportedError{eco: ref.Ecosystem, sentinel: osv.ErrUnsupported}
+	}
+	if ref.Version == "" {
+		return ErrNoVersion
+	}
+	return nil
+}
+
 // depsDevReady reports why a deps.dev lookup cannot proceed: no client, an
 // ecosystem deps.dev does not index, or a missing version when one is needed.
 func (l *DataLoader) depsDevReady(ref model.PackageRef, needVersion bool) error {
@@ -385,7 +440,7 @@ func (l *DataLoader) depsDevReady(ref model.PackageRef, needVersion bool) error 
 		return fmt.Errorf("%s: %w", SourceDepsDev, ErrNotConfigured)
 	}
 	if depsdev.System(ref.Ecosystem) == "" {
-		return fmt.Errorf("%s: %w", ref.Ecosystem, depsdev.ErrUnsupported)
+		return &unsupportedError{eco: ref.Ecosystem, sentinel: depsdev.ErrUnsupported}
 	}
 	if needVersion && ref.Version == "" {
 		return ErrNoVersion

@@ -274,7 +274,8 @@ func (f *fakeDepsDevR) SimilarNames(_ context.Context, _ model.Ecosystem, name s
 // fakeLoaderR is a Loader with canned answers for the runner tests. It has no
 // DepsDevFindings method; fakeFindingsLoaderR adds it. fail maps a source name
 // (SourceRegistry and its siblings) to the error every method of that source
-// returns.
+// returns; failInfo makes VersionInfo fail for one ref only, the way a detail
+// request can fail while the version list loaded.
 type fakeLoaderR struct {
 	counterR
 	prefetched [][]model.PackageRef
@@ -287,6 +288,7 @@ type fakeLoaderR struct {
 	findings   map[model.PackageRef][]depsdev.Finding
 	similar    map[model.PackageRef][]depsdev.Similar
 	fail       map[string]error
+	failInfo   map[model.PackageRef]error
 }
 
 func newFakeLoaderR() *fakeLoaderR {
@@ -300,6 +302,7 @@ func newFakeLoaderR() *fakeLoaderR {
 		findings:   map[model.PackageRef][]depsdev.Finding{},
 		similar:    map[model.PackageRef][]depsdev.Similar{},
 		fail:       map[string]error{},
+		failInfo:   map[model.PackageRef]error{},
 	}
 }
 
@@ -339,6 +342,9 @@ func (f *fakeLoaderR) Versions(_ context.Context, eco model.Ecosystem, name stri
 func (f *fakeLoaderR) VersionInfo(_ context.Context, ref model.PackageRef) (*model.VersionInfo, error) {
 	f.inc("info")
 	if err := f.fail[SourceRegistry]; err != nil {
+		return nil, err
+	}
+	if err := f.failInfo[ref]; err != nil {
 		return nil, err
 	}
 	info, ok := f.infos[ref]
