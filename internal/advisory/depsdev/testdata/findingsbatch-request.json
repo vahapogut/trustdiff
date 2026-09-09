@@ -1,0 +1,8 @@
+{"requests":[
+ {"versionKey":{"system":"NPM","name":"flatmap-stream","version":"0.1.1"}},
+ {"versionKey":{"system":"NPM","name":"request","version":"2.88.2"}},
+ {"versionKey":{"system":"PYPI","name":"boto3","version":"1.43.90"}},
+ {"versionKey":{"system":"NPM","name":"express","version":"4.19.2"}},
+ {"versionKey":{"system":"NPM","name":"express","version":"99.99.99"}},
+ {"packageKey":{"system":"NPM","name":"flatmap-stream"}}
+]}

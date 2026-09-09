@@ -1,0 +1,7 @@
+{"requests":[
+ {"versionKey":{"system":"NPM","name":"express","version":"4.19.2"}},
+ {"versionKey":{"system":"PYPI","name":"requests","version":"2.32.3"}},
+ {"versionKey":{"system":"NPM","name":"@sigstore/bundle","version":"3.1.0"}},
+ {"versionKey":{"system":"CARGO","name":"serde","version":"1.0.210"}},
+ {"versionKey":{"system":"NPM","name":"express","version":"99.99.99"}}
+]}
