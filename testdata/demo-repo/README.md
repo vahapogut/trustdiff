@@ -4,13 +4,17 @@ Two npm lockfiles, `base/package-lock.json` and `head/package-lock.json`, that
 differ the way a dependency-adding pull request differs from its base branch. They
 are the input of `make demo` and of the M2 acceptance criterion.
 
-Every package named here is fictitious. `demo-app`, `demo-crypto-helper`,
-`demo-color-tty`, `demo-http-client`, `demo-logger`, `demo-mime-types` and
-`demo-test-runner` are not published on any registry and describe no real package
-or person, which is the point: the demo must keep saying the same thing however
-the real registries change, and it must not put words in a real maintainer's
-mouth. The lockfiles are hand written in the shape npm 10 writes, not recordings.
-The real recorded lockfiles live in `internal/lockfile/npm/testdata`.
+Every package named here is fictitious. `trustdiff-demo-app`,
+`demo-crypto-helper`, `demo-color-tty`, `demo-http-client`,
+`trustdiff-demo-logger`, `demo-mime-types` and `demo-test-runner` are published on
+no registry and describe no real package or person, which is the point: the demo
+must keep saying the same thing however the real registries change, and it must
+not put words in a real maintainer's mouth. Each of the seven was checked against
+registry.npmjs.org on 2026-09-09 and answered 404; the project and the logger
+carry the `trustdiff-` prefix because the shorter `demo-app` and `demo-logger` are
+names somebody else already published. The lockfiles are hand written in the shape
+npm 10 writes, not recordings. The real recorded lockfiles live in
+`internal/lockfile/npm/testdata`.
 
 ## What the change shows
 
@@ -66,7 +70,9 @@ trustdiff diff \
   would answer it, hand written in the recorded shape (and indented, which a
   recording never is, because this one is meant to be read and edited). A fake
   registry serves it: point the client at an `httptest` server with
-  `npm.WithRegistryURL` and answer `/demo-crypto-helper` with this body.
+  `npm.WithRegistryURL` and answer `/demo-crypto-helper` with this body. Its
+  `time` map dates exactly the versions `versions` holds, so a reader who opens
+  it to check why TD005 and TD015 skip finds no earlier release there either.
 - `cache/`: the same answer as one seeded HTTP cache entry, so `make demo` can run
   `--offline` with no server at all. See below.
 - `.trustdiff.yaml`: a policy that sets nothing but the version, so every level and
@@ -80,6 +86,9 @@ rather than trusted.
 ```
 printf '%s' 'demo-crypto-helper@1.0.2' | sha512sum | cut -d' ' -f1 | xxd -r -p | base64 -w0
 ```
+
+The name is part of that string, so renaming a package here means recomputing its
+`integrity` and rewriting its `resolved` URL in both lockfiles.
 
 The packument carries no `dist.signatures` block. Nothing in trustdiff verifies
 signature bytes locally, and a made up signature in a repository is worse than an
@@ -132,7 +141,14 @@ is the same on every platform.
   `uv.lock` or `Cargo.lock` and a packument fixture for the registry it belongs
   to. `diff --base-file` compares one file at a time, so a second pair is a second
   invocation.
+- **Another name.** Check it against every registry the demo names before it is
+  added, with `curl -s -o /dev/null -w '%{http_code}' https://registry.npmjs.org/<name>`,
+  and pick another one unless the answer is 404. A name somebody has published is
+  a name the demo can put words in the mouth of, and a run without `--offline`
+  would query it against the versions and the `integrity` values invented here.
 
 Whatever is added, the acceptance criterion of the milestone is measured on this
 directory: keep the two findings on the added entry's line, and say in this file
-what a new file is for.
+what a new file is for. `TestDemoRepositoryIsTheAcceptanceScenario` in
+`internal/cli` runs these inputs on every `go test ./...`, so a fixture that stops
+producing the two findings fails the build rather than the demo.

@@ -50,18 +50,27 @@ fixture:
 # throwaway cache directory, which is also why TRUSTDIFF_CACHE_DIR never points at
 # the developer's own cache. Findings are what the demo is for, so its exit code is
 # reported rather than inherited: a blocking finding must not fail make.
+#
+# The binary is built on its own line rather than run with "go run", for two
+# reasons: "go run" exits 1 for every non-zero status of the program it runs, so
+# the line below would report 1 for trustdiff's 1, 2 and 3 alike, and it exits 1
+# for a build failure too, which would be reported as a finding of a run that
+# never happened. A build failure now stops the recipe before anything is
+# reported, and the code printed is the tool's own.
 demo:
 	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT INT TERM && \
-	cp testdata/demo-repo/cache/* "$$tmp/" && \
-	TRUSTDIFF_NOW=2026-09-09T12:00:00Z TRUSTDIFF_CACHE_DIR="$$tmp" \
-	  go run ./cmd/trustdiff diff \
-	    --base-file testdata/demo-repo/base/package-lock.json \
-	    testdata/demo-repo/head/package-lock.json \
-	    --policy testdata/demo-repo/.trustdiff.yaml \
-	    --offline --format human; \
-	code=$$?; \
-	echo; \
-	echo "trustdiff exited $$code (0 nothing blocking, 1 blocking findings, 2 usage, 3 data unavailable)"
+	mkdir -p "$$tmp/cache" && \
+	go build -o "$$tmp/$(BIN)" ./cmd/trustdiff && \
+	cp testdata/demo-repo/cache/* "$$tmp/cache/" && \
+	{ TRUSTDIFF_NOW=2026-09-09T12:00:00Z TRUSTDIFF_CACHE_DIR="$$tmp/cache" \
+	    "$$tmp/$(BIN)" diff \
+	      --base-file testdata/demo-repo/base/package-lock.json \
+	      testdata/demo-repo/head/package-lock.json \
+	      --policy testdata/demo-repo/.trustdiff.yaml \
+	      --offline --format human; \
+	  code=$$?; \
+	  echo; \
+	  echo "trustdiff exited $$code (0 nothing blocking, 1 blocking findings, 2 usage, 3 data unavailable)"; }
 
 clean:
 	rm -rf bin dist

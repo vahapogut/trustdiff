@@ -1,5 +1,5 @@
 {
-  "name": "demo-app",
+  "name": "trustdiff-demo-app",
   "version": "1.4.0",
   "private": true,
   "description": "The manifest the head lockfile was installed from.",
@@ -11,7 +11,7 @@
   "dependencies": {
     "demo-crypto-helper": "^1.0.2",
     "demo-http-client": "^2.3.1",
-    "demo-logger": "^1.8.4"
+    "trustdiff-demo-logger": "^1.8.4"
   },
   "devDependencies": {
     "demo-test-runner": "^4.2.1"

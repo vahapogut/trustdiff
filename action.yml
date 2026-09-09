@@ -30,6 +30,10 @@
 #   permissions:
 #     contents: read
 #     security-events: write   # required by the SARIF upload
+#                              # (a pull request from a fork carries a read-only
+#                              # token whatever this says, so the upload is
+#                              # skipped there and the findings are printed in
+#                              # the job log instead)
 #   steps:
 #     - uses: actions/checkout@<sha>
 #       with:
@@ -237,7 +241,10 @@ runs:
           elif command -v shasum >/dev/null 2>&1; then
             shasum -a 256 "$1" | cut -d' ' -f1
           else
-            echo "::error::neither sha256sum nor shasum is on PATH, so the download cannot be verified"
+            # To stderr: the caller reads this function through a command
+            # substitution, which would swallow the message on stdout and leave
+            # the failed step with no output at all.
+            echo "::error::neither sha256sum nor shasum is on PATH, so the download cannot be verified" >&2
             return 1
           fi
         }
@@ -308,6 +315,7 @@ runs:
         DIR: ${{ steps.asset.outputs.dir }}
         FAIL_ON: ${{ inputs.fail-on }}
         FORMAT: ${{ inputs.format }}
+        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         POLICY: ${{ inputs.policy }}
       run: |
         # No -e here: trustdiff's exit code is the result of this step, not a
@@ -361,8 +369,25 @@ runs:
           echo "report=${written}"
         } >> "$GITHUB_OUTPUT"
 
+        # A pull request from a fork carries a read-only token, which the caller's
+        # permissions cannot elevate, so the upload below is skipped for it. The
+        # findings would then be nowhere, and a SARIF file is not a report a
+        # reviewer can read in passing: print it here so the pull request still
+        # says what trustdiff found.
+        if [ "$FORMAT" = sarif ] && [ "${GITHUB_EVENT_NAME-}" = pull_request ] && \
+           [ "${HEAD_REPO}" != "${GITHUB_REPOSITORY-}" ]; then
+          echo "::notice::this pull request comes from a fork, whose token cannot write code scanning results; the findings are in this log instead"
+          cat "$report"
+        fi
+
     - name: Upload the SARIF report
-      if: inputs.format == 'sarif' && steps.run.outputs.report != ''
+      # The fork case is not a failure of the change: skip the upload rather than
+      # let it fail the job with a 403 the caller cannot do anything about. The
+      # step above prints the report in the log when this is skipped.
+      if: >-
+        inputs.format == 'sarif' && steps.run.outputs.report != '' &&
+        (github.event_name != 'pull_request' ||
+         github.event.pull_request.head.repo.full_name == github.repository)
       uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
       with:
         sarif_file: ${{ steps.run.outputs.report }}

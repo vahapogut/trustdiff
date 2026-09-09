@@ -1,8 +1,11 @@
 # The demo repository
 
 `make demo` runs trustdiff on `testdata/demo-repo` and prints the human report. It
-is the smallest complete example of what `diff` is for, the scenario the M2
-acceptance criterion is measured on, and the scenario the README GIF records.
+is the smallest complete example of what `diff` is for and the scenario the M2
+acceptance criterion is measured on. `TestDemoRepositoryIsTheAcceptanceScenario`
+in `internal/cli` runs the same inputs, so `go test ./...` fails when the report
+below stops being what the demo produces. The README GIF records the `check`
+command instead; its script is `docs/demo.tape`.
 
 ## What it shows
 
@@ -37,11 +40,12 @@ install script.
 make demo
 ```
 
-which runs, from the repository root:
+which builds the binary into a fresh temporary directory and runs, from the
+repository root:
 
 ```
-TRUSTDIFF_NOW=2026-09-09T12:00:00Z TRUSTDIFF_CACHE_DIR=<a fresh temporary directory> \
-go run ./cmd/trustdiff diff \
+TRUSTDIFF_NOW=2026-09-09T12:00:00Z TRUSTDIFF_CACHE_DIR=<that directory>/cache \
+<that directory>/trustdiff diff \
   --base-file testdata/demo-repo/base/package-lock.json \
   testdata/demo-repo/head/package-lock.json \
   --policy testdata/demo-repo/.trustdiff.yaml \
@@ -64,7 +68,10 @@ Four of those are what make the output reproducible rather than merely nice:
 
 The target reports the tool's exit code rather than inheriting it, so a demo that
 finds something never fails `make`. Today it exits 0: both findings are warnings
-and `--fail-on` is `block`.
+and `--fail-on` is `block`. It is the binary's own code: `go run` collapses every
+non-zero status of the program it runs, and a build failure too, into its own 1,
+so the target builds first and a tree that does not compile stops the demo instead
+of reporting an exit code for a run that never happened.
 
 ## The output
 

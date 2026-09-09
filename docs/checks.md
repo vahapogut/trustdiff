@@ -531,7 +531,9 @@ npm:plain-crypto-js@4.2.1  BLOCK
 
 ## TD013 exotic-source
 
-**Detects.** A lockfile entry that does not come from the ecosystem's registry: a git repository, a tarball or archive URL, a directory on the machine, or an origin the file does not state. Default `block`, every ecosystem. It reads the lockfile entry rather than the registry, so it is skipped for a ref named on the command line, which has none. A private registry or a mirror that serves the ecosystem's usual tarball layout is not exotic: the parsers recognize it and record the entry as a registry install.
+**Detects.** A lockfile entry that does not come from the ecosystem's registry: a git repository, a tarball or archive URL, a directory on the machine, or an origin the file does not state. Default `block`, every ecosystem. It reads the lockfile entry rather than the registry, so it is skipped for a ref named on the command line, which has none. A private registry or a mirror is not exotic: the parsers recognize it by the share of the file's downloads it carries and record the entry as a registry install.
+
+Two of the four sources are reported at `info` whatever level the policy sets for the check. A `path` entry is a directory on the machine, which is what a monorepo writes for its own packages: ripgrep 14.1.1 has ten of them and Superset twenty five, and failing a gate on unmodified upstream code is how a check gets turned off. An `unknown` entry is usually an npm bundled dependency, whose bytes ship inside the archive of the package that carries them and are covered by that package's hash. Both stay in the report, because an entry that does not come from the registry is worth seeing in a diff and the `source` key says which it is. An allow entry takes them out of the report altogether.
 
 **Why it matters.** A version number is a promise that a registry keeps: the release is immutable, its hash is recorded, and a takedown reaches everyone who installs it later. A git or URL dependency keeps none of that. A branch or tag moves, so the code installed today is not the code reviewed yesterday, and nothing in this tool or in the registry can tell you it changed. It is also how a dependency escapes every other check here: a package installed from a URL has no publisher history, no provenance and no advisory to match. Real projects do use git dependencies deliberately, which is what the allow list is for; what this check refuses to do is let one arrive unnoticed in a pull request.
 
@@ -576,11 +578,14 @@ Like TD013 it reads the lockfile entry and is skipped for a ref named on the com
 
 **Why it matters.** The hash is what makes a lockfile a lock. Without it, an install repeats the resolution rather than the result: a registry that serves different bytes for the same version, a compromised mirror, or a proxy in between changes what you get and nothing notices. Plain http makes that trivial for anyone on the path.
 
+Two entries carry their hash somewhere other than in the entry, and the explanation says so rather than claiming nothing guards them: a local directory, which has no artifact to hash, and an npm bundled dependency, which the lockfile writes without a location and without a hash because the package that carries it covers both. Neither is exempted, since the lockfile marks neither and an entry that states no origin is worth a glance in a pull request; the `source` key is there so telling them apart does not mean opening the lockfile.
+
 **Evidence.**
 
 | Key | Meaning |
 |---|---|
 | `signal` | `missing-hash` or `plain-http` |
+| `source` | where the entry was resolved from: `registry`, `git`, `url`, `path` or `unknown` |
 | `integrity` | the hash the entry records, absent when it records none |
 | `resolved` | the location as the lockfile records it, absent when the file states none |
 | `lockfile` | the lockfile the entry came from, absent when the subject carries no location |

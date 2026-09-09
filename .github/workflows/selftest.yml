@@ -83,7 +83,13 @@ jobs:
           if [ -n "$BASE_SHA" ]; then
             args+=(--base "$BASE_SHA")
           fi
-          go run ./cmd/trustdiff "${args[@]}" > trustdiff.sarif
+          # Built on its own line, and run as a binary: "go run" exits 1 for every
+          # non-zero status of the program it runs, so the exit code recorded
+          # below would be 1 for trustdiff's 2 and 3 alike, and 1 again for a
+          # pull request that does not compile, which reads as "trustdiff had
+          # findings" in the log. A build failure fails this step instead.
+          go build -o "$RUNNER_TEMP/trustdiff" ./cmd/trustdiff || exit 1
+          "$RUNNER_TEMP/trustdiff" "${args[@]}" > trustdiff.sarif
           code=$?
           echo "exit-code=${code}" >> "$GITHUB_OUTPUT"
           echo "trustdiff exited ${code}"

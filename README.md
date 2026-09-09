@@ -233,7 +233,7 @@ In a workflow, write SARIF instead and let code scanning put those findings on t
     format: sarif
 ```
 
-The action downloads the pinned release, verifies it against checksums signed with cosign before running it, and uploads the SARIF. Or run the binary yourself:
+The action downloads the pinned release, verifies it against checksums signed with cosign before running it, and uploads the SARIF. The job needs `security-events: write` for that upload. A pull request from a fork gets a read-only token whatever the workflow asks for, so there the action skips the upload and prints the findings in the job log instead of failing on a permission the change cannot be given. Or run the binary yourself:
 
 ```sh
 trustdiff diff --base "$BASE_SHA" --format sarif > trustdiff.sarif
