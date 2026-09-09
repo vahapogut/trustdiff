@@ -1,0 +1,399 @@
+# trustdiff as a GitHub Action.
+#
+# The action downloads a published trustdiff release, verifies it, runs
+# "trustdiff diff" over the checkout and uploads the SARIF report to code
+# scanning. It never builds from source, so a workflow that uses it does not need
+# a Go toolchain.
+#
+# Rules this file follows, because an action runs with the caller's token:
+#   * No input is ever interpolated into a "run:" line. Every input reaches the
+#     shell through "env:" and is quoted there, so a value containing a quote, a
+#     backtick or a newline is data and never becomes a command.
+#   * Every "uses:" reference is pinned to a full commit SHA and the trailing
+#     comment names the tag it was resolved from. Pins were resolved on
+#     2026-09-09 with
+#       gh api repos/<owner>/<repo>/git/ref/tags/<tag> --jq '.object | "\(.type) \(.sha)"'
+#     and, when the answer said "tag" (an annotated tag, as github/codeql-action
+#     uses), dereferenced with
+#       gh api repos/<owner>/<repo>/git/tags/<sha> --jq .object.sha
+#     so the pin is the commit and not the tag object:
+#       sigstore/cosign-installer v4.1.2        6f9f17788090df1f26f669e9d70d6ae9567deba6
+#       github/codeql-action v4.38.0            b96794f015dfd88f77b49b1c93e0fa7110f94c63
+#                                               (tag object 4bd7200e1f146b1c937cae12d258b50f41a53cf8)
+#   * The archive is verified before it is extracted. For the default version the
+#     expected sha256 of every archive is embedded below; for any other version
+#     the release's checksums.txt is verified with cosign against the identity of
+#     this repository's release workflow before a single line of it is believed.
+#
+# Example workflow, and the reason for its two settings:
+#
+#   permissions:
+#     contents: read
+#     security-events: write   # required by the SARIF upload
+#   steps:
+#     - uses: actions/checkout@<sha>
+#       with:
+#         fetch-depth: 0       # diff needs the base commit's lockfiles
+#     - uses: vahapogut/trustdiff@v0.2.0
+#       with:
+#         base: ${{ github.event.pull_request.base.sha }}
+
+name: trustdiff
+description: Evaluate what a lockfile change adds or modifies for trust regressions, and report them as SARIF
+author: Vahap Ogut
+
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  version:
+    description: >-
+      Release tag of trustdiff to run, for example v0.2.0. The default is the
+      version whose sha256 table is embedded in this file; any other version is
+      verified through the release's cosign-signed checksums.txt instead.
+    required: false
+    # The pin and the sha256 table below are updated by the release step of task
+    # 2.12, in the commit "chore(action): pin v0.2.0 and checksums". v0.1.0 is
+    # not a usable default here: it has no diff command.
+    default: v0.2.0
+  base:
+    description: >-
+      Git ref or commit to compare against. Leave it empty to let trustdiff use
+      the merge-base of HEAD with origin/main. On a pull request pass
+      ${{ github.event.pull_request.base.sha }} and check out with
+      fetch-depth: 0, so the base commit is in the clone.
+    required: false
+    default: ""
+  policy:
+    description: >-
+      Policy file to load. Leave it empty to let trustdiff discover
+      .trustdiff.yaml upward from the working directory.
+    required: false
+    default: ""
+  fail-on:
+    description: "Lowest finding level that fails the job: block, warn or never."
+    required: false
+    default: block
+  format:
+    description: "Report format: sarif, json, markdown or human. SARIF is uploaded to code scanning, markdown is added to the job summary."
+    required: false
+    default: sarif
+
+outputs:
+  exit-code:
+    description: "trustdiff's exit code: 0 nothing to act on, 1 findings at or above fail-on, 2 usage or configuration error, 3 a required data source was unavailable and the policy says to fail."
+    value: ${{ steps.run.outputs.exit-code }}
+  report:
+    description: Path of the report file, empty when trustdiff wrote nothing.
+    value: ${{ steps.run.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve the release archive for this runner
+      id: asset
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+
+        # The version reaches a URL and a file name below, never a command line,
+        # but it is an input: hold it to the shape of a tag this repository
+        # publishes, so a typo is a message here rather than a 404 later.
+        version="$VERSION"
+        if ! [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+          echo "::error::version must be a release tag such as v0.2.0 or v0.2.0-rc.1; got '${version}'"
+          exit 1
+        fi
+
+        # goreleaser names the archives from the runner's operating system and
+        # architecture, with the leading v stripped from the version.
+        case "${RUNNER_OS}" in
+          Linux)   os=linux;   ext=tar.gz ;;
+          macOS)   os=darwin;  ext=tar.gz ;;
+          Windows) os=windows; ext=zip ;;
+          *)
+            echo "::error::trustdiff publishes linux, darwin and windows archives; this runner reports RUNNER_OS=${RUNNER_OS}"
+            exit 1
+            ;;
+        esac
+        case "${RUNNER_ARCH}" in
+          X64)   arch=amd64 ;;
+          ARM64) arch=arm64 ;;
+          *)
+            echo "::error::trustdiff publishes amd64 and arm64 archives; this runner reports RUNNER_ARCH=${RUNNER_ARCH}. Install with \"go install github.com/vahapogut/trustdiff/cmd/trustdiff@${version}\" instead."
+            exit 1
+            ;;
+        esac
+
+        asset="trustdiff_${version#v}_${os}_${arch}.${ext}"
+        binary=trustdiff
+        if [ "$os" = windows ]; then
+          binary=trustdiff.exe
+        fi
+
+        # The sha256 of every archive of the pinned default version. "pending"
+        # means the release step of task 2.12 has not filled the entry in yet;
+        # such an entry falls back to the cosign route below, which proves the
+        # same thing by a longer path, so the action keeps working the moment
+        # the release exists.
+        pinned_version=v0.2.0
+        sha=""
+        if [ "$version" = "$pinned_version" ]; then
+          case "${os}_${arch}" in
+            linux_amd64)   sha=pending ;;
+            linux_arm64)   sha=pending ;;
+            darwin_amd64)  sha=pending ;;
+            darwin_arm64)  sha=pending ;;
+            windows_amd64) sha=pending ;;
+            windows_arm64) sha=pending ;;
+          esac
+        fi
+        verify=pinned
+        if [ -z "$sha" ] || [ "$sha" = pending ]; then
+          verify=cosign
+          sha=""
+          if [ "$version" = "$pinned_version" ]; then
+            echo "::notice::the sha256 table for ${pinned_version} is not filled in yet; verifying through the release's cosign-signed checksums.txt instead"
+          fi
+        fi
+
+        {
+          echo "version=${version}"
+          echo "asset=${asset}"
+          echo "url=https://github.com/vahapogut/trustdiff/releases/download/${version}"
+          echo "sha=${sha}"
+          echo "verify=${verify}"
+          echo "dir=${RUNNER_TEMP}/trustdiff"
+          echo "binary=${RUNNER_TEMP}/trustdiff/${binary}"
+        } >> "$GITHUB_OUTPUT"
+
+        echo "trustdiff ${version}: ${asset} (verification: ${verify})"
+
+    - name: Install cosign
+      if: steps.asset.outputs.verify == 'cosign'
+      uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      with:
+        # The version tools.mk and the release workflow pin. The installer
+        # verifies the release it downloads with a bootstrap cosign.
+        cosign-release: v3.1.3
+
+    - name: Download the release archive
+      shell: bash
+      env:
+        ASSET: ${{ steps.asset.outputs.asset }}
+        DIR: ${{ steps.asset.outputs.dir }}
+        URL: ${{ steps.asset.outputs.url }}
+        VERIFY: ${{ steps.asset.outputs.verify }}
+        VERSION: ${{ steps.asset.outputs.version }}
+      run: |
+        set -euo pipefail
+        mkdir -p "$DIR"
+
+        # curl reports the status of the last response, so a redirect to the
+        # asset storage is followed and its status is the one tested. --fail is
+        # deliberately absent: the status code says more than curl's exit code.
+        fetch() {
+          local name="$1"
+          local code
+          code=$(curl --silent --show-error --location \
+                      --retry 3 --retry-connrefused --max-time 300 \
+                      --write-out '%{http_code}' \
+                      --output "${DIR}/${name}" "${URL}/${name}") || code=000
+          if [ "$code" = 404 ]; then
+            echo "::error::${URL}/${name} does not exist: trustdiff ${VERSION} has not been released yet, or it does not ship this file. Pick a tag from https://github.com/vahapogut/trustdiff/releases and set the action's \"version\" input to it."
+            return 1
+          fi
+          if [ "$code" != 200 ]; then
+            echo "::error::downloading ${URL}/${name} returned HTTP ${code}"
+            return 1
+          fi
+        }
+
+        fetch "$ASSET"
+        if [ "$VERIFY" = cosign ]; then
+          fetch checksums.txt
+          fetch checksums.txt.sigstore.json
+        fi
+
+    - name: Verify the archive
+      shell: bash
+      env:
+        ASSET: ${{ steps.asset.outputs.asset }}
+        DIR: ${{ steps.asset.outputs.dir }}
+        SHA: ${{ steps.asset.outputs.sha }}
+        VERIFY: ${{ steps.asset.outputs.verify }}
+        VERSION: ${{ steps.asset.outputs.version }}
+      run: |
+        set -euo pipefail
+
+        # macOS runners ship shasum, Linux runners sha256sum; ask for whichever
+        # is there rather than assuming coreutils.
+        digest() {
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$1" | cut -d' ' -f1
+          elif command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 "$1" | cut -d' ' -f1
+          else
+            echo "::error::neither sha256sum nor shasum is on PATH, so the download cannot be verified"
+            return 1
+          fi
+        }
+
+        expected="$SHA"
+        if [ "$VERIFY" = cosign ]; then
+          # The signature is keyless: the certificate names the workflow that
+          # produced the release, so a checksums.txt signed by anything else,
+          # including another workflow of this repository, is rejected.
+          cosign verify-blob \
+            --bundle "${DIR}/checksums.txt.sigstore.json" \
+            --certificate-identity "https://github.com/vahapogut/trustdiff/.github/workflows/release.yml@refs/tags/${VERSION}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${DIR}/checksums.txt"
+          # sha256sum writes "<hash>  <name>", or "<hash> *<name>" for a file it
+          # read in binary mode; both spellings are matched.
+          expected=$(awk -v name="$ASSET" '$2 == name || $2 == "*" name { print $1 }' "${DIR}/checksums.txt")
+          if [ -z "$expected" ]; then
+            echo "::error::checksums.txt of trustdiff ${VERSION} has no line for ${ASSET}"
+            exit 1
+          fi
+        fi
+
+        actual=$(digest "${DIR}/${ASSET}")
+        if [ "$actual" != "$expected" ]; then
+          echo "::error::${ASSET} does not match its expected sha256. expected ${expected}, got ${actual}. Do not use this download."
+          exit 1
+        fi
+        echo "${ASSET}: sha256 ${actual} verified (${VERIFY})"
+
+    - name: Extract trustdiff
+      shell: bash
+      env:
+        ASSET: ${{ steps.asset.outputs.asset }}
+        BINARY: ${{ steps.asset.outputs.binary }}
+        DIR: ${{ steps.asset.outputs.dir }}
+      run: |
+        set -euo pipefail
+        case "$ASSET" in
+          *.tar.gz)
+            tar -xzf "${DIR}/${ASSET}" -C "$DIR"
+            ;;
+          *.zip)
+            # Windows runners have unzip through Git for Windows; bsdtar, which
+            # is the tar on those runners, reads zip archives as well.
+            if command -v unzip >/dev/null 2>&1; then
+              unzip -q -o "${DIR}/${ASSET}" -d "$DIR"
+            else
+              tar -xf "${DIR}/${ASSET}" -C "$DIR"
+            fi
+            ;;
+          *)
+            echo "::error::unexpected archive name ${ASSET}"
+            exit 1
+            ;;
+        esac
+        chmod +x "$BINARY"
+        # Later steps of the calling job can run trustdiff by name.
+        echo "$DIR" >> "$GITHUB_PATH"
+        "$BINARY" version
+
+    - name: Run trustdiff diff
+      id: run
+      shell: bash
+      env:
+        BASE: ${{ inputs.base }}
+        BINARY: ${{ steps.asset.outputs.binary }}
+        DIR: ${{ steps.asset.outputs.dir }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        FORMAT: ${{ inputs.format }}
+        POLICY: ${{ inputs.policy }}
+      run: |
+        # No -e here: trustdiff's exit code is the result of this step, not a
+        # failure of it, so the report and the SARIF upload still happen when it
+        # finds something. The last step turns the code into the job's outcome.
+        set -uo pipefail
+
+        case "$FORMAT" in
+          sarif)    report="${DIR}/trustdiff.sarif" ;;
+          json)     report="${DIR}/trustdiff.json" ;;
+          markdown) report="${DIR}/trustdiff.md" ;;
+          human)    report="${DIR}/trustdiff.txt" ;;
+          *)
+            echo "::error::format must be sarif, json, markdown or human; got '${FORMAT}'"
+            exit 1
+            ;;
+        esac
+
+        args=(diff --format "$FORMAT" --fail-on "$FAIL_ON")
+        if [ -n "$BASE" ]; then
+          args+=(--base "$BASE")
+        fi
+        if [ -n "$POLICY" ]; then
+          args+=(--policy "$POLICY")
+        fi
+
+        "$BINARY" "${args[@]}" > "$report"
+        code=$?
+
+        case "$FORMAT" in
+          human)
+            cat "$report"
+            ;;
+          markdown)
+            cat "$report"
+            cat "$report" >> "$GITHUB_STEP_SUMMARY"
+            ;;
+          *)
+            echo "trustdiff wrote ${report}"
+            ;;
+        esac
+
+        # An empty report means trustdiff stopped before it wrote anything; a
+        # later step must not offer that file to code scanning as a SARIF run.
+        written=""
+        if [ -s "$report" ]; then
+          written="$report"
+        fi
+        {
+          echo "exit-code=${code}"
+          echo "report=${written}"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Upload the SARIF report
+      if: inputs.format == 'sarif' && steps.run.outputs.report != ''
+      uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+      with:
+        sarif_file: ${{ steps.run.outputs.report }}
+        # Keeps trustdiff's findings apart from other analyses of the same commit.
+        category: trustdiff
+
+    - name: Report the outcome
+      shell: bash
+      env:
+        CODE: ${{ steps.run.outputs.exit-code }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        set -uo pipefail
+        case "$CODE" in
+          0)
+            echo "trustdiff found nothing at or above the ${FAIL_ON} level"
+            ;;
+          1)
+            echo "::error::trustdiff found findings at or above the ${FAIL_ON} level. Read them in the report above, in the code scanning alerts of this commit, or allow them with a reason and an expiry date in .trustdiff.yaml."
+            exit 1
+            ;;
+          2)
+            echo "::error::trustdiff exited 2: a usage or configuration error. The message above says which input or which key of the policy file it could not accept; nothing was evaluated."
+            exit 1
+            ;;
+          3)
+            echo "::error::trustdiff exited 3: a required data source was unavailable and the policy says on_data_unavailable: fail. The report lists which checks were skipped and why; re-run the job once the source is back, or relax the policy."
+            exit 1
+            ;;
+          *)
+            echo "::error::trustdiff exited ${CODE}, which is not one of its documented exit codes (0, 1, 2, 3). Please report this at https://github.com/vahapogut/trustdiff/issues."
+            exit 1
+            ;;
+        esac

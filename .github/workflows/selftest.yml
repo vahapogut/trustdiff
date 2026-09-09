@@ -1,0 +1,115 @@
+# trustdiff runs over trustdiff: every pull request is evaluated with the code it
+# proposes, not with a released binary, so a change to the parsers, to the checks
+# or to the SARIF writer is visible on the pull request that makes it.
+#
+# This workflow deliberately does not use action.yml. The action downloads a
+# published release, which would test the previous version against this pull
+# request; "go run ./cmd/trustdiff" tests what the pull request contains.
+# action.yml is exercised on this repository by the self-test the release step of
+# task 2.12 adds, once a release with a diff command exists.
+#
+# Every "uses:" reference is pinned to a full commit SHA and the trailing comment
+# names the tag. Pins were resolved on 2026-09-09 with
+#   gh api repos/<owner>/<repo>/git/ref/tags/<tag> --jq '.object | "\(.type) \(.sha)"'
+# and, for the annotated tag of github/codeql-action, dereferenced with
+#   gh api repos/<owner>/<repo>/git/tags/<sha> --jq .object.sha:
+#   actions/checkout v7.0.1        3d3c42e5aac5ba805825da76410c181273ba90b1
+#   actions/setup-go v7.0.0        b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+#   github/codeql-action v4.38.0   b96794f015dfd88f77b49b1c93e0fa7110f94c63
+#                                  (tag object 4bd7200e1f146b1c937cae12d258b50f41a53cf8)
+
+name: selftest
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CGO_ENABLED: "0"
+  # Use exactly the Go version the job installed, as the other workflows do.
+  GOTOOLCHAIN: local
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  selftest:
+    name: trustdiff diff on this pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write # the SARIF upload writes code scanning alerts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # diff reads the lockfiles as they are at the base commit, so the base
+          # has to be in the clone.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          # The newest 1.26 patch release, as in ci.yml; go-version-file would
+          # install the bare "go 1.26.0" directive version because GOTOOLCHAIN
+          # is local here.
+          go-version: "1.26.x"
+          check-latest: true
+          cache: true
+
+      - name: Run trustdiff diff over this repository
+        id: diff
+        # trustdiff is young and this workflow points it at itself: a false
+        # positive, a parser that trips over a lockfile in this repository or a
+        # registry that is having a bad day must not block a pull request. The
+        # findings are still uploaded and visible; remove this line once the
+        # tool has earned the right to fail the build.
+        continue-on-error: true
+        env:
+          # Empty for workflow_dispatch, where there is no pull request; trustdiff
+          # then falls back to the merge-base with origin/main.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -uo pipefail
+          args=(diff --format sarif)
+          if [ -n "$BASE_SHA" ]; then
+            args+=(--base "$BASE_SHA")
+          fi
+          go run ./cmd/trustdiff "${args[@]}" > trustdiff.sarif
+          code=$?
+          echo "exit-code=${code}" >> "$GITHUB_OUTPUT"
+          echo "trustdiff exited ${code}"
+          exit "$code"
+
+      - name: Check that the report is a SARIF document
+        id: sarif
+        run: |
+          set -uo pipefail
+          if [ ! -s trustdiff.sarif ] || ! jq -e 'has("runs")' trustdiff.sarif > /dev/null 2>&1; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::trustdiff wrote no usable SARIF document, so there is nothing to upload. The step above says why."
+            exit 0
+          fi
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "results: $(jq '[.runs[].results[]] | length' trustdiff.sarif)"
+
+      - name: Upload the SARIF report
+        # A pull request from a fork carries a read-only token, so the upload
+        # would fail for a reason that has nothing to do with the change.
+        if: >-
+          steps.sarif.outputs.found == 'true' &&
+          (github.event_name == 'workflow_dispatch' ||
+           github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          sarif_file: trustdiff.sarif
+          # Keeps trustdiff's findings apart from other analyses of the same commit.
+          category: trustdiff

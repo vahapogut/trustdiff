@@ -1,0 +1,32 @@
+# trustdiff as a pre-commit hook. Add it to a repository's .pre-commit-config.yaml:
+#
+#   repos:
+#     - repo: https://github.com/vahapogut/trustdiff
+#       rev: v0.2.0
+#       hooks:
+#         - id: trustdiff-diff
+#
+# pre-commit builds the binary from this repository at the pinned rev, so the hook
+# needs a Go toolchain and no release download. The keys below are the ones
+# documented at https://pre-commit.com/#creating-new-hooks (checked 2026-09-09).
+#
+# The subcommand lives in "entry" and only the level lives in "args", because a
+# repository that sets "args" in its own configuration replaces this list
+# entirely: keeping "diff" out of it means a relaxed level cannot accidentally
+# turn the hook into a run of trustdiff without a command.
+- id: trustdiff-diff
+  name: trustdiff (lockfile trust diff)
+  description: Evaluate what the staged lockfile change adds or modifies for trust regressions.
+  entry: trustdiff diff
+  args: ["--fail-on", "block"]
+  language: golang
+  # diff reads the lockfiles from git itself, so the staged file names would only
+  # be repeated arguments it does not accept.
+  pass_filenames: false
+  # The names the parsers of this release handle, matched case-insensitively the
+  # way internal/lockfile detects them.
+  files: '(?i)(^|/)(package-lock\.json|pnpm-lock\.yaml|uv\.lock|Cargo\.lock)$'
+  stages: [pre-commit]
+  # 3.2.0 is where the values of "stages" became the git hook names; before it
+  # this hook would have to say "commit" instead of "pre-commit".
+  minimum_pre_commit_version: "3.2.0"
