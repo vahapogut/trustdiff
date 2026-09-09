@@ -9,32 +9,6 @@ import (
 	"github.com/vahapogut/trustdiff/internal/version"
 )
 
-func (a *App) newDiffCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "diff",
-		Short: "Evaluate lockfile changes against a git base",
-		Long: `Evaluate only the lockfile entries that were added or changed since a git base.
-The default base is the merge-base of HEAD with origin/main.`,
-		Args: cobra.NoArgs,
-		RunE: notImplemented("diff"),
-	}
-	cmd.Flags().String("base", "", "git ref to compare against (default: merge-base with origin/main)")
-	cmd.Flags().String("base-file", "", "compare against this lockfile instead of a git ref")
-	cmd.Flags().Bool("update-baseline", false, "write the observed trust signals to .trustdiff/baseline.json")
-	return cmd
-}
-
-func (a *App) newScanCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "scan [<path>]",
-		Short: "Evaluate every entry of every lockfile found under a path",
-		Args:  cobra.MaximumNArgs(1),
-		RunE:  notImplemented("scan"),
-	}
-	cmd.Flags().Bool("update-baseline", false, "write the observed trust signals to .trustdiff/baseline.json")
-	return cmd
-}
-
 func (a *App) newDoctorCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor [<path>]",
@@ -55,18 +29,6 @@ func (a *App) newBaselineCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  notImplemented("baseline"),
 	}
-}
-
-func (a *App) newHookCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "hook",
-		Short: "Manage the git pre-commit and pre-push hook that runs diff",
-	}
-	cmd.AddCommand(
-		&cobra.Command{Use: "install", Short: "Install the git hook", Args: cobra.NoArgs, RunE: notImplemented("hook install")},
-		&cobra.Command{Use: "uninstall", Short: "Remove the git hook", Args: cobra.NoArgs, RunE: notImplemented("hook uninstall")},
-	)
-	return cmd
 }
 
 func (a *App) newVersionCommand() *cobra.Command {

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vahapogut/trustdiff/internal/lockfile"
 	"github.com/vahapogut/trustdiff/internal/model"
 	"github.com/vahapogut/trustdiff/internal/policy"
 	"github.com/vahapogut/trustdiff/internal/registry"
@@ -33,11 +34,22 @@ const (
 const cooldownExcludedCheck = "young-version"
 
 // Input is one subject as the caller names it: a ref with or without a version,
-// the lockfile location it came from, and whether it is a direct dependency.
+// the lockfile location it came from, whether it is a direct dependency, and the
+// lockfile entry itself when the subject was read from a lockfile.
 type Input struct {
 	Ref      model.PackageRef
 	Location *model.Location
 	Direct   bool
+	// Lock is the lockfile entry the subject came from, nil for a ref named on
+	// the command line. The runner puts it on Subject.Lock, where the checks that
+	// judge the lockfile rather than the registry (TD013, TD014) read it.
+	Lock *lockfile.Entry
+	// BaseVersion is the version the base lockfile locked, when diff evaluates an
+	// entry whose version moved. It is the version the project actually had,
+	// which is not always the release the registry calls previous: upgrading
+	// across several releases makes them differ, and brief section 4.1 asks for
+	// both. The runner loads it into Subject.PreviousInBase when it differs.
+	BaseVersion string
 }
 
 // Runner evaluates subjects. Evaluate resolves bare refs to their latest stable
@@ -255,6 +267,7 @@ func (rn *run) evaluate(ctx context.Context, in *Input, res *resolution) Outcome
 		Ref:            res.ref,
 		Location:       in.Location,
 		Direct:         in.Direct,
+		Lock:           in.Lock,
 		Now:            rn.now,
 		Settings:       rn.policy.Effective(res.ref.Ecosystem),
 		ResolvedLatest: res.latest,
@@ -269,6 +282,7 @@ func (rn *run) evaluate(ctx context.Context, in *Input, res *resolution) Outcome
 	if reason := rn.load(ctx, s); reason != "" {
 		return skipAll(&out, applicable, reason, false)
 	}
+	rn.loadBase(ctx, s, in.BaseVersion)
 
 	outages := s.outageReasons()
 	out.Subject.Findings = append(out.Subject.Findings, rn.expiredAllows(s)...)
@@ -437,6 +451,33 @@ func (rn *run) loadPrevious(ctx context.Context, s *Subject) {
 	}
 	copied := *prev
 	s.Previous = &copied
+}
+
+// loadBase fetches the version the base lockfile locked, when diff named one and
+// it is neither the evaluated version nor the release the registry calls
+// previous. Upgrading across several releases makes those differ, and what the
+// project actually had is the comparison a pull request gate cares about (brief
+// section 4.1). A failure leaves PreviousInBase nil and is recorded like any
+// other previous-version failure, so a check that wanted it skips rather than
+// comparing against nothing.
+func (rn *run) loadBase(ctx context.Context, s *Subject, baseVersion string) {
+	if baseVersion == "" || baseVersion == s.Ref.Version {
+		return
+	}
+	if s.Previous != nil && s.Previous.Ref.Version == baseVersion {
+		return
+	}
+	ref := s.Ref.WithVersion(baseVersion)
+	info, err := rn.loader.VersionInfo(ctx, ref)
+	if err != nil {
+		rn.log.Debug("base version details unavailable", "ref", ref.String(), "error", err)
+		if _, seen := s.Unavailable[SourcePrevious]; !seen {
+			s.Unavailable[SourcePrevious] = err
+		}
+		return
+	}
+	copied := *info
+	s.PreviousInBase = &copied
 }
 
 // expiredAllows builds one expired-allow finding per expired entry whose package
