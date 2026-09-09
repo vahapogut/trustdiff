@@ -96,6 +96,79 @@ func TestTD005InstallScriptIntroduced(t *testing.T) {
 	}
 }
 
+// When diff knows the version the project actually had, the check compares
+// against it as well: a script the release before this one already carried is
+// still new to a project upgrading from further back.
+func TestTD005ComparesWithTheBaseVersionToo(t *testing.T) {
+	script := map[string]string{"postinstall": "node scripts/setup.js"}
+	tests := []struct {
+		name          string
+		previous      map[string]string
+		base          map[string]string
+		wantFinding   bool
+		wantSinceBase bool
+		text          []string
+	}{
+		{
+			name:          "the previous release already had it but the locked version did not",
+			previous:      script,
+			base:          nil,
+			wantFinding:   true,
+			wantSinceBase: true,
+			text:          []string{"1.2.0, already declared it", "1.0.0, did not", "new to this project"},
+		},
+		{
+			name:          "neither had it",
+			previous:      nil,
+			base:          nil,
+			wantFinding:   true,
+			wantSinceBase: true,
+			text:          []string{"the version this change replaces, 1.0.0, declared none either"},
+		},
+		{
+			name:          "the locked version had it and the previous release did not",
+			previous:      nil,
+			base:          script,
+			wantFinding:   true,
+			wantSinceBase: false,
+			text:          []string{"the version this change replaces, 1.0.0, already declared one"},
+		},
+		{
+			name:        "both had it, nothing was introduced",
+			previous:    script,
+			base:        script,
+			wantFinding: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := subjectA(model.NPM, "lib", "1.3.0")
+			s.Version.Scripts = script
+			withPreviousA(s, "1.2.0").Scripts = tt.previous
+			basev := versionA(model.NPM, "lib", "1.0.0", agoA(90*dayA))
+			basev.Scripts = tt.base
+			s.PreviousInBase = &basev
+
+			want := outcomeA{}
+			if tt.wantFinding {
+				want.findings = 1
+			}
+			res := runA(t, "TD005", s, want)
+			if !tt.wantFinding {
+				return
+			}
+			f := res.Findings[0]
+			if got := f.Evidence["base_version"]; got != "1.0.0" {
+				t.Errorf("base_version = %v, want 1.0.0", got)
+			}
+			if got := f.Evidence["introduced_since_base"]; got != tt.wantSinceBase {
+				t.Errorf("introduced_since_base = %v, want %v", got, tt.wantSinceBase)
+			}
+			wantTextA(t, "explanation", f.Explanation, tt.text...)
+		})
+	}
+}
+
 func TestTD005EvidenceDoesNotAliasTheVersion(t *testing.T) {
 	s := subjectA(model.NPM, "lib", "1.3.0")
 	s.Version.Scripts = map[string]string{"postinstall": "node scripts/setup.js"}

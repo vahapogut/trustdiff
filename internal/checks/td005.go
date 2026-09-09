@@ -26,10 +26,13 @@ import (
 //
 // Evidence keys:
 //
-//	previous_version  the previous release, which declared no install-time script
+//	previous_version  the previous release
 //	script_names      the install-time scripts of the evaluated version, in
 //	                  lifecycle order (preinstall, install, postinstall, prepare)
 //	scripts           the scripts by name, with the command each one runs
+//	base_version      the version the base lockfile locked, when diff knows one
+//	                  and it is not the previous release (diff only)
+//	introduced_since_base  whether that version declared no install-time script (diff only)
 type td005 struct{}
 
 func init() { Register(td005{}) }
@@ -59,13 +62,42 @@ func (c td005) Run(_ context.Context, s *Subject) Result {
 	if reason, unknown := unknownFacet(s.Previous, model.FacetScripts); unknown {
 		return Skip(c.ID(), fmt.Sprintf("install scripts of the previous version %s unavailable: %s", s.Previous.Ref.Version, reason))
 	}
-	if s.Previous.HasInstallScript() {
+	// Two comparisons, when diff knows both: the release before this one, and the
+	// version the project actually had. A script the previous release already
+	// carried is still new to a project upgrading from further back.
+	base := s.PreviousInBase
+	if base != nil {
+		if _, unknown := unknownFacet(base, model.FacetScripts); unknown {
+			base = nil
+		}
+	}
+	fromPrevious := !s.Previous.HasInstallScript()
+	fromBase := base != nil && !base.HasInstallScript()
+	if !fromPrevious && !fromBase {
 		return Result{}
 	}
+
+	// The version to name is the one that had no script; when both did, the
+	// previous release is the closer comparison.
+	had := s.Previous
+	if !fromPrevious {
+		had = base
+	}
 	names := scriptNames(s.Version.Scripts)
-	title := fmt.Sprintf("Install script introduced: %s (%s had none)", strings.Join(names, ", "), s.Previous.Ref.Version)
+	title := fmt.Sprintf("Install script introduced: %s (%s had none)", strings.Join(names, ", "), had.Ref.Version)
 	explanation := fmt.Sprintf("%s declared no install-time script; %s declares %s, which npm runs with the installing user's permissions on every install of the package",
-		s.Previous.Ref.Version, ref.Version, scriptsText(s.Version.Scripts))
+		had.Ref.Version, ref.Version, scriptsText(s.Version.Scripts))
+	if base != nil && base.Ref.Version != s.Previous.Ref.Version {
+		switch {
+		case fromPrevious && fromBase:
+			explanation += fmt.Sprintf("; the version this change replaces, %s, declared none either", base.Ref.Version)
+		case fromBase:
+			explanation += fmt.Sprintf("; the release before this one, %s, already declared it, but the version this change replaces, %s, did not, so the script is new to this project",
+				s.Previous.Ref.Version, base.Ref.Version)
+		default:
+			explanation += fmt.Sprintf("; the version this change replaces, %s, already declared one", base.Ref.Version)
+		}
+	}
 	if implicitInstall(s.Version.Scripts) {
 		explanation += "; the install command is not declared in package.json but is npm's default for a package that ships a binding.gyp"
 	}
@@ -73,6 +105,10 @@ func (c td005) Run(_ context.Context, s *Subject) Result {
 		"previous_version": s.Previous.Ref.Version,
 		"script_names":     names,
 		"scripts":          copyScripts(s.Version.Scripts),
+	}
+	if base != nil && base.Ref.Version != s.Previous.Ref.Version {
+		evidence["base_version"] = base.Ref.Version
+		evidence["introduced_since_base"] = fromBase
 	}
 	return Result{Findings: []model.Finding{NewFinding(c, s, title, explanation, evidence)}}
 }
