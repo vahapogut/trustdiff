@@ -2,7 +2,7 @@
 
 trustdiff is a single-binary command line tool that finds trust regressions in a project's dependency tree before they land. A trust regression is not a change in a package's code but a change in the signals that made the package trustworthy: a version published by an account that never published one before, a release that lost the provenance every earlier release had, a version that adds an install script or a dependency the previous one did not have, a name one keystroke away from a popular package, a version with a known malicious or vulnerable advisory. Each of these preceded a real incident (event-stream in 2018, ua-parser-js in 2021, Shai-Hulud in 2025, axios in 2026), and each is visible in registry metadata before anyone has looked at the code. Cooldowns buy time and malware feeds catch what is already known; trustdiff tells you, across npm (npm, pnpm, yarn, bun), PyPI (pip, uv, poetry) and crates.io, in one binary with no account and no telemetry, that a dependency's trust signals regressed relative to its own history.
 
-Version 0.2.0 ships `check` for single packages and `diff` for pull requests, with the GitHub Action, the pre-commit hook and SARIF output. The package manager hardening audit (`doctor`, 0.3.0) and Deno/JSR support (0.4.0) follow; see the [roadmap](#roadmap).
+Version 0.3.0 ships `check` for single packages, `diff` for pull requests with the GitHub Action, the pre-commit hook and SARIF output, and `doctor` for the hardening settings your package managers already support. Deno and JSR support, the remaining lockfiles and the offline advisory mirror follow in 0.4.0; see the [roadmap](#roadmap).
 
 ## Demo
 
@@ -324,6 +324,12 @@ on_data_unavailable: warn         # or fail, which exits with code 3
 ecosystems:
   cargo:
     cooldown: 7d
+doctor:                           # the hardening scorecard
+  ci_min_severity: warn           # what `doctor --ci` exits 1 on
+  rules:
+    actions-sha-pin: off
+  pin_exceptions:
+    - "myorg/*"                   # workflow references allowed to keep a tag
 ```
 
 The complete file with every key and its default is [internal/policy/default.yaml](internal/policy/default.yaml). Precedence for a value that exists in several places: the command line flag (`--cooldown`, `--fail-on`), then the ecosystem override, then the policy value, then the built-in default.
@@ -349,6 +355,12 @@ Nobody should choose a supply-chain tool from a table written by one of the proj
 | [romnn/cooldown](https://github.com/romnn/cooldown) | MIT or Apache-2.0 | yes (Rust) | Go, Cargo, uv, pip, poetry, conda, pixi, npm, pnpm, yarn, bun, deno, bundler, hex, maven, gradle, SwiftPM | no: release age only | checks the resolved lockfile, no git base | no | not documented | not documented |
 | Native cooldowns | part of each package manager | not applicable | each its own | no | no | no | yes | the manager's own |
 
+Two rows overlap with `doctor` rather than with the checks. DepsGuard writes the same
+hardening settings and never evaluates a package; the native cooldowns are the settings
+themselves. `doctor` reads them, says which are missing and which are set to a value
+that does not do what its author expected, and recommends the wait the project's own
+policy already states.
+
 Native cooldowns: npm [`min-release-age`](https://docs.npmjs.com/cli/v11/using-npm/config), pnpm [`minimumReleaseAge`](https://pnpm.io/settings), Yarn [`npmMinimalAgeGate`](https://yarnpkg.com/configuration/yarnrc), Bun [`minimumReleaseAge`](https://bun.com/docs/pm/cli/install), Deno [`minimumDependencyAge`](https://docs.deno.com/runtime/packages/supply_chain/), uv [`exclude-newer`](https://docs.astral.sh/uv/reference/settings/), pip [`--uploaded-prior-to`](https://pip.pypa.io/en/stable/cli/pip_install/), and Cargo's `min-publish-age`, nightly only as of September 2026 ([tracking issue](https://github.com/rust-lang/cargo/issues/17009)). Use them; trustdiff's `doctor` will check that they are set correctly, and the checks above cover what a cooldown does not.
 
 ## What trustdiff does not do
@@ -362,7 +374,7 @@ Native cooldowns: npm [`min-release-age`](https://docs.npmjs.com/cli/v11/using-n
 ## Roadmap
 
 - 0.2.0: `diff --base <git-ref>` and `scan` over `package-lock.json`, `pnpm-lock.yaml`, `uv.lock` and `Cargo.lock`, findings on lockfile lines, TD013 and TD014, SARIF and markdown output, a composite GitHub Action, a pre-commit hook and `hook install`.
-- 0.3.0: `doctor` with a scorecard of every package manager's native hardening settings, version-aware keys and units, `--fix` with diff preview and backups, `--ci`, and a lint for unpinned GitHub Actions.
+- 0.3.0: `doctor` with a scorecard of every package manager's native hardening settings, version-aware keys and units, `--fix` with a diff preview and backups, `--ci`, and a lint for unpinned GitHub Actions.
 - 0.4.0: `yarn.lock`, `bun.lock`, `deno.lock`, `poetry.lock` and hash-pinned `requirements.txt`, the Deno and JSR registries, `trustdiff baseline` for PyPI and crates.io maintainer diffs, offline advisories from the OSV mirror, a Bun security scanner adapter, Homebrew and Scoop.
 
 The detailed plan with estimates is [docs/PLAN.md](docs/PLAN.md).
