@@ -34,7 +34,11 @@ jobs:
       - name: Set up Go from go.mod
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          # The newest 1.26 patch release, so the standard library carries every fix
+          # govulncheck knows about. go-version-file would install the bare "go 1.26.0"
+          # directive version (observed 2026-09-09) because GOTOOLCHAIN is local here.
+          go-version: "1.26.x"
+          check-latest: true
 
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
