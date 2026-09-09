@@ -64,16 +64,18 @@ With a Go toolchain (1.26 or newer):
 go install github.com/vahapogut/trustdiff/cmd/trustdiff@latest
 ```
 
-Homebrew and Scoop are built on every release and uploaded only once the tap repositories and their token exist, which is a step the repository owner takes by hand ([docs/releasing.md](docs/releasing.md)). Until then the two lines below do nothing.
+Homebrew and Scoop are built on every release and uploaded only once the tap repositories and their token exist, which is a step the repository owner takes by hand ([docs/releasing.md](docs/releasing.md)). Until then the lines below do nothing.
 
 ```sh
 # macOS, once the tap exists
-brew install vahapogut/tap/trustdiff
+brew install --cask vahapogut/tap/trustdiff
 
 # Windows, once the bucket exists
 scoop bucket add trustdiff https://github.com/vahapogut/scoop-bucket
 scoop install trustdiff
 ```
+
+The Homebrew line names the cask in full on purpose. Since Homebrew 6.0 a tap that is not one of Homebrew's own has to be trusted before its code will run, and installing a fully qualified name trusts that one cask and nothing else. `brew tap vahapogut/tap` followed by the short name needs a separate `brew trust --cask vahapogut/tap/trustdiff`, and `brew trust vahapogut/tap` accepts everything the tap ever holds, which is more than anyone should hand a third party.
 
 The way that works today, on every platform and without a Go toolchain, is to download a release from the [releases page](https://github.com/vahapogut/trustdiff/releases). Every release ships one archive per platform (`trustdiff_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows), `checksums.txt`, its cosign bundle `checksums.txt.sigstore.json`, an SPDX SBOM per archive and GitHub build provenance. Download the archive for your platform together with the two checksum files and verify before you unpack; substitute the archive you downloaded for `trustdiff_0.4.0_linux_amd64.tar.gz`.
 
@@ -108,6 +110,30 @@ The way that works today, on every platform and without a Go toolchain, is to do
      --owner vahapogut \
      --signer-workflow vahapogut/trustdiff/.github/workflows/release.yml
    ```
+
+On macOS, expect the first run to be refused with a message about the developer not being verified. That is Gatekeeper, and it is expected: these binaries carry a cosign signature and build provenance, which anyone can check, rather than an Apple Developer ID, which expires and says nothing about what is in the binary. [docs/adr/0004-macos-notarization.md](docs/adr/0004-macos-notarization.md) records why that trade was made deliberately.
+
+Gatekeeper only looks at a file that something marked as downloaded, and what marks it is the program that fetched it and the program that unpacked it. So how you got trustdiff decides whether you meet it at all:
+
+| How you got trustdiff | First run |
+|---|---|
+| `go install` | fine |
+| `curl` or `wget`, then `tar -xzf` in a terminal | fine |
+| Downloaded in a browser, then `tar -xzf` in a terminal | fine |
+| Downloaded in a browser, then unpacked by double-clicking in Finder | refused |
+| `brew install --cask` | refused |
+
+Browsers mark what they download; `curl`, `wget` and `scp` do not. Unpacking with `tar` from a shell does not carry the mark onto the extracted binary, while Finder's Archive Utility does. The verification steps above are shell commands, so following them lands you in a clean row. Homebrew is the exception in the other direction: it marks what a cask installs on purpose, and the flag that used to turn that off has been removed, so the tap is not a way around this.
+
+Where you do meet it, clear the mark once you have verified the download:
+
+```sh
+xattr -d com.apple.quarantine "$(which trustdiff)"
+```
+
+Do not double-click the binary in Finder to run it. Finder hands a command line tool to Terminal as a document, and Apple documents that as always blocked, notarized or not.
+
+The last two rows are what notarization would fix and nothing else would, which is the whole content of that decision. None of this was tested on a Mac; this environment has none, and it is read off Apple's and Homebrew's own documentation.
 
 If any step fails, do not run the binary; [SECURITY.md](SECURITY.md) says where to report it. These three steps stay the recommended install even after the tap and the bucket exist, because they are the only route that lets you check the signature and the provenance yourself. [docs/releasing.md](docs/releasing.md) describes how a release is built and what is left to do before `brew` and `scoop` work.
 
