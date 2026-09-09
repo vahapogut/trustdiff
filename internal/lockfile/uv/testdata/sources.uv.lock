@@ -1,0 +1,156 @@
+# Hand written for the parser tests: one package per source kind, packages whose
+# hash the file leaves out, the two places a project states its own dependencies,
+# and two versions of one package so that a dependency pinned by version marks only
+# the version it names. uv did not write this file.
+version = 1
+revision = 3
+requires-python = ">=3.11"
+
+[manifest]
+members = ["member-package"]
+requirements = [{ name = "From_Manifest" }]
+
+[manifest.dependency-groups]
+lint = [{ name = "from-manifest-group" }]
+
+[[package]]
+name = "editable-member"
+version = "0.2.0"
+source = { editable = "packages/editable" }
+dependencies = [
+    { name = "from-editable" },
+]
+
+[[package]]
+name = "example-project"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "Flask_SQLAlchemy" },
+    { name = "from-registry" },
+    { name = "two-versions", version = "2.0.0" },
+]
+
+[package.optional-dependencies]
+speedups = [
+    { name = "from-url" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "from-git" },
+]
+
+[[package]]
+name = "flask-sqlalchemy"
+version = "3.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/93/8d/bea55fda1cfa9e2c34e6b8dcfea6c3d1d20bcbf6b9c9fb9d0d3b0e5f4a3c/flask_sqlalchemy-3.1.1.tar.gz", hash = "sha256:e4b68bb881802dda1a7d878b2fc84c06d1ee57fb40b874d3dc97dabfa36b8312", size = 81899 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1d/6a/89963a5c6ecf166e8be29e0d1bf6806d3f4c0e2ab3f5fc9bb28c4b3c5bd1/flask_sqlalchemy-3.1.1-py3-none-any.whl", hash = "sha256:4ba4be7f419dc72f4efd8802d69974803c37259dd42f3913b0dcf75c9447e0a0", size = 25125 },
+]
+
+[[package]]
+name = "from-directory"
+version = "0.6.0"
+source = { directory = "libs/from-directory" }
+
+[[package]]
+name = "from-editable"
+version = "0.7.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/aa/bb/from_editable-0.7.0-py3-none-any.whl", hash = "sha256:5b3d1e9c9c2c9f1d3a2b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091", size = 4096 },
+]
+
+[[package]]
+name = "from-git"
+version = "0.4.0"
+source = { git = "https://github.com/example/from-git?rev=6f21b0a#6f21b0a3f7c5d8e9b0a1c2d3e4f5a6b7c8d9e0f1" }
+
+[[package]]
+name = "from-manifest"
+version = "5.0.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cc/dd/from_manifest-5.0.0-py3-none-any.whl", hash = "sha256:6c4e2fa0d1b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d", size = 8192 },
+]
+
+[[package]]
+name = "from-manifest-group"
+version = "0.9.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ee/ff/from_manifest_group-0.9.0-py3-none-any.whl", hash = "sha256:7d5f30b1e2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d", size = 2048 },
+]
+
+[[package]]
+name = "from-path"
+version = "0.5.0"
+source = { path = "vendor/from_path-0.5.0-py3-none-any.whl" }
+wheels = [
+    { path = "vendor/from_path-0.5.0-py3-none-any.whl", hash = "sha256:8e6041c2d3e4f5061728394a5b6c7d8e9f0a1b2c3d4e5f60718293a4b5c6d7e8" },
+]
+
+[[package]]
+name = "from-registry"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "transitive" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/11/22/from_registry-1.0.0.tar.gz", hash = "sha256:9f7152d3e4f5061728394a5b6c7d8e9f0a1b2c3d4e5f60718293a4b5c6d7e8f0", size = 16384 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/44/from_registry-1.0.0-py3-none-any.whl", hash = "sha256:a0826314e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071829304152637485a9", size = 12288 },
+]
+
+[[package]]
+name = "from-url"
+version = "3.2.0"
+source = { url = "https://downloads.example.com/from-url-3.2.0.tar.gz" }
+sdist = { url = "https://downloads.example.com/from-url-3.2.0.tar.gz", hash = "sha256:b193742536475869a0b1c2d3e4f50617283940a5b6c7d8e9f0a1b2c3d4e5f607" }
+
+[[package]]
+name = "member-package"
+version = "0.3.0"
+source = { directory = "packages/member" }
+dependencies = [
+    { name = "from-directory" },
+]
+
+[[package]]
+name = "no-hash"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "http://mirror.example.com/simple/no_hash-2.0.0-py3-none-any.whl" },
+]
+
+[[package]]
+name = "transitive"
+version = "1.5.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/55/66/transitive-1.5.0-py3-none-any.whl", hash = "sha256:c2a4851637485960a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718", size = 6144 },
+]
+
+[[package]]
+name = "two-versions"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/77/88/two_versions-1.0.0-py3-none-any.whl", hash = "sha256:d3b5962748596071a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70819", size = 1024 },
+]
+
+[[package]]
+name = "two-versions"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/99/aa/two_versions-2.0.0-py3-none-any.whl", hash = "sha256:e4c60738495a6182b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70819a2", size = 1024 },
+]
+
+[[package]]
+name = "unknown-origin"
+version = "0.8.0"
+source = { conda = "https://conda.example.com/pkgs/main" }

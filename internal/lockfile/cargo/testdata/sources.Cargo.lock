@@ -1,0 +1,90 @@
+# Hand written for the parser tests: one package per source kind, a package whose
+# checksum the file leaves out, and two versions of one crate so that a dependency
+# pinned by version marks only the version it names. Cargo did not write this file.
+version = 4
+
+[[package]]
+name = "workspace-root"
+version = "0.1.0"
+dependencies = [
+ "Inflector",
+ "from-git",
+ "from-elsewhere",
+ "from-path",
+ "from-registry",
+ "from-sparse-registry",
+ "no-checksum",
+ "two-versions 2.0.0",
+]
+
+[[package]]
+name = "Inflector"
+version = "0.11.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe438c63458706e03479442743baae6c88256498e6431708f6dfc520a26515d3"
+
+[[package]]
+name = "from-elsewhere"
+version = "0.3.0"
+source = "svn+https://svn.example.com/crates/from-elsewhere"
+
+[[package]]
+name = "from-git"
+version = "0.4.0"
+source = "git+https://github.com/example/from-git?rev=6f21b0a#6f21b0a3f7c5d8e9b0a1c2d3e4f5a6b7c8d9e0f1"
+
+[[package]]
+name = "from-path"
+version = "0.5.0"
+source = "path+file:///home/dev/checkouts/from-path"
+
+[[package]]
+name = "from-registry"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e60d3430d3a69478ad0993f19238d2df97c507009a52b3c10addcd7f6bcb916"
+dependencies = [
+ "transitive",
+]
+
+[[package]]
+name = "from-sparse-registry"
+version = "2.1.0"
+source = "sparse+https://crates.example.com/index/"
+checksum = "40723b8fb387abc38f4f4a37c09073622e41dd12327033091ef8950659e6dc0c"
+
+[[package]]
+name = "member-crate"
+version = "0.1.0"
+dependencies = [
+ "member-dependency",
+]
+
+[[package]]
+name = "member-dependency"
+version = "9.9.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
+
+[[package]]
+name = "no-checksum"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "transitive"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8e3592472072e6e22e0a54d5904d9febf8508f65fb8552499a1abc7d1078c3a"
+
+[[package]]
+name = "two-versions"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a66a03ae7c801facd77a29370b4faec201768915ac14a721ba36f20bc9c209b"
+
+[[package]]
+name = "two-versions"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3cb5ba0dc43242ce17de99c180e96db90b235b8a9fdc9543c96d2209116bd9f"

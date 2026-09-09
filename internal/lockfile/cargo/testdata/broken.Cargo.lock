@@ -1,0 +1,22 @@
+# Hand written for the parser tests: three tables no reader can make sense of, and
+# one good package after them, so that a partial parse stays a parse. Cargo did not
+# write this file.
+version = 4
+
+[[package]]
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "no-version"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = 42
+version = "3.0.0"
+
+[[package]]
+name = "readable"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e60d3430d3a69478ad0993f19238d2df97c507009a52b3c10addcd7f6bcb916"

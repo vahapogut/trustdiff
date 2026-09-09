@@ -1,0 +1,24 @@
+# Hand written for the parser tests: the shape of the first format versions, which
+# declare no version key and keep the checksums in a [metadata] table, including the
+# "<none>" a git dependency gets there. Cargo did not write this file.
+[[package]]
+name = "old-project"
+version = "0.1.0"
+dependencies = [
+ "from-git 0.4.0 (git+https://github.com/example/from-git)",
+ "old-dependency 1.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "from-git"
+version = "0.4.0"
+source = "git+https://github.com/example/from-git#6f21b0a3f7c5d8e9b0a1c2d3e4f5a6b7c8d9e0f1"
+
+[[package]]
+name = "old-dependency"
+version = "1.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[metadata]
+"checksum from-git 0.4.0 (git+https://github.com/example/from-git#6f21b0a3f7c5d8e9b0a1c2d3e4f5a6b7c8d9e0f1)" = "<none>"
+"checksum old-dependency 1.2.3 (registry+https://github.com/rust-lang/crates.io-index)" = "d9a60d1e5c3b7a0ff0e9bd7d31ad2a49b5e1c2c1f8ea3d7bd5e6ff6a52b7f6f6"
