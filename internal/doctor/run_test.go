@@ -243,3 +243,32 @@ func resultFor(t *testing.T, card *Scorecard, id string) Result {
 	t.Fatalf("%s is not among the %d results", id, len(card.Results))
 	return Result{}
 }
+
+// Deno's lock key turns the lockfile itself on and off, which is a different thing
+// from not freezing it: with "lock": false nothing pins what an install fetches.
+func TestDenoLockfileTurnedOffIsWrongRatherThanMissing(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "deno.json", "{\n  \"lock\": false\n}\n")
+	managers := []Manager{{ID: Deno, Root: ".", Files: []string{"deno.json"}}}
+	card, err := Evaluate(root, managers, Options{Params: Params{Cooldown: threeDays, Now: fixedNow()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := resultFor(t, card, "DR042")
+	if got.Status != StatusWrong || !strings.Contains(got.Detail, "turned off") {
+		t.Fatalf("lock false = %s (%s), want wrong", got.Status, got.Detail)
+	}
+	// The object form is the configured lockfile, and must not be reported at all.
+	other := t.TempDir()
+	write(t, other, "deno.json", "{\n  \"lock\": { \"frozen\": true }\n}\n")
+	card, err = Evaluate(other, managers, Options{Params: Params{Cooldown: threeDays, Now: fixedNow()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resultFor(t, card, "DR042"); got.Status != StatusSet {
+		t.Errorf("an object lock = %s (%s), want set", got.Status, got.Detail)
+	}
+	if got := resultFor(t, card, "DR041"); got.Status != StatusSet {
+		t.Errorf("frozen inside the object = %s (%s), want set", got.Status, got.Detail)
+	}
+}

@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"strings"
 	"time"
 
 	"github.com/vahapogut/trustdiff/internal/configfile"
@@ -13,6 +14,7 @@ import (
 func init() {
 	Register(denoMinimumDependencyAge)
 	Register(denoFrozenLockfile)
+	Register(denoLockfileOn)
 }
 
 // Deno takes more spellings than anything else here: an ISO 8601 duration, a bare
@@ -58,4 +60,53 @@ var denoFrozenLockfile = &Rule{
 	Verified: "2026-09-09",
 	Fixable:  true,
 	Note:     "The lock key also takes a plain boolean, and false there turns the lockfile off altogether.",
+}
+
+// The lock key turns the lockfile itself on and off, and off is a different thing
+// from not frozen: a project with no lockfile pins nothing at all, and the frozen
+// rule above would report that as a missing setting, which understates it by a
+// long way.
+var denoLockfileOn = &Rule{
+	ID:      "DR042",
+	Name:    "deno-lockfile",
+	Manager: Deno,
+	Summary: "keep the lockfile that pins what an install fetches",
+	Targets: []Target{
+		{Name: "deno.json", Format: configfile.FormatJSON, Key: configfile.Key{"lock"}},
+		{Name: "deno.jsonc", Format: configfile.FormatJSONC, Key: configfile.Key{"lock"}},
+	},
+	// Reported and never written. Turning a lockfile back on changes what the next
+	// install resolves, and a project that switched it off did so on purpose or by
+	// a mistake only a person can tell apart.
+	Desired:  denoLockfile{},
+	Level:    model.LevelWarn,
+	Docs:     "https://docs.deno.com/runtime/reference/deno_json/",
+	Verified: "2026-09-09",
+	Note:     "Deno writes a lockfile by default. \"lock\": false turns it off, and an object form such as {\"path\": \"deno.lock\", \"frozen\": true} keeps it on and configures it.",
+}
+
+// denoLockfile judges the lock key, which Deno lets a project write as a boolean or
+// as an object. Neither BoolSetting nor EnumSetting can read both, and reading only
+// one of them would report the other as wrong.
+type denoLockfile struct{}
+
+// Want is the boolean form, which is what a project that turned the lockfile off
+// would write to turn it back on.
+func (denoLockfile) Want(*Params) configfile.Literal { return configfile.Bool(true) }
+
+// Describe says what the rule asks for.
+func (denoLockfile) Describe(*Params) string { return "a lockfile, which is the default" }
+
+// Judge reads the two shapes the key takes.
+func (denoLockfile) Judge(v *configfile.Value, _ *Params) (Status, string) {
+	if !v.Found() {
+		return StatusSet, "not set, and Deno writes a lockfile by default"
+	}
+	if v.Kind == configfile.KindMap {
+		return StatusSet, "configured as an object, so the lockfile is on"
+	}
+	if strings.EqualFold(strings.TrimSpace(v.Text), "false") {
+		return StatusWrong, "the lockfile is turned off, so nothing pins what an install fetches and the frozen setting below has nothing to freeze"
+	}
+	return StatusSet, ""
 }

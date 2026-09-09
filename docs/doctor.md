@@ -104,6 +104,7 @@ releases.
 | DR031 | Bun | `[install.security] scanner` | `bunfig.toml` | package name | 1.3 | info |
 | DR040 | Deno | `minimumDependencyAge` | `deno.json` | ISO 8601 | 2.6 | warn |
 | DR041 | Deno | `lock.frozen` | `deno.json` | boolean | | warn |
+| DR042 | Deno | `lock` | `deno.json` | boolean or object | | warn |
 | DR050 | uv | `exclude-newer` | `pyproject.toml`, `uv.toml` | words | 0.9.17 | warn |
 | DR051 | uv | `audit.malware-check` | `pyproject.toml`, `uv.toml` | boolean | 0.11.31 | info |
 | DR060 | pip | `uploaded-prior-to` | `pip.conf` | ISO 8601 | 26.1 | warn |
@@ -143,6 +144,13 @@ Yarn 4.15 raised the default to one day. `npmPreapprovedPackages` takes the pack
 that skip the wait, and the gate can also be set per scope under `npmScopes`.
 
 **Bun counts seconds**, the only manager here that does.
+
+**Deno's `lock` key turns the lockfile itself on and off**, which is a different
+thing from not freezing it: `"lock": false` means nothing pins what an install
+fetches, and the frozen setting then has nothing to freeze. The object form,
+`{"path": "deno.lock", "frozen": true}`, keeps it on and configures it. Neither is
+written by a fix, because turning a lockfile back on changes what the next install
+resolves.
 
 **Deno takes several spellings**: an ISO 8601 duration, a bare number of minutes, an
 absolute date, an RFC 3339 timestamp, or an object with an `age` and an `exclude`
