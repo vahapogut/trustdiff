@@ -3,6 +3,11 @@
 # 2026-09-09; Set Columns and Set Rows need v0.12.0 or later.
 #
 # The trustdiff binary must be on PATH. Local run: vhs docs/demo.tape
+#
+# Known limitation, seen on the runner three times on 2026-09-09: the second card is
+# long enough to outgrow the recorded screen, and the wait for the summary line times
+# out. Give the terminal more rows, or record a shorter second command, before wiring
+# the resulting GIF back into the README.
 
 Output docs/demo.gif
 

@@ -6,9 +6,7 @@ Version 0.1.0 ships `check`. The lockfile diff for pull requests (`diff`, 0.2.0)
 
 ## Demo
 
-![trustdiff check npm:express@4.19.2 pypi:requests cargo:serde, then npm:flatmap-stream@0.1.1](docs/demo.gif)
-
-The same two commands as text, captured against the live registries on 2026-09-09:
+Two commands against the live registries, captured on 2026-09-09:
 
 ```
 $ trustdiff check npm:express@4.19.2 pypi:requests cargo:serde
