@@ -1,0 +1,26 @@
+{
+  "version": "4",
+  "specifiers": {
+    "jsr:@acme/readable@1": "1.0.0"
+  },
+  "jsr": {
+    "@acme/no-version": {
+      "integrity": "5225f8b9e8ec8185d5a99152997cc54689f2c83b596c0d4424b6c30d3e376da4"
+    },
+    "novers": {
+      "integrity": "08bed1a59f18a3b11cef34b883a00ff692f0a90b6ade9dad271eae54eb62b1f8"
+    },
+    "@acme/readable@1.0.0": {
+      "integrity": "32c080aeadfef30364f817ccb9cd378e056d896548896763ea4f66832df1b466"
+    }
+  },
+  "npm": {
+    "not-an-object@1.0.0": "sha512-voxEoZR7+YfaPAi3eDO81dTaNRPOrzjhCN6ViiKHx6yx0RDfCBePwgoTTI/2upYXARU9EsuObLUDh7IeMSYBXw=="
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@acme/readable@1",
+      "jsr:@acme/never-resolved@2"
+    ]
+  }
+}

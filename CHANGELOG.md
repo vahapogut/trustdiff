@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Lockfile parsers for `yarn.lock` (Yarn 2 and later), `bun.lock`, `deno.lock`, `poetry.lock` and hash-pinned `requirements` files. Each entry carries where it was resolved from, its integrity hash and the line it sits on, and an entry a parser cannot read is dropped with a reason rather than failing the file.
+- A parser can be chosen by the directory a file sits in, which is what a `requirements` directory holding `main.txt` and `dev.txt` needs: `dev.txt` alone says nothing, and accepting every `.txt` file would swallow the repository.
+
 ## [0.3.0] - 2026-09-09
 
 The hardening scorecard. `doctor` reads the settings a repository's package managers already support, says which are set, which are missing and which are set to something that does not do what the person who wrote it expected, and writes the ones it can.

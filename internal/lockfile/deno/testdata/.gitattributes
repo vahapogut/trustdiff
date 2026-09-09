@@ -1,0 +1,4 @@
+# The CRLF fixtures keep their line endings. The repository normalizes every text
+# file to LF, and a fixture whose only job is to prove CRLF is read would lose the
+# thing it tests.
+crlf.* -text

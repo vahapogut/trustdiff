@@ -1,0 +1,180 @@
+# Hand written for the parser tests: one package per source kind, the flags that
+# decide Dev and Optional, and versions whose artifact lists exercise the choice of
+# hash. Poetry did not write this file.
+
+[[package]]
+name = "dev-and-main"
+version = "9.0.0"
+description = "needed to run and to develop, so not a development dependency"
+optional = false
+python-versions = ">=3.9"
+groups = ["main", "dev"]
+files = [
+    {file = "dev_and_main-9.0.0-py3-none-any.whl", hash = "sha256:49f99d62abad30e598b4fce52a2d0769bbc0f1b7f3c2f63d8423dc85d6d2db20"},
+    {file = "dev_and_main-9.0.0.tar.gz", hash = "sha256:59ba406332ed2476505d862bb66fd893743e222b9ce3305fbaec9a94b14f0ead"},
+]
+
+[[package]]
+name = "dev-only"
+version = "8.0.0"
+description = "only a development group needs it"
+optional = false
+python-versions = ">=3.9"
+groups = ["dev", "test"]
+files = [
+    {file = "dev_only-8.0.0-py3-none-any.whl", hash = "sha256:b8a89bf6de59ffee3767fb86b214c228f2bdc31ec332abac22943aa3e0e360a6"},
+    {file = "dev_only-8.0.0.tar.gz", hash = "sha256:c0dea4eca6f6ee9515d2114a01aaf73362747a53c62562f13df013691435daa2"},
+]
+
+[[package]]
+name = "from-default-index"
+version = "1.0.0"
+description = "no source table, so the index poetry was configured with"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "from_default_index-1.0.0-py3-none-any.whl", hash = "sha256:dc6d1a3ae454b0eb4c21fce95cbd3899e717517c728048699123727b4a0bb501"},
+    {file = "from_default_index-1.0.0.tar.gz", hash = "sha256:d7f6e2823602fd2c51318e0f809dc3b7301e3db9b5a725d7bbcac624bbc57432"},
+]
+
+[[package]]
+name = "from-directory"
+version = "0.1.0"
+description = "a directory on the machine, installed in place"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = []
+develop = true
+
+[package.source]
+type = "directory"
+url = "libs/from-directory"
+
+[[package]]
+name = "from-elsewhere"
+version = "0.3.0"
+description = "an origin this parser does not know"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = []
+
+[package.source]
+type = "svn"
+url = "https://svn.example.com/dists/from-elsewhere"
+
+[[package]]
+name = "from-file"
+version = "0.2.0"
+description = "an archive on the machine"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "from_file-0.2.0-py3-none-any.whl", hash = "sha256:a18bb9f7921e7bbcf4f59db55e006d59c4c0253df4ef919ca56d077ed50df8be"},
+]
+
+[package.source]
+type = "file"
+url = "vendor/from_file-0.2.0-py3-none-any.whl"
+
+[[package]]
+name = "from-git"
+version = "0.4.0"
+description = "a git repository whose commit poetry resolved"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = []
+develop = false
+
+[package.source]
+type = "git"
+url = "https://github.com/example/from-git.git"
+reference = "main"
+resolved_reference = "6f21b0a3f7c5d8e9b0a1c2d3e4f5a6b7c8d9e0f1"
+
+[[package]]
+name = "from-git-unresolved"
+version = "0.5.0"
+description = "a git repository locked before poetry recorded the commit"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = []
+
+[package.source]
+type = "git"
+url = "https://github.com/example/from-git-unresolved.git"
+reference = "v0.5.0"
+
+[[package]]
+name = "From_Legacy.Index"
+version = "2.0.0"
+description = "an index other than the default, and a name PEP 503 rewrites"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "From_Legacy.Index-2.0.0.tar.gz", hash = "sha256:eb25e1b422510ea63d0e3242421fb067f47b8a9dacf873b55f1c7d37299ca6c2"},
+]
+
+[package.source]
+type = "legacy"
+url = "https://pypi.example.com/simple"
+reference = "internal"
+
+[[package]]
+name = "from-url"
+version = "3.1.0"
+description = "an archive fetched by url"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "from_url-3.1.0.tar.gz", hash = "sha256:aaaaaf7a115ff4092a39039a04db010d621a41d34d86ff6624f9ad825c1636be"},
+]
+
+[package.source]
+type = "url"
+url = "https://files.example.com/from_url-3.1.0.tar.gz"
+
+[[package]]
+name = "no-files"
+version = "6.0.0"
+description = "a version the file lists no artifact for"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = []
+
+[[package]]
+name = "only-wheels"
+version = "5.0.0"
+description = "no sdist, so the first wheel carries the hash"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "only_wheels-5.0.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:6d1a537d0cd881b25d4b8157d5a0d7ae878529e98055983cbf0bc06e46170a73"},
+    {file = "only_wheels-5.0.0-cp311-cp311-manylinux_2_17_x86_64.whl", hash = "sha256:0b583b86599a4e3efda9482805c31b960ba69c5874d3f6ab02d630a74d29acf6"},
+]
+
+[[package]]
+name = "optional-extra"
+version = "7.0.0"
+description = "installed only with an extra"
+optional = true
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "optional_extra-7.0.0-py3-none-any.whl", hash = "sha256:5609294e0b97df749a708a06fa52a727ae65f0ba218ec9eb1c2635320596b2be"},
+    {file = "optional_extra-7.0.0.tar.gz", hash = "sha256:3070b5a48bc2c02f3a61a95aceff8f5e1a328a624871c59325006e9dcb24fa7e"},
+]
+
+[metadata]
+lock-version = "2.1"
+python-versions = ">=3.9"
+content-hash = "d2be1b3ea1d0e77f76a20aa7bd35e7d6f6f76ba07f0f54ba5cfe66bfc51b6f7f"

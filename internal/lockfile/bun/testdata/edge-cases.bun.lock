@@ -1,0 +1,90 @@
+{
+  // Written by hand for the trustdiff test suite. It describes no real package,
+  // and its "//" and "/* */" comments are here because bun.lock is JSONC and the
+  // standard JSON decoder will not read one.
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "edge-cases",
+      "version": "0.1.0",
+      "dependencies": {
+        "@acme/widgets": "^1.0.0",
+        "from-git": "git+ssh://git@example.test/example/ssh-dep.git#main",
+        "from-github": "github:example/gh-dep",
+        "from-tarball": "https://files.example.test/from-tarball-2.0.0.tgz",
+        "local-folder": "file:./vendor/local-folder",
+        "local-link": "link:./vendor/local-link",
+        "member": "workspace:packages/member",
+        "no-hash": "^1.0.0",
+        "other-tool": "^3.0.0",
+        "private-tool": "^2.0.0",
+        "substituted": "^1.2.3",
+        "third-tool": "^4.0.0",
+        "widgets-v1": "npm:@acme/widgets@^1.0.0",
+      },
+      "devDependencies": {
+        "dev-only-tool": "^3.0.0",
+      },
+      "optionalDependencies": {
+        "native-only": "^2.0.0",
+      },
+    },
+    "packages/member": {
+      "name": "member",
+      "version": "0.4.0",
+      "dependencies": {
+        "transitive": "^5.0.0",
+      },
+    },
+  },
+  "overrides": {
+    "transitive": "5.4.0",
+  },
+  "packages": {
+    "@acme/widgets": ["@acme/widgets@1.4.2", "", {}, "sha512-m+qzHo/bBErLUZrD/WlDqK2XbPaVJvFHl7ywqAhx6JDv1SszPOsNU41oVEaQssZ5gCNpB+5r0WmqpeyMky9aUQ=="],
+
+    "dev-only-tool": ["dev-only-tool@3.2.0", "", {}, "sha512-Z0J6MkCprEa3FkQirRq2TLPhR0pYs6N73AReJI2cs0Z7inQNjY3Agtkd+h8cfmxganPBoKetnBB3m39U7dgBOg=="],
+
+    /* A git resolution. Its third element is bun's own checkout tag, not a hash of
+       the package, so it must not be recorded as the integrity. */
+    "from-git": ["from-git@git+ssh://git@example.test/example/ssh-dep.git#4f1d2c6f6b0e2f2f3c9f0f1a2b3c4d5e6f708192", { "dependencies": { "transitive": "^5.0.0" } }, "6b0e2f2f3c9f0f1a"],
+
+    "from-github": ["from-github@github:example/gh-dep#9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c", {}, "9f8e7d6c5b4a3928"],
+
+    "from-tarball": ["from-tarball@https://files.example.test/from-tarball-2.0.0.tgz", {}, "sha512-GUhtD8luPx3nMmLqW2fXYOeNFWjogGOeK3gqMxQz5nrCf9QzRlUnmfD8qloEtQkuXQLSRn51uEbuLj12lqwS8Q=="],
+
+    "local-folder": ["local-folder@file:./vendor/local-folder", {}],
+
+    "local-link": ["local-link@link:./vendor/local-link", {}],
+
+    "member": ["member@workspace:packages/member"],
+
+    "native-only": ["native-only@2.1.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-6gCv9hjxLAhAPpg3ubQPWkn8sWsRyDFowQIHMc5jtGCDMWdojIKK01d0HG275Wm51Mu+Zw2LAxeiJmsG+JrITQ=="],
+
+    // A registry entry whose hash the file leaves empty, which is what TD014 reports.
+    "no-hash": ["no-hash@1.0.0", "", {}, ""],
+
+    "other-tool": ["other-tool@3.0.0", "https://npm.example.test/artifactory/api/npm/npm-all/other-tool/-/other-tool-3.0.0.tgz", {}, "sha512-v1O+3o0jBO4Ibhkhzz7mu7zwF3a0RsSM7ca5WEwo1Ta9T7aO1xu8yH4jxAszn82gcCbJoRlBVggBrEE+QOvIvg=="],
+
+    "private-tool": ["private-tool@2.0.0", "https://npm.example.test/artifactory/api/npm/npm-all/private-tool/-/private-tool-2.0.0.tgz", {}, "sha512-kewA8YR8Wl502jx3tWQQbS1ZIyfQ6I37PK6rvU3cKyGXuaaY4jrbSYXMlTyiukWMC9BknX4WtTFyLt7UFbycoQ=="],
+
+    /* The same tarball layout on a host the rest of the file does not install from,
+       which is what a repointed entry looks like. */
+    "substituted": ["substituted@1.2.3", "https://elsewhere.example.test/substituted/-/substituted-1.2.3.tgz", {}, "sha512-Ze9uGlqiIPdi6kdRZcntZlYYF6cy7DKleq+64+YMDHSF5777i8zP5njUxRRQYdFK2zn+ECsxE1DHLW1a6NtiIA=="],
+
+    "third-tool": ["third-tool@4.0.0", "https://npm.example.test/artifactory/api/npm/npm-all/third-tool/-/third-tool-4.0.0.tgz", {}, "sha512-eeOVZ2p75ui7sgbPDWZt7/MWZQ0UgDEvt/JZfJsQQHetuUvzACPTpzuz1RZA110Fv746aUm2Vz7WAV0cWrvb8g=="],
+
+    "transitive": ["transitive@5.4.0", "", {}, "sha512-y4r2v9hIpqGrZB+h0yWljm1bZRHkS/5rw+2lBEMedLOKlQrxHvHEAp1zVgmFeMQBKAmbps2yeO44uP6Cb6vR5Q=="],
+
+    // An alias: the key is what the manifest asked for and the resolution names the
+    // package that is really installed.
+    "widgets-v1": ["@acme/widgets@1.4.2", "", {}, "sha512-m+qzHo/bBErLUZrD/WlDqK2XbPaVJvFHl7ywqAhx6JDv1SszPOsNU41oVEaQssZ5gCNpB+5r0WmqpeyMky9aUQ=="],
+
+    // A package that ships inside its parent's tarball, so it has no hash of its own.
+    "from-git/bundled-child": ["bundled-child@1.0.0", "", { "bundled": true }, ""],
+
+    // A nested copy, which is not a direct dependency however the root names it.
+    "member/transitive": ["transitive@4.9.0", "", {}, "sha512-3cnl8R4/g5kop+P94F1j1N+myI9Cll35JY+txcToUSA8A/kzFW62hPtmuXeBNnbvYeEo+aqDAx4cB+frMqIARw=="],
+  }
+}

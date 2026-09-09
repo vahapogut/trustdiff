@@ -1,0 +1,75 @@
+#
+# Hand written for the parser tests: every shape of line the parser has to decide
+# about, in the order the package comment lists them. pip-compile did not write this
+# file, and none of these hashes belongs to a real artifact.
+#
+--index-url https://pypi.example.com/simple
+--extra-index-url https://internal.example.com/simple
+--find-links ./wheels
+--require-hashes
+--trusted-host pypi.example.com
+-i https://pypi.example.com/simple
+
+# An entry: a name, one pinned version and two hashes over three physical lines.
+requests==2.32.3 \
+    --hash=sha256:bd0c80ddb748e530fc1c4dec6b66909a820f246d37f72b3461438ce1fcd8a30a \
+    --hash=sha256:d3661b32ef71c53e839964f1652bec8ac7b30a882a656a9e5055bbd4043b48f1
+    # via -r requirements/main.in
+
+# An entry whose name carries extras and whose requirement carries a marker.
+Requests_Toolbelt[security]==1.0.0 ; python_version >= "3.9" \
+    --hash=sha256:3e964af9127513d2ccfa9bed549b2cc7b4629bc43cc9f507d22b8d0afabd9292
+
+# An entry on one line, with the hash given as a separate argument.
+six==1.17.0 --hash sha256:c2730c816acbc0dcf6dfc3824f3af0a90298c916d0c7f22786914e995fdd09ad
+
+# A comment that ends in a backslash does not continue into the line below it \
+flask==3.1.0 --hash=sha256:c30697e239f1b8f6406b32bba73904fbb5a84d85fbdf79b286dcc708ae03f51c
+
+# A comment ends a continuation instead of joining it, which leaves the requirement
+# above with no hash and the hash below on a line of its own.
+urllib3==2.5.0 \
+# the comment that ends it
+    --hash=sha256:c9dc6377f6a74853962e6f3b7d9797369bed9f3aada45fedb9d84712f9c5e051
+
+# A range, not a pin.
+django>=4.2
+
+# A compound specifier is not one version.
+jinja2==3.1.4,!=3.1.5 --hash=sha256:c34aaa3c7f065f58955d8a6522cbe38d43012b068c68fff552cbc090abf5ba3b
+
+# A wildcard is a range written the other way round.
+click==8.1.* --hash=sha256:e5c7ffac26fed654fe62045898f55b551a0dc120badf3d116bcd364418f3ec16
+
+# Arbitrary equality compares the version as a string.
+werkzeug===3.0.1 --hash=sha256:dcbb4c34bbc7c46f93dc877e4a15143523daba0a5194fc182d2d1204d8cf8d6d
+
+# A bare name.
+pyyaml
+
+# A marker with no pin is still no pin.
+tomli ; python_version < "3.11"
+
+# A pin nothing guards.
+certifi==2024.8.30
+
+# A hash pip would not accept, with no algorithm in front of it.
+packaging==24.2 --hash=deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+
+# A URL requirement.
+https://files.example.com/wheels/wheel_only-1.0.0-py3-none-any.whl
+
+# A URL requirement with a name in front of it.
+sqlalchemy @ https://files.example.com/sqlalchemy-2.0.36.tar.gz
+
+# An editable install of the project itself.
+-e .
+
+# An editable install from a repository.
+-e git+https://github.com/example/pkg.git#egg=pkg
+
+# An include, whose entries are missing from this parse.
+-r requirements/main.txt
+
+# A constraints file, which is an include too.
+-c constraints.txt

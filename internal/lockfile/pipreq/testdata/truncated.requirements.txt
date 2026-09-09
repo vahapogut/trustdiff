@@ -1,0 +1,6 @@
+#
+# Hand written for the parser tests: a file cut in the middle of a requirement, so
+# that it ends on a line continuation with nothing after it.
+#
+alembic==1.18.5 \
+    --hash=sha256:a671f494d483c1e9886704b2e49bd5624b00557ca58674af709f4fc092e05832 \

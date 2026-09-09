@@ -1,0 +1,45 @@
+{
+  // Written by hand for the trustdiff test suite. It describes no real package,
+  // and its "//" and "/* */" comments are here because bun.lock is JSONC and the
+  // standard JSON decoder will not read one.
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "edge-cases",
+      "version": "0.1.0",
+      "dependencies": {
+        "@acme/widgets": "^1.0.0",
+        "from-git": "git+ssh://git@example.test/example/ssh-dep.git#main",
+        "from-github": "github:example/gh-dep",
+        "from-tarball": "https://files.example.test/from-tarball-2.0.0.tgz",
+        "local-folder": "file:./vendor/local-folder",
+        "local-link": "link:./vendor/local-link",
+        "member": "workspace:packages/member",
+        "no-hash": "^1.0.0",
+        "other-tool": "^3.0.0",
+        "private-tool": "^2.0.0",
+        "substituted": "^1.2.3",
+        "third-tool": "^4.0.0",
+        "widgets-v1": "npm:@acme/widgets@^1.0.0",
+      },
+      "devDependencies": {
+        "dev-only-tool": "^3.0.0",
+      },
+      "optionalDependencies": {
+        "native-only": "^2.0.0",
+      },
+    },
+    "packages/member": {
+      "name": "member",
+      "version": "0.4.0",
+      "dependencies": {
+        "transitive": "^5.0.0",
+      },
+    },
+  },
+  "overrides": {
+    "transitive": "5.4.0",
+  },
+  "packages": {
+    "@acme/widgets": ["@acme/widge

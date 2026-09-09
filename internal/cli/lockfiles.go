@@ -22,10 +22,15 @@ import (
 	// a format only if something imports its package. These are that import: diff
 	// and scan ask internal/lockfile which parser reads a file, and without them
 	// the answer would always be none.
+	_ "github.com/vahapogut/trustdiff/internal/lockfile/bun"
 	_ "github.com/vahapogut/trustdiff/internal/lockfile/cargo"
+	_ "github.com/vahapogut/trustdiff/internal/lockfile/deno"
 	_ "github.com/vahapogut/trustdiff/internal/lockfile/npm"
+	_ "github.com/vahapogut/trustdiff/internal/lockfile/pipreq"
 	_ "github.com/vahapogut/trustdiff/internal/lockfile/pnpm"
+	_ "github.com/vahapogut/trustdiff/internal/lockfile/poetry"
 	_ "github.com/vahapogut/trustdiff/internal/lockfile/uv"
+	_ "github.com/vahapogut/trustdiff/internal/lockfile/yarn"
 )
 
 // pruned are the directory names a scan never descends into. They hold installed

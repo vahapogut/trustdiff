@@ -1,0 +1,64 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@acme/direct@1": "1.2.3",
+    "jsr:@acme/no-hash@~0.1": "0.1.0",
+    "npm:@prefresh/vite@^2.4.8": "2.4.11_preact@10.29.1",
+    "npm:member-only@^3": "3.0.0",
+    "npm:package-json-dep@^2": "2.5.0",
+    "npm:preact@^10": "10.29.1"
+  },
+  "jsr": {
+    "@acme/direct@1.2.3": {
+      "integrity": "b5c602496a6fa3ec200351d4253576677c198da714d1f4f90a86e3854de53b7a",
+      "dependencies": [
+        "jsr:@acme/transitive"
+      ]
+    },
+    "@acme/no-hash@0.1.0": {},
+    "@acme/transitive@4.5.6": {
+      "integrity": "6b5de5b92d1216afb3b7f17eba3ebfc6c710c103cc75e7cc813e5262e018e63a"
+    }
+  },
+  "npm": {
+    "@prefresh/vite@2.4.11_preact@10.29.1": {
+      "integrity": "sha512-ROhuZ8gTEGWrNl7LlLeg7Ar5aalecxOoGu4L1QIWZ1gOFHBhoyWRi+UsI7+J1dJJ1nOWyrqysgnEzWepxbXBBQ==",
+      "dependencies": [
+        "preact"
+      ]
+    },
+    "member-only@3.0.0": {
+      "integrity": "sha512-KX6mr4TzISahFxjJcT4MwKcz88PLWGsmp4lyDhy0997yccn9OL6qXgwgdz6NIGH4AOCB9Ip542E7NbjZPN9i3A=="
+    },
+    "package-json-dep@2.5.0": {
+      "integrity": "sha512-lApKvL11PGDe9WF41HDp/TjRDi1x4mkIUTD3LlAlKShmGEHX9J4t85uI/CRDm3SqcZIpirTgK/q7AFppag3PUA=="
+    },
+    "preact@10.29.1": {
+      "integrity": "sha512-OtNJxrFf2gXNRppQtHgpyEp8V0kGv+R5dzkJ+4z75LgbFg5p4d/aW6TZ93NyoApWVHFzcqw5AhSU4rdU9SXBDg=="
+    }
+  },
+  "remote": {
+    "https://deno.land/x/oak@v12.6.1/mod.ts": "2f7634ed386ba948d7e71a358ba5d56e9306f8de2793b56db4f7d490c67641ed"
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@acme/direct@1",
+      "jsr:@acme/no-hash@~0.1",
+      "npm:@prefresh/vite@^2.4.8",
+      "npm:preact@^10",
+      "https://deno.land/x/oak@v12.6.1/mod.ts"
+    ],
+    "packageJson": {
+      "dependencies": [
+        "npm:package-json-dep@^2"
+      ]
+    },
+    "members": {
+      "packages/tool": {
+        "dependencies": [
+          "npm:member-only@^3"
+        ]
+      }
+    }
+  }
+}

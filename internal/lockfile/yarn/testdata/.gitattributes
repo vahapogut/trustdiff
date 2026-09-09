@@ -1,0 +1,5 @@
+# The repository's top level .gitattributes normalizes every file to LF. This one
+# fixture exists to be read with Windows line endings, so it is stored byte for
+# byte instead: normalizing it would leave it a copy of the others and the case
+# untested. TestParseReadsCarriageReturns fails if the carriage returns go.
+crlf.yarn.lock -text

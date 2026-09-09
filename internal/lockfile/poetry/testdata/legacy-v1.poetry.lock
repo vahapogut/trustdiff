@@ -1,0 +1,42 @@
+# Hand written for the parser tests: the first format versions, which named one
+# group in "category" and kept the artifact hashes in [metadata.files] instead of on
+# the package. Poetry did not write this file.
+
+[[package]]
+name = "old-runtime"
+version = "1.2.3"
+description = "the runtime group, spelled the way poetry 1 spelled it"
+category = "main"
+optional = false
+python-versions = "*"
+
+[[package]]
+name = "Old_Dev.Tool"
+version = "4.5.6"
+description = "a development group, and a name PEP 503 rewrites"
+category = "dev"
+optional = false
+python-versions = "*"
+
+[[package]]
+name = "old-optional"
+version = "7.8.9"
+description = "installed only with an extra"
+category = "main"
+optional = true
+python-versions = "*"
+
+[metadata]
+lock-version = "1.1"
+python-versions = "^3.7"
+content-hash = "3f0c8b1d7e2a4c6b9f1d5e8a2c4b6d8f0a2c4e6b8d0f2a4c6e8b0d2f4a6c8e0b"
+
+[metadata.files]
+old-runtime = [
+    {file = "old_runtime-1.2.3-py3-none-any.whl", hash = "sha256:2fe676854e6c7a055cb3ddfd4759f0f8b316c02ce0e212637c5f894e84ce6340"},
+    {file = "old-runtime-1.2.3.tar.gz", hash = "sha256:ef1808c302c0f0e9aa6d6abcbe9a7b1b82ffb4e1fee44a0853f818b4202e5bc4"},
+]
+"Old_Dev.Tool" = [
+    {file = "Old_Dev.Tool-4.5.6.tar.gz", hash = "sha256:d1c0feabb10dd9b63cb93b3c0794c7aa5d44f58307030b7123ee8258a55cab7a"},
+]
+old-optional = []
