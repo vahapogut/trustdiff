@@ -130,10 +130,14 @@ release:
 # does not set "url.verified", which v2.18.1 itself deprecated after Homebrew
 # removed the stanza.
 #
-# Neither vahapogut/homebrew-tap nor vahapogut/scoop-bucket exists yet, and the
-# release job is given only the automatic GITHUB_TOKEN, which can write to this
-# repository and to no other. Both blocks therefore skip the upload unless
-# TAP_GITHUB_TOKEN is present in the environment. The test is an environment
+# The automatic GITHUB_TOKEN the release job runs under can write to this
+# repository and to no other, so pushing into vahapogut/homebrew-tap and
+# vahapogut/scoop-bucket needs a second credential. The release workflow already
+# passes it through as TAP_GITHUB_TOKEN; until the secret behind it exists, that
+# expands to the empty string. Both blocks therefore skip the upload unless
+# TAP_GITHUB_TOKEN is present AND not empty, which is what isEnvSet tests and is
+# the difference between a guard that works and one that inverts itself on an
+# unset GitHub Actions secret. The test is an environment
 # variable rather than a command line flag so that reading the workflow is
 # enough to see whether a release will touch the tap. When the variable is
 # absent goreleaser still writes the cask and the manifest into dist/, logs that

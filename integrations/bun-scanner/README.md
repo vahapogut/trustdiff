@@ -103,13 +103,15 @@ The package has no dependencies of any kind, `@types/bun` included, which is why
 
 ## Publishing, for the repository owner
 
-Nothing in this repository publishes this package, and no workflow here holds an npm credential. Publishing is a one-time setup plus a release workflow, both done by the owner under their own npm account. As of 2026-09-10 the `@trustdiff` scope is unregistered on npm and `@trustdiff/bun-scanner` does not exist, so all of the following is still open.
+No npm credential exists in this repository and none is meant to. The publishing itself is done by [`.github/workflows/npm-publish.yml`](../../.github/workflows/npm-publish.yml), through npm's trusted publishing: GitHub mints an OIDC token for that one workflow file, npm exchanges it for a short lived credential, and there is no secret to leak. It runs on a version tag rather than on the GitHub release, because a release created by the automatic `GITHUB_TOKEN` does not start another workflow run. It reads the version out of `package.json`, skips when the registry already has it, asserts the tarball holds four files, and runs `bun test` before it publishes anything.
 
-1. **Create the scope.** Sign in to npmjs.com and create the `trustdiff` organization, or claim the scope on the personal account. Turn on two-factor authentication first.
-2. **Publish the first version by hand.** npm's trusted publishing is configured per package on a page that only exists once the package does, so the first version cannot come from OIDC. From `integrations/bun-scanner`, run `npm publish --access public` from a machine you control, with 2FA. Check `npm pack --dry-run` first and confirm the tarball holds only `src/index.ts`, `README.md`, `LICENSE` and `package.json`.
-3. **Add the trusted publisher.** On the package settings page on npmjs.com, or with `npm trust github --repo vahapogut/trustdiff --file <the publish workflow filename>` (npm 11.15.0 or newer), name this repository and the filename of the workflow that will publish. Then restrict token-based publishing on the package, so a leaked token cannot publish a release.
-4. **Write the publish workflow.** It is not in this repository yet and is deliberately not part of the test workflow. It needs `permissions: id-token: write` for OIDC, npm 11.5.1 or newer with Node 22.14.0 or newer, every `uses:` pinned to a full commit SHA as everywhere else here, and a trigger on the release tag. With trusted publishing configured, npm generates and publishes the provenance attestation itself and no npm token is needed at all.
-5. **Keep the version in step.** `package.json` carries its own version. Bump it with the trustdiff release it belongs to and add a line to the root `CHANGELOG.md`.
+Three things still need the owner's own hands, once, and none of them can be scripted. As of 2026-09-10 the `@trustdiff` scope is unregistered on npm and `@trustdiff/bun-scanner` does not exist, so all three are open. [docs/releasing.md](../../docs/releasing.md) section 8 has them in full; in short:
+
+1. **Create the npm organization.** The scope cannot be a personal one: npm gives every account only the scope matching its own name, so `vahapogut` owns `@vahapogut` and `@trustdiff` needs an organization literally named `trustdiff`. Organizations are created on npmjs.com only. Choose the free plan, which allows unlimited public packages, and turn on two-factor authentication first, because the next two steps both require it.
+2. **Publish the first version by hand.** Trusted publishing cannot create a package that does not exist yet, so version 0.4.0 goes out from a machine where a person can answer a two-factor prompt. Run `npm pack --dry-run` first and confirm the tarball holds only `src/index.ts`, `README.md`, `LICENSE` and `package.json`.
+3. **Add the trusted publisher.** `npm trust github --repo vahapogut/trustdiff --file npm-publish.yml`, which needs npm 11.15.0 or newer and two-factor authentication, or the same thing through the package settings page. Then restrict token-based publishing on the package. The workflow's file name is part of that contract: renaming it breaks publishing until the trusted publisher is reconfigured.
+
+After that, bump `version` here in the same commit as the trustdiff release it belongs to, add a line to the root `CHANGELOG.md`, and the tag publishes it.
 
 ## License
 

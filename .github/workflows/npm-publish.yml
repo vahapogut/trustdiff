@@ -1,0 +1,210 @@
+# Stages integrations/bun-scanner on npm as @trustdiff/bun-scanner.
+#
+# There is no npm token anywhere in this repository and there is not meant to be.
+# The job goes through npm's trusted publishing, which exchanges the OIDC token
+# GitHub mints for this workflow for a short lived credential npm issues on the
+# spot. That is why "id-token: write" is the one unusual permission below and why
+# no secret is referenced: a leaked repository secret cannot publish this package,
+# because there is no secret to leak.
+#
+# It stages rather than publishes, and that is deliberate. Since 2026-09-03 every
+# trusted publishing configuration can stage by default and direct publishing is
+# opt in per configuration, which npm recommends leaving alone because staging
+# puts a person between a build and a version the world can install. This project
+# exists to say that a package which changed hands deserves a look before it lands,
+# so opting out of the one place it can practise that would be a strange thing to
+# do. A staged version is on the registry and nobody can install it until it is
+# approved:
+#
+#   npm stage list @trustdiff/bun-scanner    what is waiting
+#   npm stage download <stage-id>            read what the job built
+#   npm stage approve <stage-id>             make it public, with a 2FA prompt
+#   npm stage reject <stage-id>              throw it away
+#
+# The npmjs.com package page does the same thing through a form. To make this fully
+# automatic instead, enable direct publishing on the trusted publisher and change
+# the stage step below back to "npm publish"; that trade is a real one and belongs
+# in a commit message, not in a flag somebody flips quietly.
+#
+# The file name matters. Trusted publishing is configured against a repository
+# and a workflow file name, so npm will only accept a publish that comes from
+# ".github/workflows/npm-publish.yml" in vahapogut/trustdiff. Renaming this file
+# breaks publishing until the trusted publisher is reconfigured to the new name.
+#
+# Before this workflow can succeed, three things have to exist, and none of them
+# can be created from here. docs/releasing.md section 8 has the steps:
+#   1. The npm organisation named trustdiff, which is what makes the scope
+#      @trustdiff usable. A personal account only ever owns the scope matching
+#      its own name, so @vahapogut is free and @trustdiff needs the org.
+#   2. Version 0.4.0 published by hand, once. npm cannot create a package through
+#      trusted publishing: npm/cli issue 8544, "Allow publishing initial version
+#      with OIDC", was still open on 2026-09-10, so the first version has to come
+#      from a person who can answer a two-factor prompt.
+#   3. The trusted publisher itself, added with "npm trust github" or on the
+#      package settings page, naming this repository and this file. The default it
+#      is created with, staging only, is the one this workflow expects.
+#
+# Versions were read on 2026-09-10: npm 12.0.2 is current and its engines field
+# asks for node ^22.22.2 || ^24.15.0 || >=26.0.0; trusted publishing itself needs
+# npm 11.5.1 or newer on node 22.14.0 or newer, and "npm trust" needs npm 11.15.0
+# or newer. Pinning npm 12.0.2 on the newest node 24 clears all three.
+#
+# Every "uses:" is pinned to a full commit sha, as everywhere else here. Pins were
+# resolved on 2026-09-10 with
+#   gh api repos/<owner>/<repo>/git/ref/tags/<tag> --jq '.object | "\(.type) \(.sha)"'
+#   actions/checkout v7.0.1     3d3c42e5aac5ba805825da76410c181273ba90b1
+#   actions/setup-node v7.0.0   820762786026740c76f36085b0efc47a31fe5020
+#   oven-sh/setup-bun v2.2.0    0c5077e51419868618aeaa5fe8019c62421857d6
+
+name: npm-publish
+
+# A tag push, not the release. goreleaser creates the GitHub release with the
+# automatic GITHUB_TOKEN, and GitHub documents that events triggered by that
+# token do not start another workflow run, so "release: published" would never
+# fire here. The tag push is made by a person, so it does. Nothing in this job
+# reads a release asset, so it does not matter that it may finish first.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: stage @trustdiff/bun-scanner
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # A fork that pushes a version tag would otherwise try to publish this
+    # package from somebody else's repository. npm would refuse it, but failing
+    # here is clearer than failing at the registry.
+    if: github.repository == 'vahapogut/trustdiff'
+    permissions:
+      contents: read
+      # The whole point. Without this the OIDC token cannot be minted and npm
+      # falls back to asking for a credential that does not exist.
+      id-token: write
+    defaults:
+      run:
+        # Repeated at job level on purpose: a job that declares defaults.run
+        # replaces the workflow's map rather than merging into it.
+        shell: bash
+        working-directory: integrations/bun-scanner
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          # The same release the bun-scanner test workflow pins.
+          bun-version: "1.4.2"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # npm 12 asks for ^24.15.0 on the 24 line; setup-node resolves the
+          # newest 24.x, which has been past that since 2026.
+          node-version: "24"
+
+      - name: Install the npm that supports trusted publishing
+        run: npm install --global npm@12.0.2
+
+      - name: The tests must pass before anything is staged
+        env:
+          # The suite runs a stub binary in a temporary directory and must never
+          # reach the network. Only the upper case spellings are set: a
+          # workflow's environment names are case insensitive, so listing
+          # http_proxy beside HTTP_PROXY is the same key twice and GitHub
+          # rejects the file. Port 9 is the discard port.
+          HTTP_PROXY: http://127.0.0.1:9
+          HTTPS_PROXY: http://127.0.0.1:9
+          NO_PROXY: ""
+          DO_NOT_TRACK: "1"
+        run: bun test
+
+      - name: Decide whether this version needs staging
+        id: decide
+        # The scanner's version is bumped with the trustdiff release it belongs
+        # to, but not every release changes the scanner, so most tags will find
+        # the version already on the registry. That is a skip and not a failure:
+        # republishing an existing version is an error npm would raise at the
+        # very end of the job, after the tests have already passed, and a red
+        # release for "nothing to do" teaches people to ignore red releases.
+        run: |
+          version=$(node --print "require('./package.json').version")
+          name=$(node --print "require('./package.json').name")
+          echo "name=${name}" >>"${GITHUB_OUTPUT}"
+          echo "version=${version}" >>"${GITHUB_OUTPUT}"
+          echo "${name} in this checkout is ${version}"
+
+          tag="${GITHUB_REF_NAME}"
+          case "${GITHUB_REF_TYPE}" in
+          tag)
+            if [ "v${version}" != "${tag}" ]; then
+              echo "::notice::the tag is ${tag} and package.json says ${version}; publishing what package.json says"
+            fi
+            ;;
+          esac
+
+          if npm view "${name}@${version}" version >/dev/null 2>&1; then
+            echo "publish=false" >>"${GITHUB_OUTPUT}"
+            echo "::notice::${name}@${version} is already on the registry; nothing to publish"
+          else
+            echo "publish=true" >>"${GITHUB_OUTPUT}"
+          fi
+
+      - name: The tarball must hold four files and nothing else
+        if: steps.decide.outputs.publish == 'true'
+        # What ships is what the README promises ships. A stray file here is how
+        # a package starts carrying something nobody reviewed, and the "files"
+        # array in package.json is easy to widen by accident.
+        run: |
+          want="LICENSE README.md package.json src/index.ts"
+          got=$(npm pack --dry-run --json | node --eval '
+            let raw = "";
+            process.stdin.on("data", (d) => { raw += d; });
+            process.stdin.on("end", () => {
+              const files = JSON.parse(raw)[0].files.map((f) => f.path).sort();
+              console.log(files.join(" "));
+            });
+          ')
+          echo "tarball: ${got}"
+          if [ "${got}" != "${want}" ]; then
+            echo "::error::the tarball holds '${got}', and this package ships '${want}'"
+            exit 1
+          fi
+
+      - name: Stage
+        if: steps.decide.outputs.publish == 'true'
+        # --provenance and --access are also set in package.json's publishConfig.
+        # They are repeated here because npm's own guide pages and its config
+        # reference disagreed on 2026-09-10 about whether a scoped package
+        # defaults to public, and because a field report from January 2026 found
+        # the automatic provenance path not firing. Saying it twice costs nothing;
+        # finding out afterwards that a package went out private, or without an
+        # attestation, costs a republish. A flag given here also wins over
+        # publishConfig, which is how the manual first publish turns provenance off
+        # on a laptop, where npm refuses to generate one at all.
+        run: npm stage publish --provenance --access public
+
+      - name: Say what happens next
+        if: always()
+        run: |
+          name="${{ steps.decide.outputs.name }}"
+          version="${{ steps.decide.outputs.version }}"
+          if [ "${{ steps.decide.outputs.publish }}" != "true" ]; then
+            echo "nothing staged; ${name}@${version} is already published"
+            exit 0
+          fi
+          echo "::notice::${name}@${version} is staged and nobody can install it yet."
+          echo "Approve it to make it public:"
+          echo "  npm stage list ${name}"
+          echo "  npm stage download <stage-id>   # read what this job built"
+          echo "  npm stage approve <stage-id>    # asks for a one time password"
+          echo "The package page on npmjs.com does the same through a form."

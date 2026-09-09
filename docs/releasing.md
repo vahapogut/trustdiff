@@ -5,8 +5,11 @@ A release is one annotated git tag. Everything that follows the tag is done by
 to write releases. Nobody builds a release on a laptop and uploads it.
 
 Read this page top to bottom the first time. The steps that need a human are
-marked **manual**; there are five of them and three are one-time setup for the
-Homebrew tap and the Scoop bucket.
+marked **manual**. Two of them recur on every release, the changelog and the
+readme edits before the tag and the tag itself. The rest are one-time setup: two
+for the Homebrew tap and the Scoop bucket in section 6, and three for the npm
+package in section 8. None of the one-time steps blocks a release; a tag with
+none of them done still produces a complete, signed, verifiable release.
 
 Pinned versions live in `tools.mk` and are repeated in the release workflow:
 goreleaser v2.18.1, cosign v3.1.3, syft v1.51.1. Bump them in `tools.mk` first,
@@ -192,18 +195,38 @@ from this repository.
 
 ### 6.1 Manual: create the two repositories
 
-Both are public and empty, with `main` as the default branch. goreleaser creates
-the files inside them on the first release that has the token.
+One command creates both, makes them public, and gives each an initial commit
+holding a README and the project's LICENSE:
 
 ```sh
-gh repo create vahapogut/homebrew-tap  --public --description "Homebrew tap for trustdiff"
-gh repo create vahapogut/scoop-bucket  --public --description "Scoop bucket for trustdiff"
+sh scripts/create-taps.sh
 ```
 
-The name `homebrew-tap` is not decorative. It is what makes the tap addressable
-as `vahapogut/tap`, which is the form in the README. The cask lands in `Casks/`
-and the Scoop manifest in `bucket/`, which are the directories the two blocks in
-`.goreleaser.yaml` name.
+It is safe to run twice; a repository that already exists is left alone. Read it
+before running it, as with anything that creates something under your account.
+
+Two things about what it does are deliberate.
+
+**It commits a README rather than leaving the repositories empty.** goreleaser
+writes its file through the GitHub contents API, which will initialise a
+repository that has no commits, but only when the branch it is configured to push
+to is already that repository's default branch. Both blocks in `.goreleaser.yaml`
+name `main` explicitly, so a repository created with any other default branch
+fails the first release with `could not get ref "refs/heads/main"`. One commit
+removes the dependency.
+
+**It does not create `Casks/` or `bucket/`.** goreleaser creates them on the
+first publish. Seeding them would need a placeholder file, and a placeholder in
+the bucket would be wrong: Scoop counts what a bucket holds with a recursive
+listing under `bucket/` that includes hidden files and is not filtered to
+`*.json`, so a `.gitkeep` there makes `scoop bucket list` report two manifests
+where there is one. README and LICENSE belong at the repository root.
+
+The name `homebrew-tap` is not decorative. Homebrew resolves `brew tap <user>/<x>`
+to the repository `<user>/homebrew-<x>`, so `homebrew-tap` is what makes the tap
+addressable as `vahapogut/tap`, which is the form in the README. The cask lands in
+`Casks/`, which for a cask is the only location Homebrew looks in, and the Scoop
+manifest in `bucket/`.
 
 Before creating them, re-check that the name is still free: no `trustdiff` in
 homebrew-core or homebrew-cask, and no `trustdiff` in the main or extras Scoop
@@ -228,7 +251,7 @@ automatic `GITHUB_TOKEN` for that, and a token that can do both jobs is a token
 whose leak costs twice as much. Nothing in the tap or the bucket needs issues,
 pull requests, workflows or metadata write.
 
-### 6.3 Manual: store it as a secret and hand it to goreleaser
+### 6.3 Manual: store it as a secret
 
 Store the token as a repository secret on `vahapogut/trustdiff` named
 `TAP_GITHUB_TOKEN`:
@@ -237,21 +260,18 @@ Store the token as a repository secret on `vahapogut/trustdiff` named
 gh secret set TAP_GITHUB_TOKEN --repo vahapogut/trustdiff
 ```
 
-Then add one line to the goreleaser step in `.github/workflows/release.yml`, so
-that the secret actually reaches the process. The guard reads an environment
-variable rather than a command line flag precisely so that this line is the only
-place the decision is visible:
-
-```yaml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
-          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.epoch }}
-```
+That is the whole step. The goreleaser step in `.github/workflows/release.yml`
+already passes `TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}` through to the
+process, so nothing in this repository has to change: storing the secret is what
+flips the behaviour, and the next stable tag publishes.
 
 An unset secret expands to the empty string in a workflow, and the guard treats
-an empty value as absent, so removing the secret is enough to turn tap
-publishing off again without editing the configuration.
+an empty value as absent, so removing the secret is enough to turn tap publishing
+off again without editing the configuration. That is not incidental. goreleaser's
+`isEnvSet` returns true only when the variable is set **and** not empty; a naive
+implementation would return true for the empty string a missing secret expands
+to, and the guard would invert itself and try an authenticated push with no
+token on every release.
 
 ### 6.4 What the first release with the token looks like
 
@@ -268,23 +288,30 @@ The first stable tag is the first real write. Afterwards:
   version v0.4.0` adding `Casks/trustdiff.rb`.
 - `vahapogut/scoop-bucket` has a commit named `Scoop update for trustdiff
   version v0.4.0` adding `bucket/trustdiff.json`.
-- `brew install vahapogut/tap/trustdiff` on macOS, then `trustdiff version`.
-  Homebrew installs casks on macOS only; the Linux entries goreleaser writes
-  into the cask are never used, and Linux users take the archive or
-  `go install`.
+- `brew install --cask vahapogut/tap/trustdiff` on macOS, then `trustdiff
+  version`. The name is given in full because Homebrew 6.0 requires a tap that is
+  not one of its own to be trusted before its code runs, and a fully qualified
+  name trusts that one cask and nothing else. Homebrew installs casks on macOS
+  only; the Linux entries goreleaser writes into the cask are never used, and
+  Linux users take the archive or `go install`.
 - `scoop bucket add trustdiff https://github.com/vahapogut/scoop-bucket` and
   `scoop install trustdiff` on Windows, then `trustdiff version`.
 
 Two things to expect the first time:
 
 - **macOS Gatekeeper.** The binaries are signed with cosign, which macOS knows
-  nothing about, and they are not notarized with an Apple Developer ID. Homebrew
-  marks a cask download as quarantined, so the first run may be refused.
-  goreleaser documents a `hooks.post.install` that strips the quarantine
-  attribute with `xattr`, and this project does not use it, because stripping a
-  macOS security attribute by default is not a thing a supply chain tool should
-  ship. Decide before the first stable tag whether to notarize, to add a
-  `caveats` stanza that tells the user what they are seeing, or to accept it.
+  nothing about, and they are not notarized with an Apple Developer ID. That was
+  decided rather than deferred: [docs/adr/0004-macos-notarization.md](adr/0004-macos-notarization.md)
+  records why, which comes down to notarization not fixing the Finder case at all
+  and probably costing the byte-reproducible macOS archives. The README tells a
+  browser-download user what they will see and how to clear it. goreleaser
+  documents a `hooks.post.install` that strips the quarantine attribute with
+  `xattr`, and this project does not use it: stripping a macOS security check on
+  the user's behalf is exactly what a malicious cask would do. Note that the tap is
+  not a way around it either: Homebrew marks what a cask installs, which is why it
+  used to carry `--no-quarantine`, and that flag was removed rather than kept. A
+  cask install and a browser download hit the same wall and take the same one line
+  to clear.
 - **A bad token.** The GitHub release is published before the tap is written, so
   a token that cannot write to the tap leaves a complete, correct release behind
   and turns the job red at the very end. The release does not need to be redone;
@@ -296,3 +323,117 @@ Two things to expect the first time:
 2. Open the milestone for the next version and move anything that slipped.
 3. Check that the release page lists six archives, six SBOMs, `checksums.txt`
    and `checksums.txt.sigstore.json`. Twelve files plus two.
+
+## 8. The Bun scanner on npm
+
+`integrations/bun-scanner` is published separately, as `@trustdiff/bun-scanner`.
+It is not part of the release job and nothing in this repository holds an npm
+credential. `.github/workflows/npm-publish.yml` does the work, through npm's
+trusted publishing: GitHub mints an OIDC token for that workflow, npm exchanges it
+for a short lived credential, and no secret exists to leak. The workflow runs on a
+version tag, not on the GitHub release, because a release created by the automatic
+`GITHUB_TOKEN` does not start another workflow run.
+
+It stages rather than publishes. Since 2026-09-03 every trusted publishing
+configuration can stage by default and direct publishing is opt in per
+configuration, and npm recommends leaving it that way. A staged version sits on the
+registry where nobody can install it until a person approves it:
+
+```sh
+npm stage list @trustdiff/bun-scanner   # what is waiting
+npm stage download <stage-id>           # read what the job actually built
+npm stage approve <stage-id>            # make it public, asks for a one time password
+npm stage reject <stage-id>             # throw it away
+```
+
+The package page on npmjs.com does the same through a form. This is the one place
+trustdiff can practise what it argues for, so the automatic path is deliberately not
+taken; enabling direct publishing on the trusted publisher and changing the stage
+step back to `npm publish` is a real trade and belongs in a commit message.
+
+The workflow is idempotent for versions that are already public. It reads the
+version from `package.json`, asks the registry whether that version is there, and
+skips when it is. Most tags do not change the scanner, so most runs skip, and a skip
+is a notice rather than a failure: a red release for "nothing to do" teaches people
+to ignore red releases. A version that is staged but not yet approved is not on the
+registry, so re-running the job for the same tag tries to stage it twice; approve or
+reject the staged version first.
+
+Three things have to be done once, by a person, before any of that can work. None
+can be scripted, and all three were confirmed against npm's own documentation on
+2026-09-10.
+
+### 8.1 Manual: create the npm organisation
+
+The scope has to exist and it cannot be a personal one. npm gives every account the
+scope matching its own name, so `vahapogut` owns `@vahapogut` and nothing else;
+`@trustdiff` requires an organisation literally named `trustdiff`. Organisations are
+created on npmjs.com only. `npm org` manages the members of one that already exists
+and cannot create it, and there is no API for it.
+
+Choose the free plan. It allows unlimited public packages, which is all this needs.
+Turn on two-factor authentication on the account first: the next two steps both
+require it.
+
+If the name `trustdiff` turns out to be taken, the fallbacks are
+`@vahapogut/bun-scanner`, which needs no organisation at all, or the unscoped
+`trustdiff-bun-scanner`. Either means editing `name` in
+`integrations/bun-scanner/package.json`, the four references in its README, the
+`bunfig.toml` example in the root README, and the tarball assertion in the publish
+workflow.
+
+### 8.2 Manual: publish the first version by hand
+
+Trusted publishing cannot create a package that does not exist yet. npm/cli issue
+8544, "Allow publishing initial version with OIDC", was still open on 2026-09-10,
+so version 0.4.0 has to go out from a machine where a person can answer a
+two-factor prompt:
+
+```sh
+cd integrations/bun-scanner
+npm pack --dry-run
+npm publish --access public --provenance=false
+```
+
+`--provenance=false` is not optional here, and leaving it off is the mistake this
+paragraph exists to prevent. `package.json` sets `publishConfig.provenance: true`,
+which is right for the workflow and wrong on a laptop: npm generates provenance only
+on GitHub Actions and GitLab CI, and anywhere else it aborts the publish with
+`Automatic provenance generation not supported for provider`. A flag on the command
+line wins over `publishConfig`, which is why this works. `npm publish --dry-run`
+will not warn you, because a dry run returns before it reaches that check.
+
+Read what `npm pack --dry-run` lists before publishing. It must be exactly four
+files: `LICENSE`, `README.md`, `package.json` and `src/index.ts`. The workflow
+asserts the same four on every run, so this is the one time the check is yours to
+make.
+
+This first version goes out without a provenance attestation. Every version after it
+gets one, because every version after it comes from the workflow.
+
+### 8.3 Manual: add the trusted publisher
+
+With the package on the registry, point it at the workflow that may publish it:
+
+```sh
+npm trust github --repo vahapogut/trustdiff --file npm-publish.yml
+```
+
+`npm trust` needs npm 11.15.0 or newer and account-level two-factor authentication,
+and it will prompt for a one-time password; tokens that bypass two-factor are
+explicitly not accepted for it. The package settings page on npmjs.com does the
+same thing through a form.
+
+Leave the configuration at its default, which permits staging and not direct
+publishing. That is what the workflow expects, and it is what npm recommends.
+
+The file name is part of the contract. npm will only accept a publish that comes
+from `.github/workflows/npm-publish.yml` in `vahapogut/trustdiff`, so renaming that
+file breaks publishing until the trusted publisher is reconfigured. Afterwards,
+restrict token-based publishing on the package, so that a leaked classic token
+cannot publish a release the workflow did not build.
+
+From then on, bump `version` in `integrations/bun-scanner/package.json` in the same
+commit as the trustdiff release it belongs to, add a line to `CHANGELOG.md`, and the
+tag stages it. Approving the staged version is the last step of the release, after
+the checks in section 4.
