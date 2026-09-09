@@ -1,16 +1,26 @@
 // Package httpcache is the only way trustdiff talks to the network. Every registry
 // and advisory client goes through it, so this is where the polite behavior lives:
-// a disk cache keyed by URL with ETag and Last-Modified revalidation and a TTL per
-// entry, a per-host rate limiter (crates.io asks for one request per second), retries
-// with exponential backoff and jitter that honor Retry-After, a timeout per attempt,
-// an identifying User-Agent, and the --offline and --no-cache modes.
+// a disk cache keyed by request with ETag and Last-Modified revalidation and a TTL
+// per entry, a per-host rate limiter (crates.io asks for one request per second),
+// retries with exponential backoff and jitter that honor Retry-After, a timeout
+// per attempt, an identifying User-Agent, and the --offline and --no-cache modes.
+//
+// Get is the common case. Post exists for the batch query endpoints (OSV
+// querybatch, deps.dev versionbatch and findingsbatch), which are read-only
+// lookups that take their parameters in a JSON body. Post is cached, limited and
+// retried exactly like Get. The differences are that the sha256 of the body is
+// part of the cache key, that the body is never written to disk, and that an
+// expired entry is fetched again instead of revalidated, because conditional
+// headers do not apply to POST. Post must only be used for idempotent queries,
+// since a retry repeats the request.
 //
 // The cache is a flat directory of plain files. Each entry is a metadata file
-// <sha256>.json and a body file <sha256>.body, where the hash covers the method, the
-// URL and the Accept header. Both are written atomically, and an entry whose metadata
-// does not parse, or whose body is not the length the metadata recorded, is treated
-// as a miss. Stat and Clear operate on such a directory; Clear refuses to touch a
-// directory that holds anything this package did not write.
+// <sha256>.json and a body file <sha256>.body, where the hash covers the method,
+// the URL, the Accept header and, for a POST, the sha256 of the request body.
+// Both are written atomically, and an entry whose metadata does not parse, or
+// whose body is not the length the metadata recorded, is treated as a miss. Stat
+// and Clear operate on such a directory; Clear refuses to touch a directory that
+// holds anything this package did not write.
 package httpcache
 
 import (
@@ -34,7 +44,7 @@ const (
 	// Forever marks immutable data, for example per-version publish times: the
 	// entry is served from the cache for as long as it exists. A 404 is never
 	// immutable, whatever the caller asked for: the version may be published or
-	// replicated a moment later, so Get caps its freshness at DefaultTTL.
+	// replicated a moment later, so Get and Post cap its freshness at DefaultTTL.
 	Forever = time.Duration(math.MaxInt64)
 	// EnvDir names the environment variable that overrides the cache directory.
 	EnvDir = "TRUSTDIFF_CACHE_DIR"
@@ -58,29 +68,37 @@ const (
 	maxBodyBytes = 128 << 20
 )
 
-// ErrOffline is returned (wrapped) by Get when the client is offline and the URL is
-// not in the cache. Callers use errors.Is and report the check as skipped.
+// ErrOffline is returned (wrapped) by Get and Post when the client is offline and
+// the request is not in the cache. Callers use errors.Is and report the check as
+// skipped.
 var ErrOffline = errors.New("offline and not in the cache")
 
 // ErrForeignFiles is returned (wrapped) by Clear when the directory contains files
 // or subdirectories this package did not write, so a wrong directory is never wiped.
 var ErrForeignFiles = errors.New("refusing to clear a directory trustdiff did not fill")
 
-// ErrBodyTooLarge is returned (wrapped) by Get when a response body exceeds the
-// size cap. The request is not retried, because a second download would not be
-// smaller, and nothing is cached. Callers use errors.Is to report the reason
-// distinctly from a transport error.
+// ErrBodyTooLarge is returned (wrapped) by Get and Post when a response body
+// exceeds the size cap. The request is not retried, because a second download
+// would not be smaller, and nothing is cached. Callers use errors.Is to report
+// the reason distinctly from a transport error.
 var ErrBodyTooLarge = errors.New("response body too large")
 
-// StatusError is returned by Get for a final status that is neither 2xx nor 404,
-// after retries were exhausted for 429 and 5xx. Callers use errors.As.
+// StatusError is returned by Get and Post for a final status that is neither 2xx
+// nor 404, after retries were exhausted for 429 and 5xx. Callers use errors.As.
 type StatusError struct {
+	// Method is GET or POST. The package always sets it; a value built without
+	// one reads as a GET.
+	Method     string
 	URL        string
 	StatusCode int
 }
 
 func (e *StatusError) Error() string {
-	return fmt.Sprintf("GET %s: unexpected status %d %s", e.URL, e.StatusCode, http.StatusText(e.StatusCode))
+	method := e.Method
+	if method == "" {
+		method = http.MethodGet
+	}
+	return fmt.Sprintf("%s %s: unexpected status %d %s", method, e.URL, e.StatusCode, http.StatusText(e.StatusCode))
 }
 
 // Options configures a Client. The zero value of every field except UserAgent
@@ -115,12 +133,13 @@ type Options struct {
 	Now func() time.Time
 }
 
-// Request describes one GET beyond its URL.
+// Request describes one Get or Post beyond its URL and, for a Post, its body.
 type Request struct {
 	// Accept is the Accept header; empty means "*/*". It is part of the cache key
 	// because registries serve different documents per media type.
 	Accept string
-	// Header holds additional headers. User-Agent and Accept always win over it.
+	// Header holds additional headers. User-Agent, Accept and, for a Post,
+	// Content-Type always win over it.
 	Header http.Header
 	// TTL is how long a cached copy is served without revalidation. Zero means
 	// DefaultTTL; Forever means the entry never expires. The TTL of the current
@@ -130,7 +149,7 @@ type Request struct {
 	TTL time.Duration
 }
 
-// Response is the outcome of a Get. Body is fully read.
+// Response is the outcome of a Get or Post. Body is fully read.
 type Response struct {
 	Body       []byte
 	StatusCode int
@@ -163,8 +182,8 @@ type Client struct {
 	limMu    sync.Mutex
 	limiters map[string]*rate.Limiter
 
-	// keys serializes work on one cache entry so concurrent Gets of the same URL
-	// share a single fetch and never interleave their writes.
+	// keys serializes work on one cache entry so concurrent requests for the
+	// same entry share a single fetch and never interleave their writes.
 	keyMu sync.Mutex
 	keys  map[string]*sync.Mutex
 }

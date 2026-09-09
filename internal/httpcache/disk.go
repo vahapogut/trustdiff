@@ -25,8 +25,14 @@ var entryFileName = regexp.MustCompile(`^[0-9a-f]{64}\.(json|body)(\.[0-9]+\.tmp
 // entryMeta is the metadata half of a cache entry. TTL records what the writer
 // asked for, for cache status; freshness is decided by the current request.
 type entryMeta struct {
-	URL          string
-	Accept       string
+	// Method is GET or POST. Entries written before Post existed carry none and
+	// are GETs, see matches.
+	Method string
+	URL    string
+	Accept string
+	// BodySHA256 is the hex sha256 of the request body of a POST, and empty for
+	// a GET. The body itself is never stored.
+	BodySHA256   string
 	ETag         string
 	LastModified string
 	FetchedAt    time.Time
@@ -42,8 +48,10 @@ type entryMeta struct {
 // metaJSON is the on-disk form of entryMeta. The TTL is a duration string so the
 // file stays readable; Forever is written as the word.
 type metaJSON struct {
+	Method       string    `json:"method,omitempty"`
 	URL          string    `json:"url"`
 	Accept       string    `json:"accept"`
+	BodySHA256   string    `json:"body_sha256,omitempty"`
 	ETag         string    `json:"etag,omitempty"`
 	LastModified string    `json:"last_modified,omitempty"`
 	FetchedAt    time.Time `json:"fetched_at"`
@@ -61,8 +69,10 @@ func (m *entryMeta) marshal() ([]byte, error) {
 		ttl = foreverWord
 	}
 	data, err := json.MarshalIndent(metaJSON{
+		Method:       m.Method,
 		URL:          m.URL,
 		Accept:       m.Accept,
+		BodySHA256:   m.BodySHA256,
 		ETag:         m.ETag,
 		LastModified: m.LastModified,
 		FetchedAt:    m.FetchedAt,
@@ -98,8 +108,10 @@ func parseMeta(data []byte) (entryMeta, error) {
 		}
 	}
 	return entryMeta{
+		Method:       w.Method,
 		URL:          w.URL,
 		Accept:       w.Accept,
+		BodySHA256:   w.BodySHA256,
 		ETag:         w.ETag,
 		LastModified: w.LastModified,
 		FetchedAt:    w.FetchedAt,
@@ -108,6 +120,18 @@ func parseMeta(data []byte) (entryMeta, error) {
 		ContentType:  w.ContentType,
 		Length:       w.Length,
 	}, nil
+}
+
+// matches reports whether the entry was written for exactly this request: same
+// method, URL, Accept header and, for a POST, the same body hash. It is the
+// guard against a hash collision or a file that ended up under the wrong name.
+// Entries written before Post existed carry no method and are GETs.
+func (m *entryMeta) matches(method, rawURL, accept, bodyHash string) bool {
+	stored := m.Method
+	if stored == "" {
+		stored = http.MethodGet
+	}
+	return stored == method && m.URL == rawURL && m.Accept == accept && m.BodySHA256 == bodyHash
 }
 
 // fresh reports whether the entry may be served at now without revalidation
@@ -157,7 +181,7 @@ func readCacheFile(dir, name string) ([]byte, error) {
 // readEntry returns the entry for key, or nil on a miss. Anything unreadable or
 // inconsistent (corrupt metadata, missing body, a hash collision) is a miss and is
 // logged at debug level, never an error: the network answer will replace it.
-func (c *Client) readEntry(key, rawURL, accept string) *entry {
+func (c *Client) readEntry(key string, cl *call) *entry {
 	metaName := key + metaSuffix
 	data, err := readCacheFile(c.dir, metaName)
 	if err != nil {
@@ -171,8 +195,8 @@ func (c *Client) readEntry(key, rawURL, accept string) *entry {
 		c.log.Debug("ignoring corrupt cache entry", "path", filepath.Join(c.dir, metaName), "error", err)
 		return nil
 	}
-	if meta.URL != rawURL || meta.Accept != accept {
-		c.log.Debug("ignoring cache entry for a different request", "path", filepath.Join(c.dir, metaName), "url", meta.URL)
+	if !meta.matches(cl.method, cl.rawURL, cl.accept, cl.bodyHash) {
+		c.log.Debug("ignoring cache entry for a different request", "path", filepath.Join(c.dir, metaName), "method", meta.Method, "url", meta.URL)
 		return nil
 	}
 	body, err := readCacheFile(c.dir, key+bodySuffix)

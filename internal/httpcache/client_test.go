@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -58,12 +59,16 @@ func (s *sleepRecorder) recorded() []time.Duration {
 	return append([]time.Duration(nil), s.delays...)
 }
 
-// testServer counts requests and keeps the last request headers.
+// testServer counts requests and keeps the last request's method, headers and
+// body, plus every body it received in order, so retries can be checked.
 type testServer struct {
 	*httptest.Server
-	calls   atomic.Int32
-	mu      sync.Mutex
-	lastReq http.Header
+	calls      atomic.Int32
+	mu         sync.Mutex
+	lastMethod string
+	lastReq    http.Header
+	lastBody   []byte
+	bodies     [][]byte
 }
 
 func newTestServer(t *testing.T, handler http.HandlerFunc) *testServer {
@@ -71,13 +76,44 @@ func newTestServer(t *testing.T, handler http.HandlerFunc) *testServer {
 	ts := &testServer{}
 	ts.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ts.calls.Add(1)
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("reading request body: %v", err)
+		}
 		ts.mu.Lock()
+		ts.lastMethod = r.Method
 		ts.lastReq = r.Header.Clone()
+		ts.lastBody = data
+		ts.bodies = append(ts.bodies, data)
 		ts.mu.Unlock()
+		// The handler may read the body again, as a real one would.
+		r.Body = io.NopCloser(bytes.NewReader(data))
 		handler(w, r)
 	}))
 	t.Cleanup(ts.Close)
 	return ts
+}
+
+func (ts *testServer) method() string {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.lastMethod
+}
+
+func (ts *testServer) body() []byte {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return append([]byte(nil), ts.lastBody...)
+}
+
+func (ts *testServer) allBodies() [][]byte {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	out := make([][]byte, 0, len(ts.bodies))
+	for _, b := range ts.bodies {
+		out = append(out, append([]byte(nil), b...))
+	}
+	return out
 }
 
 func (ts *testServer) host(t *testing.T) string {
@@ -1202,14 +1238,30 @@ func TestStatusErrorMessage(t *testing.T) {
 }
 
 func TestCacheKeyIsStable(t *testing.T) {
-	a := cacheKey("GET", "https://example.com/a", "*/*")
-	b := cacheKey("GET", "https://example.com/a", "*/*")
-	c := cacheKey("GET", "https://example.com/a", "application/json")
-	d := cacheKey("HEAD", "https://example.com/a", "*/*")
+	a := cacheKey("GET", "https://example.com/a", "*/*", "")
+	b := cacheKey("GET", "https://example.com/a", "*/*", "")
+	c := cacheKey("GET", "https://example.com/a", "application/json", "")
+	d := cacheKey("HEAD", "https://example.com/a", "*/*", "")
 	if a != b || a == c || a == d {
 		t.Fatalf("keys: %s %s %s %s", a, b, c, d)
 	}
 	if len(a) != 64 {
 		t.Fatalf("key length = %d, want 64 hex characters", len(a))
+	}
+	// The GET key is the sha256 of "GET\n<url>\n<accept>", the format of the
+	// first release, so caches written before Post existed stay valid.
+	if want := "d35a6660d954935970de05cd0a348bef773de4aad2989fbfc792c9e97482269f"; a != want {
+		t.Fatalf("GET key = %s, want %s: the on-disk key format changed", a, want)
+	}
+
+	hash1 := strings.Repeat("1", 64)
+	hash2 := strings.Repeat("2", 64)
+	p1 := cacheKey("POST", "https://example.com/a", "*/*", hash1)
+	p2 := cacheKey("POST", "https://example.com/a", "*/*", hash2)
+	if p1 == p2 || p1 == a || p1 == cacheKey("POST", "https://example.com/a", "*/*", "") {
+		t.Fatalf("POST keys: %s %s (GET %s)", p1, p2, a)
+	}
+	if again := cacheKey("POST", "https://example.com/a", "*/*", hash1); again != p1 {
+		t.Fatalf("POST key not stable: %s vs %s", again, p1)
 	}
 }

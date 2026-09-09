@@ -222,6 +222,7 @@ func TestMetadataRoundTrip(t *testing.T) {
 	}{
 		{name: "hour", meta: entryMeta{URL: "u", Accept: "*/*", ETag: `"e"`, LastModified: "lm", FetchedAt: time.Date(2026, 9, 9, 1, 2, 3, 0, time.UTC), TTL: time.Hour, Status: 200, ContentType: "text/plain", Length: 12345}},
 		{name: "forever", meta: entryMeta{URL: "u", Accept: "a", FetchedAt: time.Date(2026, 9, 9, 1, 2, 3, 0, time.UTC), TTL: Forever, Status: 404}},
+		{name: "post", meta: entryMeta{Method: "POST", URL: "u", Accept: "application/json", BodySHA256: strings.Repeat("ab", 32), FetchedAt: time.Date(2026, 9, 9, 1, 2, 3, 0, time.UTC), TTL: 6 * time.Hour, Status: 200, ContentType: "application/json", Length: 7}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -274,6 +275,40 @@ func TestMetaFresh(t *testing.T) {
 			m := entryMeta{FetchedAt: at, TTL: Forever}
 			if got := m.fresh(tt.now, tt.ttl); got != tt.want {
 				t.Fatalf("fresh(now, %v) = %v, want %v", tt.ttl, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMetaMatches(t *testing.T) {
+	hash := strings.Repeat("ab", 32)
+	other := strings.Repeat("cd", 32)
+	get := entryMeta{Method: "GET", URL: "u", Accept: "*/*"}
+	legacy := entryMeta{URL: "u", Accept: "*/*"} // written before Post existed
+	post := entryMeta{Method: "POST", URL: "u", Accept: "*/*", BodySHA256: hash}
+	tests := []struct {
+		name     string
+		meta     entryMeta
+		method   string
+		url      string
+		accept   string
+		bodyHash string
+		want     bool
+	}{
+		{name: "get", meta: get, method: "GET", url: "u", accept: "*/*", want: true},
+		{name: "get other url", meta: get, method: "GET", url: "v", accept: "*/*", want: false},
+		{name: "get other accept", meta: get, method: "GET", url: "u", accept: "application/json", want: false},
+		{name: "legacy entry is a get", meta: legacy, method: "GET", url: "u", accept: "*/*", want: true},
+		{name: "legacy entry is not a post", meta: legacy, method: "POST", url: "u", accept: "*/*", bodyHash: hash, want: false},
+		{name: "post", meta: post, method: "POST", url: "u", accept: "*/*", bodyHash: hash, want: true},
+		{name: "post other body", meta: post, method: "POST", url: "u", accept: "*/*", bodyHash: other, want: false},
+		{name: "post entry for a get", meta: post, method: "GET", url: "u", accept: "*/*", want: false},
+		{name: "get entry for a post", meta: get, method: "POST", url: "u", accept: "*/*", bodyHash: hash, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.meta.matches(tt.method, tt.url, tt.accept, tt.bodyHash); got != tt.want {
+				t.Fatalf("matches(%q, %q, %q, %q) = %v, want %v", tt.method, tt.url, tt.accept, tt.bodyHash, got, tt.want)
 			}
 		})
 	}
