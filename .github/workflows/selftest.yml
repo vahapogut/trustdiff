@@ -95,6 +95,17 @@ jobs:
           echo "trustdiff exited ${code}"
           exit "$code"
 
+      - name: Run trustdiff doctor over this repository
+        # doctor reads this repository's own hardening settings, which for a Go
+        # project is the workflow files and the Dependabot configuration. It runs
+        # with --ci, so a workflow that stops pinning an action to a commit sha
+        # fails this job. Unlike the diff above it is not allowed to fail: these
+        # are our own files and the answer does not depend on a registry.
+        run: |
+          set -uo pipefail
+          go build -o "$RUNNER_TEMP/trustdiff" ./cmd/trustdiff || exit 1
+          "$RUNNER_TEMP/trustdiff" doctor --ci --offline
+
       - name: Check that the report is a SARIF document
         id: sarif
         run: |

@@ -88,7 +88,8 @@ type Value struct {
 	// Key is the key as it was asked for.
 	Key Key
 	// Kind is the shape the codec read. KindMissing means the file does not state
-	// the key, and every other field is zero.
+	// the key, and then only Key is set, so a message can still name what was
+	// looked for.
 	Kind Kind
 	// Text is a scalar as a Go string: quotes removed, escapes resolved, the number
 	// or the boolean written as the file wrote it. Empty for a list or a map.
@@ -250,11 +251,11 @@ func (d *Doc) Apply(e Edit) (*Doc, error) {
 	} else {
 		out.lines = append(out.lines, d.lines[e.Start-1:]...)
 	}
-	if len(out.lines) > 0 {
-		// A file that gained a line ends with one, whatever it did before: a last
-		// line without a newline is a file the next tool appends to badly.
-		out.finalNewline = true
-	}
+	// A file that gained a line ends with a newline, because a last line without one
+	// is a file the next tool appends to badly. A file that only had a value
+	// replaced keeps the ending it had, since changing it would be a change nobody
+	// asked for in a diff nobody expected it in.
+	out.finalNewline = d.finalNewline || len(out.lines) > len(d.lines)
 	return &out, nil
 }
 

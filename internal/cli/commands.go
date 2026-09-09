@@ -9,19 +9,6 @@ import (
 	"github.com/vahapogut/trustdiff/internal/version"
 )
 
-func (a *App) newDoctorCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "doctor [<path>]",
-		Short: "Audit or fix package manager hardening settings",
-		Args:  cobra.MaximumNArgs(1),
-		RunE:  notImplemented("doctor"),
-	}
-	cmd.Flags().Bool("fix", false, "write the recommended settings, with a diff preview and backups")
-	cmd.Flags().Bool("ci", false, "exit 1 when any setting is missing or wrong at or above the policy severity")
-	cmd.Flags().Bool("user", false, "also report user-level configuration files")
-	return cmd
-}
-
 func (a *App) newBaselineCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "baseline",
