@@ -173,7 +173,7 @@ func evaluateTargets(root string, m *Manager, rule *Rule, params Params) ([]Resu
 	var fallback *Result
 	for _, target := range rule.Targets {
 		rel, full := targetPath(root, m, target)
-		data, err := os.ReadFile(full) // #nosec G304 -- the path is a configuration file under the directory the user named
+		data, err := readConfig(full)
 		switch {
 		case errors.Is(err, os.ErrNotExist):
 			// A file that is not there is not a problem by itself: another of the

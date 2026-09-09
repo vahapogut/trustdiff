@@ -2,7 +2,6 @@ package doctor
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -36,7 +35,7 @@ func (dependabotScanner) Scan(root string, m *Manager, p Params) ([]Result, erro
 	if path == "" {
 		return nil, nil
 	}
-	data, err := os.ReadFile(path) // #nosec G304 -- the path is one this run found under the directory the user named
+	data, err := readConfig(path)
 	if err != nil {
 		return []Result{{
 			Status: StatusUnreadable,

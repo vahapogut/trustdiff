@@ -2,7 +2,6 @@ package doctor
 
 import (
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -48,7 +47,7 @@ func (actionsScanner) Scan(root string, m *Manager, p Params) ([]Result, error) 
 	files := workflowFiles(m)
 	results := make([]Result, 0, len(files))
 	for _, rel := range files {
-		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel))) // #nosec G304 -- the path is one this run found under the directory the user named
+		data, err := readConfig(filepath.Join(root, filepath.FromSlash(rel)))
 		if err != nil {
 			results = append(results, Result{
 				Status: StatusUnreadable,

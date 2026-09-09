@@ -152,6 +152,40 @@ func TestEvaluateHonoursARuleTurnedOff(t *testing.T) {
 	}
 }
 
+// A configuration file that is a symbolic link is not read. A repository in a pull
+// request decides what its files are, and git records a link as a blob holding the
+// link text, so a fork can commit .npmrc as a link to any path on the runner.
+func TestEvaluateRefusesASymbolicLink(t *testing.T) {
+	root := writeFixture(t)
+	secret := filepath.Join(t.TempDir(), "secret.yaml")
+	if err := os.WriteFile(secret, []byte("minimumReleaseAge: 99999\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "apps", "linked", "pnpm-workspace.yaml")
+	if err := os.MkdirAll(filepath.Dir(link), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, link); err != nil {
+		t.Skipf("this machine does not allow creating a symbolic link: %v", err)
+	}
+
+	managers := []Manager{{ID: PNPM, Root: "apps/linked", Version: "11.2.0", Files: []string{"apps/linked/pnpm-workspace.yaml"}}}
+	card, err := Evaluate(root, managers, Options{Params: Params{Cooldown: threeDays, Version: "11.2.0", Now: fixedNow()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := resultFor(t, card, "DR010")
+	if got.Status != StatusUnreadable {
+		t.Fatalf("a linked file was read: %s (%s)", got.Status, got.Detail)
+	}
+	if !strings.Contains(got.Detail, "symbolic link") {
+		t.Errorf("the reason does not say what the path is: %s", got.Detail)
+	}
+	if strings.Contains(got.Detail, "99999") || strings.Contains(got.Current, "99999") {
+		t.Error("the content of the linked file reached the scorecard")
+	}
+}
+
 // writeFixture builds the small repository the tests judge.
 func writeFixture(t *testing.T) string {
 	t.Helper()

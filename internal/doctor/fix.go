@@ -77,7 +77,7 @@ func fixable(res *Result) bool {
 // left beside the file when it wrote one.
 func fixOne(root string, res *Result, opts *Options, backups map[string]string) (changed bool, backup string, err error) {
 	_, full := targetPath(root, res.Manager, res.target)
-	data, err := os.ReadFile(full) // #nosec G304 -- the path is a configuration file under the directory the user named, already read once by the judgment above
+	data, err := readConfig(full)
 	created := false
 	switch {
 	case errors.Is(err, os.ErrNotExist):
