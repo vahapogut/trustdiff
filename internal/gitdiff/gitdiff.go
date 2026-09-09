@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -87,8 +88,20 @@ func (e *CommandError) Unwrap() error { return e.Err }
 // git command each and never write, so a Repo is safe to use from several
 // goroutines.
 type Repo struct {
+	// Log records the decisions a caller cannot see in the answer, such as which
+	// of the candidate bases a resolution settled on. It is optional and is set
+	// once, right after Open; a Repo with no logger says nothing.
+	Log *slog.Logger
+
 	git  string
 	root string
+}
+
+// debug logs when the caller asked for a logger and does nothing otherwise.
+func (r *Repo) debug(msg string, args ...any) {
+	if r.Log != nil {
+		r.Log.Debug(msg, args...)
+	}
 }
 
 // Open finds the repository that contains dir and returns a handle on its root.

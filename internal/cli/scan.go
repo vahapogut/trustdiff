@@ -52,62 +52,76 @@ func (a *App) runScan(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	dir, paths, err := a.scanTargets(root)
+	dir, paths, unreadable, err := a.scanTargets(root)
 	if err != nil {
 		return err
 	}
 
 	var inputs []checks.Input
 	var notes []string
+	read := make([]string, 0, len(paths))
 	for _, rel := range paths {
-		lf, err := parseLockfileAt(filepath.Join(dir, filepath.FromSlash(rel)))
+		lf, err := parseLockfileAt(filepath.Join(dir, filepath.FromSlash(rel)), rel)
 		if err != nil {
-			return Usagef("%v", err)
+			// One lockfile no parser gets through must not cost the findings of
+			// every other one: it is named beside the report and the scan carries
+			// on. A file in the middle of a format migration is the ordinary case.
+			notes = append(notes, fmt.Sprintf("%s: not read (%s); its entries were not evaluated", rel, reason(rel, err)))
+			continue
 		}
+		read = append(read, rel)
 		inputs = append(inputs, entryInputs(rel, lf)...)
 		if note := droppedNote(rel, lf.Dropped); note != "" {
 			notes = append(notes, note)
 		}
 	}
+	if note := unreadableNote(unreadable); note != "" {
+		notes = append(notes, note)
+	}
 
 	// The count comes before the run rather than with the report: a person who
-	// reads "evaluating 1843 entries" knows to wait instead of interrupting.
-	counts := fmt.Sprintf("evaluating %s of %s: %s",
+	// reads "evaluating 1843 entries" knows to wait instead of interrupting. It
+	// counts the files that were read, and the notes below say what was not.
+	counts := fmt.Sprintf("evaluating %s of %s",
 		countOf(len(inputs), "entry", "entries"),
-		countOf(len(paths), "lockfile", "lockfiles"),
-		strings.Join(paths, ", "))
-	if err := a.writeNotes([]string{counts}); err != nil {
+		countOf(len(read), "lockfile", "lockfiles"))
+	if len(read) > 0 {
+		counts += ": " + strings.Join(read, ", ")
+	}
+	if err := a.writeNotes(append([]string{counts}, notes...)); err != nil {
 		return err
 	}
-	if err := a.writeNotes(notes); err != nil {
-		return err
-	}
-	return a.evaluate(cmd.Context(), st, inputs)
+	incomplete := len(read) < len(paths) || len(unreadable) > 0
+	return a.evaluate(cmd.Context(), st, inputs, incomplete)
 }
 
-// scanTargets returns the directory to read from and the lockfiles under it,
-// named relative to that directory with forward slashes. A path that names one
-// file is that file alone, so the command can be pointed at a single lockfile; a
-// path that names a directory is walked.
-func (a *App) scanTargets(root string) (dir string, paths []string, err error) {
+// scanTargets returns the directory to read from, the lockfiles under it, named
+// relative to that directory with forward slashes, and the directories the walk
+// was not allowed to read. A path that names one file is that file alone, so the
+// command can be pointed at a single lockfile; a path that names a directory is
+// walked.
+func (a *App) scanTargets(root string) (dir string, paths, unreadable []string, err error) {
 	info, err := os.Stat(root)
 	if err != nil {
-		return "", nil, Usagef("%v", err)
+		return "", nil, nil, Usagef("%v", err)
 	}
 	if !info.IsDir() {
 		if _, ok := lockfile.For(root); !ok {
-			return "", nil, Usagef("no parser reads %s: trustdiff reads %s", root, strings.Join(parserNames(), ", "))
+			return "", nil, nil, Usagef("no parser reads %s: trustdiff reads %s", root, strings.Join(parserNames(), ", "))
 		}
-		return filepath.Dir(root), []string{filepath.ToSlash(filepath.Base(root))}, nil
+		return filepath.Dir(root), []string{filepath.ToSlash(filepath.Base(root))}, nil, nil
 	}
-	paths, err = findLockfiles(root, a.Opts.Log)
+	paths, unreadable, err = findLockfiles(root, a.Opts.Log)
 	if err != nil {
-		return "", nil, Usagef("%v", err)
+		return "", nil, nil, Usagef("%v", err)
 	}
-	if len(paths) == 0 {
-		return "", nil, Usagef("no lockfile found under %s: trustdiff reads %s", root, strings.Join(parserNames(), ", "))
+	if len(paths) == 0 && len(unreadable) == 0 {
+		return "", nil, nil, Usagef("no lockfile found under %s: trustdiff reads %s", root, strings.Join(parserNames(), ", "))
 	}
-	return root, paths, nil
+	// A tree that holds no readable lockfile but kept the walk out of part of
+	// itself is not an empty tree: the run goes on so the note names the
+	// directories that were refused, and the exit code follows the policy.
+	return root, paths, unreadable, nil
 }
 
 // parserNames lists the formats the binary can read, for the messages that say a

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -41,9 +42,9 @@ var pruned = map[string]bool{
 	"vendor":       true,
 }
 
-// maxDroppedListed is how many dropped entries one note spells out before it says
-// only how many are left, so a file that drops a hundred entries costs one line
-// like every other file.
+// maxDroppedListed is how many items one note spells out before it says only how
+// many are left, so a file that drops a hundred entries, or a change that removes
+// two thousand, costs one line like every other file.
 const maxDroppedListed = 3
 
 // settings are what a lockfile command settles before it touches the network: the
@@ -89,7 +90,13 @@ func (a *App) settle() (*settings, error) {
 // --fail-on, 3 when a data source was unavailable and the policy says fail.
 // A run with no inputs still writes a report, so a document format always gets a
 // document.
-func (a *App) evaluate(ctx context.Context, st *settings, inputs []checks.Input) error {
+//
+// incomplete says that something the run should have looked at could not be read:
+// a lockfile no parser got through, a directory the walk was refused. The notes
+// name it, and the exit code follows on_data_unavailable, because a report that
+// covers less than it was asked to is the same kind of partial answer as one a
+// registry did not respond to.
+func (a *App) evaluate(ctx context.Context, st *settings, inputs []checks.Input, incomplete bool) error {
 	loader, err := loaderFactory(a)
 	if err != nil {
 		return Usagef("%v", err)
@@ -111,7 +118,7 @@ func (a *App) evaluate(ctx context.Context, st *settings, inputs []checks.Input)
 	}, st.failOn)
 	// Exit code 1 says there is something to act on now, 3 that the answer is
 	// incomplete. When both apply the findings win.
-	if rep.Summary.ExitCode == ExitOK && dataUnavailableFails(st.pol, outcomes) {
+	if rep.Summary.ExitCode == ExitOK && (dataUnavailableFails(st.pol, outcomes) || unreadFails(st.pol, incomplete)) {
 		rep.SetExitCode(ExitUnavailable)
 	}
 
@@ -124,29 +131,38 @@ func (a *App) evaluate(ctx context.Context, st *settings, inputs []checks.Input)
 	return nil
 }
 
+// unreadFails reports whether something the run could not read should make the
+// exit code 3. It is the policy's own answer for a data source that could not be
+// consulted, read from the top-level setting: an unread lockfile belongs to no
+// ecosystem, so there is no override to apply.
+func unreadFails(pol *policy.Policy, incomplete bool) bool {
+	return incomplete && pol.Effective("").OnDataUnavailable == policy.OnDataUnavailableFail
+}
+
 // writeNotes prints the lines that belong beside the report rather than in it:
 // which lockfiles were compared, what a change removed, what a parser could not
 // read, how much work a scan is about to do. The human format is the one a person
 // reads, so there they go to stdout above the cards, followed by a blank line.
-// The document formats keep stdout to the document alone and the notes go to the
-// log instead, where -v shows them.
+//
+// The document formats keep stdout to the document alone, so their notes go to
+// stderr. They are not logged: the logger is silent below warn unless -v, and
+// these lines say what was not evaluated, which is what a gate reading the SARIF
+// most needs to be told.
 func (a *App) writeNotes(lines []string) error {
 	if len(lines) == 0 {
 		return nil
 	}
+	out, trailer := a.Stdout, "\n"
 	if a.Opts.Format != "human" {
-		for _, line := range lines {
-			a.Opts.Log.Info(line)
-		}
-		return nil
+		out, trailer = a.Stderr, ""
 	}
 	var b strings.Builder
 	for _, line := range lines {
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
-	b.WriteString("\n")
-	if _, err := io.WriteString(a.Stdout, b.String()); err != nil {
+	b.WriteString(trailer)
+	if _, err := io.WriteString(out, b.String()); err != nil {
 		return fmt.Errorf("write the notes: %w", err)
 	}
 	return nil
@@ -200,27 +216,64 @@ func droppedNote(label string, dropped []string) string {
 	if len(dropped) == 0 {
 		return ""
 	}
-	listed := dropped
-	var more string
-	if len(listed) > maxDroppedListed {
-		listed = listed[:maxDroppedListed]
-		more = fmt.Sprintf(", and %d more", len(dropped)-maxDroppedListed)
-	}
 	counted := "entries were"
 	if len(dropped) == 1 {
 		counted = "entry was"
 	}
-	return fmt.Sprintf("%s: %d %s not read (%s%s)", label, len(dropped), counted, strings.Join(listed, "; "), more)
+	return fmt.Sprintf("%s: %d %s not read (%s)", label, len(dropped), counted, listSome(dropped))
 }
 
-// parseLockfileAt reads and parses one lockfile from disk.
-func parseLockfileAt(path string) (*lockfile.Lockfile, error) {
-	f, err := os.Open(path) // #nosec G304 -- the path is a lockfile the user named or one found under the directory they named
+// listSome spells out the first few of a list and counts the rest, so one note is
+// one line whether it carries three items or three thousand.
+func listSome(items []string) string {
+	listed := items
+	var more string
+	if len(listed) > maxDroppedListed {
+		listed = listed[:maxDroppedListed]
+		more = fmt.Sprintf(", and %d more", len(items)-maxDroppedListed)
+	}
+	return strings.Join(listed, "; ") + more
+}
+
+// parseLockfileAt reads and parses one lockfile from disk. openPath is where the
+// file is on this machine and name is what the report calls it, which is what the
+// parser's messages carry.
+func parseLockfileAt(openPath, name string) (*lockfile.Lockfile, error) {
+	f, err := openLockfile(openPath)
 	if err != nil {
-		return nil, fmt.Errorf("read the lockfile: %w", err)
+		return nil, err
 	}
 	defer f.Close()
-	return lockfile.Parse(path, f)
+	return lockfile.Parse(name, f)
+}
+
+// openLockfile opens a file to parse it, and only if it is a plain file.
+//
+// A lockfile in a pull request is text the author chose, and git records a
+// symbolic link as a blob holding the link text, so a fork can commit
+// package-lock.json as a link to any path on the runner. Following it would put
+// whatever that file holds into the report, into the SARIF uploaded to code
+// scanning and into the registry lookups. The git side of this package refuses a
+// path outside the repository for the same reason; this is the filesystem side of
+// that rule.
+func openLockfile(path string) (*os.File, error) {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	// The caller names the file in the note or the message it builds from this,
+	// so the reason says what is wrong and not where.
+	switch {
+	case fi.Mode()&os.ModeSymlink != 0:
+		return nil, errors.New("a symbolic link, not a lockfile: trustdiff does not follow links out of the tree it evaluates")
+	case !fi.Mode().IsRegular():
+		return nil, errors.New("not a regular file, so not a lockfile trustdiff reads")
+	}
+	f, err := os.Open(path) // #nosec G304 -- the path is a lockfile the user named or one found under the directory they named, and Lstat above has refused everything that is not a plain file
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
 }
 
 // findLockfiles walks root and returns the lockfiles under it, as paths relative
@@ -231,14 +284,19 @@ func parseLockfileAt(path string) (*lockfile.Lockfile, error) {
 // here without a change.
 //
 // A directory that cannot be read is skipped rather than failing the walk: a scan
-// of a large tree must not stop at the one directory whose permissions differ.
-// The reason is logged.
-func findLockfiles(root string, log *slog.Logger) ([]string, error) {
-	var found []string
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+// of a large tree must not stop at the one directory whose permissions differ. It
+// is returned in unreadable, as a path relative to root, because a subtree nobody
+// looked at is not a pass and the run has to say so.
+func findLockfiles(root string, log *slog.Logger) (found, unreadable []string, err error) {
+	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if d != nil && d.IsDir() {
 				log.Debug("skipping a directory that cannot be read", "path", path, "error", err)
+				if rel, relErr := relativeTo(root, path); relErr == nil {
+					unreadable = append(unreadable, rel)
+				} else {
+					unreadable = append(unreadable, filepath.ToSlash(path))
+				}
 				return fs.SkipDir
 			}
 			log.Debug("skipping a file that cannot be read", "path", path, "error", err)
@@ -253,15 +311,39 @@ func findLockfiles(root string, log *slog.Logger) ([]string, error) {
 		if _, ok := lockfile.For(d.Name()); !ok {
 			return nil
 		}
-		rel, relErr := filepath.Rel(root, path)
+		rel, relErr := relativeTo(root, path)
 		if relErr != nil {
 			return fmt.Errorf("locate %s under %s: %w", path, root, relErr)
 		}
-		found = append(found, filepath.ToSlash(rel))
+		found = append(found, rel)
 		return nil
 	})
-	if err != nil {
-		return nil, fmt.Errorf("walk %s: %w", root, err)
+	if walkErr != nil {
+		return nil, nil, fmt.Errorf("walk %s: %w", root, walkErr)
 	}
-	return found, nil
+	return found, unreadable, nil
+}
+
+// relativeTo names a path the way the report should, relative to the root of the
+// walk and separated by forward slashes.
+func relativeTo(root, path string) (string, error) {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(rel), nil
+}
+
+// unreadableNote words the directories a walk was refused, capped like
+// droppedNote: a tree nobody could read must be one visible line, not a silent
+// pass and not a hundred lines.
+func unreadableNote(dirs []string) string {
+	if len(dirs) == 0 {
+		return ""
+	}
+	counted := "directories were"
+	if len(dirs) == 1 {
+		counted = "directory was"
+	}
+	return fmt.Sprintf("%d %s not read (%s): the lockfiles inside were not evaluated", len(dirs), counted, listSome(dirs))
 }

@@ -42,9 +42,10 @@ func (r *Repo) FileAt(ctx context.Context, sha, path string) ([]byte, error) {
 // Paths are relative to the repository root and use forward slashes.
 //
 // Only files git tracks are compared, staged ones included; a lockfile that has
-// been created but never added is invisible to git and therefore to this. The
-// diff command says so rather than reporting the file as unchanged. Renames are
-// not detected, so a lockfile that moved appears under both of its paths.
+// been created but never added is invisible to git and therefore to this.
+// UntrackedLockfiles finds those, and the diff command says so rather than
+// reporting the file as unchanged. Renames are not detected, so a lockfile that
+// moved appears under both of its paths.
 func (r *Repo) ChangedFiles(ctx context.Context, sha string) ([]string, error) {
 	if err := checkRev(sha); err != nil {
 		return nil, err
@@ -69,14 +70,33 @@ func (r *Repo) Lockfiles(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list the tracked files of %s: %w", r.root, err)
 	}
-	tracked := splitNUL(out)
+	return onlyLockfiles(splitNUL(out)), nil
+}
+
+// UntrackedLockfiles lists the lockfiles the working tree holds that git does not
+// track, as repository-relative paths with forward slashes. A file that was
+// created and never added is invisible to a comparison against a revision, so the
+// diff command names these instead of passing the change as unchanged. What
+// .gitignore covers is left out, the way Lockfiles leaves the installed copies
+// under node_modules out.
+func (r *Repo) UntrackedLockfiles(ctx context.Context) ([]string, error) {
+	out, err := r.run(ctx, "ls-files", "-z", "--others", "--exclude-standard", "--end-of-options")
+	if err != nil {
+		return nil, fmt.Errorf("list the untracked files of %s: %w", r.root, err)
+	}
+	return onlyLockfiles(splitNUL(out)), nil
+}
+
+// onlyLockfiles keeps the paths a registered parser recognizes, in the order git
+// listed them.
+func onlyLockfiles(paths []string) []string {
 	found := make([]string, 0, 8)
-	for _, path := range tracked {
+	for _, path := range paths {
 		if _, ok := lockfile.For(path); ok {
 			found = append(found, path)
 		}
 	}
-	return found, nil
+	return found
 }
 
 // relative turns a path the caller names, absolute or relative to the repository

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -58,6 +59,27 @@ const (
       "version": "2.0.0",
       "resolved": "https://registry.npmjs.org/trustdiff-fixture-lib/-/trustdiff-fixture-lib-2.0.0.tgz",
       "integrity": "sha512-Zm9ydGhlbGli"
+    }
+  }
+}
+`
+)
+
+// secretName is the marker a file outside the tree carries, and secretLock is
+// that file: a lockfile that parses, so following a link to it would put its
+// entry names into the report, into the SARIF uploaded to code scanning and into
+// the registry lookups. No test may find the marker in any output.
+const (
+	secretName = "trustdiff-fixture-private-token-abcdef"
+	secretLock = `{
+  "name": "outside",
+  "lockfileVersion": 3,
+  "packages": {
+    "": {"name": "outside"},
+    "node_modules/` + secretName + `": {
+      "version": "1.0.0",
+      "resolved": "https://registry.npmjs.org/x/-/x-1.0.0.tgz",
+      "integrity": "sha512-A"
     }
   }
 }
@@ -228,7 +250,7 @@ func TestDiffEvaluatesAddedAndChangedEntries(t *testing.T) {
 	}
 	for _, want := range []string{
 		"compared package-lock.json with " + base[:shortSHA],
-		"removed npm:trustdiff-fixture-gone@1.0.0 from package-lock.json",
+		"removed 1 entry from package-lock.json (npm:trustdiff-fixture-gone@1.0.0)",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("stdout lacks %q:\n%s", want, stdout)
@@ -236,6 +258,103 @@ func TestDiffEvaluatesAddedAndChangedEntries(t *testing.T) {
 	}
 	if strings.Contains(stdout, "npm:trustdiff-fixture-gone@1.0.0  ") {
 		t.Errorf("the removed entry was evaluated:\n%s", stdout)
+	}
+}
+
+// A change that deletes a lockfile removes every entry it held, and a project
+// leaving npm for pnpm deletes two thousand of them. The report the gate exists
+// to show must not be buried under one line per entry.
+func TestDiffSummarizesManyRemovals(t *testing.T) {
+	r := diffFixture(t)
+	const removals = 60
+	var b strings.Builder
+	b.WriteString("{\n  \"name\": \"fixture\",\n  \"lockfileVersion\": 3,\n  \"packages\": {\n    \"\": {\"name\": \"fixture\"}")
+	for i := range removals {
+		fmt.Fprintf(&b, ",\n    %q: {\"version\": \"1.0.%d\", \"resolved\": \"https://registry.npmjs.org/p/-/p-1.0.%d.tgz\", \"integrity\": \"sha512-A\"}",
+			fmt.Sprintf("node_modules/trustdiff-fixture-p%d", i), i, i)
+	}
+	b.WriteString("\n  }\n}\n")
+	r.write("package-lock.json", b.String())
+	base := r.commit("lock the fixture")
+	if err := os.Remove(filepath.Join(r.dir, "package-lock.json")); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := run(t, "diff", "--base", base)
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want 0 (stderr %q)\n%s", code, stderr, stdout)
+	}
+	want := fmt.Sprintf("removed %d entries from package-lock.json (npm:trustdiff-fixture-p0@1.0.0; npm:trustdiff-fixture-p1@1.0.1; npm:trustdiff-fixture-p2@1.0.2, and %d more)",
+		removals, removals-maxDroppedListed)
+	if !strings.Contains(stdout, want) {
+		t.Errorf("stdout lacks %q:\n%s", want, stdout)
+	}
+	if n := strings.Count(stdout, "removed "); n != 1 {
+		t.Errorf("the removals take %d lines, want one summary line:\n%s", n, stdout)
+	}
+}
+
+// An entry that keeps its version while its resolved location moves to another
+// git repository is a change of what gets installed, and the gate exists to catch
+// exactly that.
+func TestDiffReportsARepointedGitSource(t *testing.T) {
+	r := diffFixture(t)
+	lock := func(owner, rev string) string {
+		return fmt.Sprintf(`{
+  "name": "fixture",
+  "lockfileVersion": 3,
+  "packages": {
+    "": {
+      "name": "fixture",
+      "dependencies": {
+        "trustdiff-fixture-lib": "github:%s/lib"
+      }
+    },
+    "node_modules/trustdiff-fixture-lib": {
+      "version": "1.0.0",
+      "resolved": "git+ssh://git@github.com/%s/lib.git#%s"
+    }
+  }
+}
+`, owner, owner, strings.Repeat(rev, 40))
+	}
+	r.write("package-lock.json", lock("good", "a"))
+	base := r.commit("lock the fixture")
+	r.write("package-lock.json", lock("attacker", "b"))
+
+	code, stdout, stderr := run(t, "--format", "json", "diff", "--base", base)
+	if code != ExitFindings {
+		t.Fatalf("exit = %d, want 1 (stderr %q)\n%s", code, stderr, stdout)
+	}
+	rep := decodeReport(t, stdout)
+	s := subjectFor(t, &rep, "npm:trustdiff-fixture-lib@1.0.0")
+	if len(s.Findings) == 0 {
+		t.Errorf("the repointed entry was evaluated without a finding: %+v", s)
+	}
+}
+
+// A base named on the command line is the fork point, the way git diff base...HEAD
+// reads it. action.yml passes the tip of the base branch, which keeps moving while
+// a pull request is open; what was merged into it meanwhile is not this change.
+func TestDiffNamedBaseIsTheForkPoint(t *testing.T) {
+	r := diffFixture(t)
+	r.write("package-lock.json", baseLock)
+	fork := r.commit("lock the fixture")
+	// Somebody else bumps the same dependency on the base branch.
+	r.write("package-lock.json", headLock)
+	mainTip := r.commit("bump the dependency on main")
+	// The pull request forks before that and touches no lockfile at all.
+	r.run("checkout", "--quiet", "-b", "pr", fork)
+	r.write("README.md", "fixture\n")
+	r.commit("document the fixture")
+
+	code, stdout, stderr := run(t, "diff", "--base", mainTip)
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want 0 (stderr %q)\n%s", code, stderr, stdout)
+	}
+	want := fmt.Sprintf("no lockfile changed since %s (fork point %s)", mainTip[:shortSHA], fork[:shortSHA])
+	if !strings.Contains(stdout, want) {
+		t.Errorf("stdout lacks %q:\n%s", want, stdout)
 	}
 }
 
@@ -466,6 +585,112 @@ func TestDiffReportsDroppedEntries(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "node_modules/fixture-ui") {
 		t.Errorf("the dropped entry is not named:\n%s", stdout)
+	}
+}
+
+// A lockfile in a pull request is text its author chose, and git records a
+// symbolic link as a blob holding the link text. Reading through it would put a
+// file from outside the repository into the report, into the SARIF and into the
+// registry lookups.
+func TestDiffRefusesASymlinkedLockfile(t *testing.T) {
+	r := diffFixture(t)
+	r.write("README.md", "fixture\n")
+	base := r.commit("first")
+
+	outside := filepath.Join(t.TempDir(), "outside.json")
+	if err := os.WriteFile(outside, []byte(secretLock), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(r.dir, "package-lock.json")); err != nil {
+		t.Skipf("this machine does not let the test process create a symbolic link: %v", err)
+	}
+	r.run("add", "--all")
+
+	code, stdout, stderr := run(t, "diff", "--base", base)
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want 0 (stderr %q)\n%s", code, stderr, stdout)
+	}
+	if !strings.Contains(stdout, "package-lock.json: not read (a symbolic link") {
+		t.Errorf("stdout does not refuse the link:\n%s", stdout)
+	}
+	if strings.Contains(stdout+stderr, secretName) {
+		t.Errorf("the file the link points at was read:\n%s%s", stdout, stderr)
+	}
+}
+
+// One lockfile no parser gets through must not cost the findings of the others.
+// Aborting the run would also make a package-lock.json migrating from npm 6 to
+// npm 7 a hard failure, which is an ordinary pull request.
+func TestDiffKeepsTheFindingsOfTheLockfilesItCanRead(t *testing.T) {
+	r := diffFixture(t)
+	r.write("README.md", "fixture\n")
+	base := r.commit("first")
+	r.write("web/package-lock.json", headLock)
+	r.write("api/package-lock.json", "{ this is not JSON\n")
+	r.run("add", "--all")
+
+	code, stdout, stderr := run(t, "diff", "--base", base)
+	if code != ExitFindings {
+		t.Fatalf("exit = %d, want 1 (stderr %q)\n%s", code, stderr, stdout)
+	}
+	if !strings.Contains(stdout, "api/package-lock.json: not read (") {
+		t.Errorf("stdout does not say the unreadable lockfile was skipped:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "npm:trustdiff-fixture-lib@2.0.0") {
+		t.Errorf("the readable lockfile lost its findings:\n%s", stdout)
+	}
+}
+
+// A base side no parser gets through is what a lockfile changing format version
+// looks like, npm 6 to npm 7 or pnpm 5 to pnpm 9. The head file is perfectly
+// readable and every entry it locks deserves evaluating.
+func TestDiffEvaluatesTheHeadWhenTheBaseWillNotParse(t *testing.T) {
+	r := diffFixture(t)
+	r.write("package-lock.json", `{
+  "name": "fixture",
+  "lockfileVersion": 1,
+  "dependencies": {
+    "trustdiff-fixture-lib": {
+      "version": "1.0.0",
+      "resolved": "https://registry.npmjs.org/trustdiff-fixture-lib/-/trustdiff-fixture-lib-1.0.0.tgz",
+      "integrity": "sha512-Zm9ydGhlbGli"
+    }
+  }
+}
+`)
+	base := r.commit("lock the fixture with npm 6")
+	r.write("package-lock.json", headLock)
+
+	code, stdout, stderr := run(t, "diff", "--base", base)
+	if code != ExitFindings {
+		t.Fatalf("exit = %d, want 1 (stderr %q)\n%s", code, stderr, stdout)
+	}
+	if !strings.Contains(stdout, "package-lock.json at "+base[:shortSHA]+": not read (") {
+		t.Errorf("stdout does not say the base side was not read:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "every entry of the file reads as added") {
+		t.Errorf("stdout does not say what that means for the comparison:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "npm:trustdiff-fixture-lib@2.0.0") {
+		t.Errorf("the head entries were not evaluated:\n%s", stdout)
+	}
+}
+
+// A lockfile that was written and never added is invisible to git. Reporting it
+// as unchanged is the one answer it must not get.
+func TestDiffNamesAnUntrackedLockfile(t *testing.T) {
+	r := diffFixture(t)
+	r.write("README.md", "fixture\n")
+	base := r.commit("first")
+	r.write("package-lock.json", headLock)
+
+	code, stdout, stderr := run(t, "diff", "--base", base)
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want 0 (stderr %q)\n%s", code, stderr, stdout)
+	}
+	want := "package-lock.json is not tracked by git, so it was not compared; git add it to have it evaluated"
+	if !strings.Contains(stdout, want) {
+		t.Errorf("stdout lacks %q:\n%s", want, stdout)
 	}
 }
 

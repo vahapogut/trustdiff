@@ -2,6 +2,7 @@ package gitdiff
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/vahapogut/trustdiff/internal/lockfile"
@@ -22,6 +23,20 @@ func fromGit(remote string) func(*lockfile.Entry) {
 	return func(e *lockfile.Entry) {
 		e.Source = lockfile.SourceGit
 		e.Resolved = remote
+	}
+}
+
+func fromURL(url string) func(*lockfile.Entry) {
+	return func(e *lockfile.Entry) {
+		e.Source = lockfile.SourceURL
+		e.Resolved = url
+	}
+}
+
+func fromPath(dir string) func(*lockfile.Entry) {
+	return func(e *lockfile.Entry) {
+		e.Source = lockfile.SourcePath
+		e.Resolved = dir
 	}
 }
 
@@ -104,6 +119,25 @@ func TestDiff(t *testing.T) {
 			base:        []lockfile.Entry{entry("cargo:serde@1.0.210", "sha256-ser")},
 			head:        []lockfile.Entry{entry("cargo:serde@1.0.210", "sha256-ser", fromGit("https://github.com/example/serde#deadbeef"))},
 			wantChanged: []string{"cargo:serde@1.0.210 -> cargo:serde@1.0.210"},
+		},
+		{
+			// The version, the source and the missing hash all stay as they were and
+			// only the remote moves, which is the whole of what gets installed.
+			name:        "the same version repointed at another git repository",
+			base:        []lockfile.Entry{entry("npm:lib@1.0.0", "", fromGit("git+ssh://git@github.com/good/lib.git#"+strings.Repeat("a", 40)))},
+			head:        []lockfile.Entry{entry("npm:lib@1.0.0", "", fromGit("git+ssh://git@github.com/attacker/lib.git#"+strings.Repeat("b", 40)))},
+			wantChanged: []string{"npm:lib@1.0.0 -> npm:lib@1.0.0"},
+		},
+		{
+			name:        "the same version repointed at another tarball",
+			base:        []lockfile.Entry{entry("npm:lib@1.0.0", "sha512-tar", fromURL("https://example.test/lib-1.0.0.tgz"))},
+			head:        []lockfile.Entry{entry("npm:lib@1.0.0", "sha512-tar", fromURL("https://elsewhere.test/lib-1.0.0.tgz"))},
+			wantChanged: []string{"npm:lib@1.0.0 -> npm:lib@1.0.0"},
+		},
+		{
+			name: "a workspace member at the same path is not a change",
+			base: []lockfile.Entry{entry("cargo:ui@0.1.0", "", fromPath("crates/ui"))},
+			head: []lockfile.Entry{entry("cargo:ui@0.1.0", "", fromPath("crates/ui"))},
 		},
 		{
 			name: "the same version from another registry host is not a change",

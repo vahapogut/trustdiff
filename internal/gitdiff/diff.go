@@ -47,9 +47,14 @@ func (c Changes) Empty() bool {
 //
 // An entry at the same version counts as changed when its source or its
 // integrity hash differs: swapping a registry download for a git revision or
-// dropping the hash is what TD013 and TD014 exist to catch. The resolved URL on
-// its own is not compared, because moving a project to a registry mirror
-// rewrites every one of them and changes nothing about the packages.
+// dropping the hash is what TD013 and TD014 exist to catch.
+//
+// The resolved location is compared for every entry the ecosystem's own registry
+// does not serve. For a registry entry it is ignored, because moving a project to
+// a mirror rewrites every one of them and changes nothing about the packages that
+// are installed. For a git, url or path entry it is the identity of what gets
+// installed: the same version repointed at another repository, another tarball or
+// another directory installs other code, and nothing else in the entry says so.
 //
 // Entries repeating one exact version are collapsed into the first of them, the
 // one the earliest line mentions, and the package counts as direct if any of
@@ -101,7 +106,8 @@ func Diff(base, head *lockfile.Lockfile) Changes {
 			continue
 		}
 		b := &baseEntries[j]
-		if b.Ref.Version != h.Ref.Version || b.Source != h.Source || b.Integrity != h.Integrity {
+		if b.Ref.Version != h.Ref.Version || b.Source != h.Source || b.Integrity != h.Integrity ||
+			(h.Source != lockfile.SourceRegistry && b.Resolved != h.Resolved) {
 			changes.Changed = append(changes.Changed, Change{Base: *b, Head: *h})
 		}
 	}

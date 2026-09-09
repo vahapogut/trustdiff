@@ -181,3 +181,28 @@ func TestLockfiles(t *testing.T) {
 		t.Errorf("Lockfiles = %q, want %q", got, want)
 	}
 }
+
+// A lockfile that was written and never added is invisible to a comparison
+// against a revision, so it has to be findable another way.
+func TestUntrackedLockfiles(t *testing.T) {
+	repo := newTestRepo(t)
+	repo.write(".gitignore", "node_modules/\n")
+	repo.write("Cargo.lock", "version = 3\n")
+	repo.commit("lock the dependencies")
+	repo.write("package-lock.json", "{\"lockfileVersion\": 3}\n")
+	repo.write("notes.txt", "not a lockfile\n")
+	// Ignored, the way an install's own copy is: an audit never looks at it.
+	repo.write("node_modules/left-pad/package-lock.json", "{\"lockfileVersion\": 3}\n")
+	// Staged counts as tracked, so it is compared and does not belong here.
+	repo.write("crates/inner/Cargo.lock", "version = 3\n")
+	repo.run("add", "crates/inner/Cargo.lock")
+
+	got, err := repo.open(t).UntrackedLockfiles(t.Context())
+	if err != nil {
+		t.Fatalf("UntrackedLockfiles: %v", err)
+	}
+	want := []string{"package-lock.json"}
+	if !slices.Equal(got, want) {
+		t.Errorf("UntrackedLockfiles = %q, want %q", got, want)
+	}
+}

@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -188,23 +189,102 @@ func TestScanReportsDroppedEntries(t *testing.T) {
 	}
 }
 
-// The document formats keep stdout to the document, so the notes go to the log,
-// which -v shows.
+// The document formats keep stdout to the document, so the notes go to stderr.
+// They are what says how much was evaluated and what was not, and the format the
+// Action uses is one of these, so they may not depend on -v.
 func TestScanNotesStayOutOfTheDocument(t *testing.T) {
 	dir := scanFixture(t)
 	writeFile(t, dir, "package-lock.json", baseLock)
+	writeFile(t, dir, "broken/package-lock.json", "{ this is not JSON\n")
 
 	code, stdout, stderr := run(t, "--format", "json", "scan")
 	if code != ExitOK {
 		t.Fatalf("exit = %d, want 0 (stderr %q)", code, stderr)
 	}
 	decodeReport(t, stdout) // the document alone, or this does not parse
-	if stderr != "" {
-		t.Errorf("stderr = %q, want empty without -v", stderr)
+	for _, want := range []string{
+		"evaluating 2 entries of 1 lockfile: package-lock.json",
+		"broken/package-lock.json: not read (",
+	} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr lacks %q without -v:\n%s", want, stderr)
+		}
+	}
+}
+
+// One lockfile no parser gets through must not cost the findings of the others,
+// and the count line says what was actually evaluated.
+func TestScanKeepsTheFindingsOfTheLockfilesItCanRead(t *testing.T) {
+	dir := scanFixture(t)
+	writeFile(t, dir, "web/package-lock.json", nestedLock)
+	writeFile(t, dir, "api/package-lock.json", "{ this is not JSON\n")
+
+	code, stdout, stderr := run(t, "scan")
+	if code != ExitFindings {
+		t.Fatalf("exit = %d, want 1 (stderr %q)\n%s", code, stderr, stdout)
+	}
+	for _, want := range []string{
+		"evaluating 1 entry of 1 lockfile: web/package-lock.json",
+		"api/package-lock.json: not read (",
+		"npm:trustdiff-fixture-lib@2.0.0",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, stdout)
+		}
+	}
+}
+
+// A lockfile that is a symbolic link is not read: following it would put a file
+// from outside the tree being evaluated into the report and into the lookups.
+func TestScanRefusesASymlinkedLockfile(t *testing.T) {
+	dir := scanFixture(t)
+	writeFile(t, dir, "ok/package-lock.json", baseLock)
+	outside := filepath.Join(t.TempDir(), "outside.json")
+	if err := os.WriteFile(outside, []byte(secretLock), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "package-lock.json")); err != nil {
+		t.Skipf("this machine does not let the test process create a symbolic link: %v", err)
 	}
 
-	if _, _, stderr = run(t, "-v", "--format", "json", "scan"); !strings.Contains(stderr, "evaluating 2 entries of 1 lockfile") {
-		t.Errorf("-v does not log the count:\n%s", stderr)
+	code, stdout, stderr := run(t, "scan")
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want 0 (stderr %q)\n%s", code, stderr, stdout)
+	}
+	if !strings.Contains(stdout, "package-lock.json: not read (a symbolic link") {
+		t.Errorf("stdout does not refuse the link:\n%s", stdout)
+	}
+	if strings.Contains(stdout+stderr, secretName) {
+		t.Errorf("the file the link points at was read:\n%s%s", stdout, stderr)
+	}
+}
+
+// A subtree the walk is not allowed to read holds lockfiles nobody looked at, so
+// the run says so instead of reporting a pass over what it could see.
+func TestScanReportsDirectoriesItCannotRead(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a directory's readability is an ACL on Windows, which chmod does not set")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("root reads a directory whatever its mode says")
+	}
+	dir := scanFixture(t)
+	writeFile(t, dir, "ok/package-lock.json", baseLock)
+	writeFile(t, dir, "locked/inner/package-lock.json", nestedLock)
+	locked := filepath.Join(dir, "locked")
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	// Put the mode back, or the temporary directory cannot be removed.
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
+
+	code, stdout, stderr := run(t, "scan")
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want 0 (stderr %q)\n%s", code, stderr, stdout)
+	}
+	want := "1 directory was not read (locked): the lockfiles inside were not evaluated"
+	if !strings.Contains(stdout, want) {
+		t.Errorf("stdout lacks %q without -v:\n%s", want, stdout)
 	}
 }
 

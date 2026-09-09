@@ -23,15 +23,24 @@ const (
 )
 
 // hookMarker is the line that says trustdiff wrote a hook file. install refuses
-// to replace a file without it unless --force, and uninstall removes only files
-// that carry it, so a hook somebody else wrote is never lost to a typo. The
-// version in the marker is the script's, not the tool's: it changes only when an
-// older installed hook has to be recognized as older.
+// to replace a file that does not carry it unless --force, and uninstall removes
+// only files that carry it, so a hook somebody else wrote is never lost to a
+// typo. The version in the marker is the script's, not the tool's: it changes
+// only when an older installed hook has to be recognized as older.
 const hookMarker = "# trustdiff-managed-hook v1"
 
 // hookFileMode is what git needs to run a hook: executable by its owner. git
 // itself installs the sample hooks with these bits.
 const hookFileMode fs.FileMode = 0o755
+
+// wroteHook reports whether trustdiff wrote the file. The marker is the second
+// line of every script hookScript has written, so the test is positional: a file
+// that only mentions the marker, in a comment or in a note about a hook that used
+// to be there, is somebody else's and uninstall must leave it alone.
+func wroteHook(contents string) bool {
+	lines := strings.Split(contents, "\n")
+	return len(lines) > 1 && strings.TrimRight(lines[1], "\r") == hookMarker
+}
 
 // hookScript is the file install writes. It is a POSIX shell script because that
 // is what git runs on every platform trustdiff supports, including Windows,
@@ -110,8 +119,9 @@ and the command exits 2, because it is somebody's script: move it aside, or pass
 		Use:   "uninstall",
 		Short: "Remove the git hook",
 		Long: `Remove the pre-commit hook, or the pre-push hook with --pre-push, if trustdiff
-wrote it. A hook file without the trustdiff marker line is left alone, and so is
-a hook that is not there at all: both are reported and both exit 0.`,
+wrote it. A hook file that does not carry the trustdiff marker as its second line
+is left alone, however often it mentions the marker elsewhere, and so is a hook
+that is not there at all: both are reported and both exit 0.`,
 		Args: cobra.NoArgs,
 		RunE: a.runHookUninstall,
 	}
@@ -149,7 +159,7 @@ func (a *App) runHookInstall(cmd *cobra.Command, _ []string) error {
 		// changed nothing, and it keeps a second install out of the file's mtime.
 		return a.reportHook(hookResult{Hook: hook, Path: path, Action: "unchanged"},
 			fmt.Sprintf("the trustdiff %s hook is already installed: %s", hook, path))
-	case strings.Contains(existing, hookMarker):
+	case wroteHook(existing):
 		action, line = "updated", fmt.Sprintf("updated the trustdiff %s hook: %s", hook, path)
 	case force:
 		action, line = "replaced", fmt.Sprintf("replaced the %s hook with the trustdiff hook: %s", hook, path)
@@ -181,7 +191,7 @@ func (a *App) runHookUninstall(cmd *cobra.Command, _ []string) error {
 	case existing == "":
 		return a.reportHook(hookResult{Hook: hook, Path: path, Action: "absent"},
 			fmt.Sprintf("no %s hook to remove: %s does not exist", hook, path))
-	case !strings.Contains(existing, hookMarker):
+	case !wroteHook(existing):
 		return a.reportHook(hookResult{Hook: hook, Path: path, Action: "kept"},
 			fmt.Sprintf("left %s alone: trustdiff did not write it", path))
 	}

@@ -211,6 +211,47 @@ func TestHookUninstallRemovesOnlyTheTrustdiffHook(t *testing.T) {
 	}
 }
 
+// A hook that only talks about the marker, in a comment or in a note about a hook
+// that used to be there, is somebody else's file: uninstall must not delete it and
+// install must not overwrite it without --force.
+func TestHookLeavesAHookThatOnlyMentionsTheMarker(t *testing.T) {
+	dir := newHookRepo(t)
+	path := hookFile(dir, "pre-commit")
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	foreign := "#!/bin/sh\n" +
+		"# My team's hook chain. Note: we removed the \"" + hookMarker + "\" file\n" +
+		"# and call trustdiff from here instead, together with our own checks.\n" +
+		"./scripts/lint.sh || exit 1\n" +
+		"trustdiff diff --fail-on warn || exit 1\n"
+	if err := os.WriteFile(path, []byte(foreign), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := run(t, "hook", "uninstall")
+	if code != ExitOK || stderr != "" {
+		t.Fatalf("uninstall: exit %d, stderr %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "left") {
+		t.Errorf("stdout = %q, want it to say the file was left alone", stdout)
+	}
+	if got := readHook(t, path); got != foreign {
+		t.Fatalf("a hook trustdiff did not write was changed:\n%s", got)
+	}
+
+	code, _, stderr = run(t, "hook", "install")
+	if code != ExitUsage {
+		t.Fatalf("install over it: exit %d, want %d", code, ExitUsage)
+	}
+	if !strings.Contains(stderr, "--force") {
+		t.Errorf("stderr = %q, want it to mention --force", stderr)
+	}
+	if got := readHook(t, path); got != foreign {
+		t.Fatal("install rewrote a hook trustdiff did not write")
+	}
+}
+
 func TestHookPrePushIsSeparateFromPreCommit(t *testing.T) {
 	dir := newHookRepo(t)
 
@@ -289,12 +330,13 @@ func lookBash(t *testing.T) string {
 }
 
 // runHookScript runs the hook file with bash, with PATH set to pathDir alone, so
-// the test decides whether the script finds a trustdiff.
-func runHookScript(t *testing.T, bash, hook, workDir, pathDir string) (string, int) {
+// the test decides whether the script finds a trustdiff. Anything in env is set
+// on top of that, in the "NAME=value" shape exec takes.
+func runHookScript(t *testing.T, bash, hook, workDir, pathDir string, env ...string) (string, int) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), bash, hook)
 	cmd.Dir = workDir
-	cmd.Env = append(os.Environ(), "PATH="+pathDir)
+	cmd.Env = append(append(os.Environ(), "PATH="+pathDir), env...)
 	out, err := cmd.CombinedOutput()
 	code := 0
 	if err != nil {
@@ -307,33 +349,77 @@ func runHookScript(t *testing.T, bash, hook, workDir, pathDir string) (string, i
 	return string(out), code
 }
 
+// recordingTrustdiff puts a trustdiff on a PATH of its own that records how the
+// hook called it. It is a shell script using nothing but builtins, so the test
+// never leaves the shell. It returns the directory to use as PATH and the file the
+// arguments land in, which does not exist until the hook runs it.
+func recordingTrustdiff(t *testing.T) (binDir, recorded string) {
+	t.Helper()
+	binDir = t.TempDir()
+	recorded = filepath.Join(binDir, "args")
+	fake := "#!/bin/sh\necho \"$@\" > '" + filepath.ToSlash(recorded) + "'\n"
+	if err := os.WriteFile(filepath.Join(binDir, "trustdiff"), []byte(fake), hookFileMode); err != nil {
+		t.Fatal(err)
+	}
+	return binDir, recorded
+}
+
 func TestInstalledHookRunsTrustdiffDiff(t *testing.T) {
 	bash := lookBash(t)
 	dir := newHookRepo(t)
 	if code, _, stderr := run(t, "hook", "install"); code != ExitOK {
 		t.Fatalf("hook install: exit %d, stderr %q", code, stderr)
 	}
-
-	// A trustdiff on PATH that records how the hook called it. It is a shell
-	// script using nothing but builtins, so the test never leaves the shell.
-	binDir := t.TempDir()
-	recorded := filepath.ToSlash(filepath.Join(binDir, "args"))
-	fake := "#!/bin/sh\necho \"$@\" > '" + recorded + "'\n"
-	if err := os.WriteFile(filepath.Join(binDir, "trustdiff"), []byte(fake), hookFileMode); err != nil {
-		t.Fatal(err)
-	}
+	binDir, recorded := recordingTrustdiff(t)
 
 	out, code := runHookScript(t, bash, hookFile(dir, "pre-commit"), dir, binDir)
 	if code != 0 {
 		t.Fatalf("the hook exited %d\n%s", code, out)
 	}
-	args, err := os.ReadFile(filepath.FromSlash(recorded)) // #nosec G304 -- a path this test built.
+	args, err := os.ReadFile(recorded) // #nosec G304 -- a path this test built.
 	if err != nil {
 		t.Fatalf("the hook did not run the trustdiff on PATH: %v\n%s", err, out)
 	}
 	if got := strings.TrimSpace(string(args)); got != "diff --fail-on block" {
 		t.Errorf("the hook ran trustdiff %q, want %q", got, "diff --fail-on block")
 	}
+}
+
+// TRUSTDIFF_SKIP is the way past a false positive the installed script documents,
+// and the alternative to --no-verify, which turns off every hook the user has. It
+// skips when it is set to something, and only then: an empty value is how a shell
+// leaves a variable behind, and it must not disarm the hook.
+func TestInstalledHookHonoursTrustdiffSkip(t *testing.T) {
+	bash := lookBash(t)
+	dir := newHookRepo(t)
+	if code, _, stderr := run(t, "hook", "install"); code != ExitOK {
+		t.Fatalf("hook install: exit %d, stderr %q", code, stderr)
+	}
+
+	t.Run("set", func(t *testing.T) {
+		binDir, recorded := recordingTrustdiff(t)
+		out, code := runHookScript(t, bash, hookFile(dir, "pre-commit"), dir, binDir, "TRUSTDIFF_SKIP=1")
+		if code != 0 {
+			t.Fatalf("the hook exited %d with TRUSTDIFF_SKIP set, want 0\n%s", code, out)
+		}
+		if !strings.Contains(out, "TRUSTDIFF_SKIP is set") {
+			t.Errorf("output = %q, want it to say why it skipped", out)
+		}
+		if _, err := os.Stat(recorded); !os.IsNotExist(err) {
+			t.Errorf("the hook ran trustdiff although TRUSTDIFF_SKIP was set: %v", err)
+		}
+	})
+
+	t.Run("set to the empty string", func(t *testing.T) {
+		binDir, recorded := recordingTrustdiff(t)
+		out, code := runHookScript(t, bash, hookFile(dir, "pre-commit"), dir, binDir, "TRUSTDIFF_SKIP=")
+		if code != 0 {
+			t.Fatalf("the hook exited %d\n%s", code, out)
+		}
+		if _, err := os.ReadFile(recorded); err != nil { // #nosec G304 -- a path this test built.
+			t.Errorf("an empty TRUSTDIFF_SKIP skipped the hook: %v\n%s", err, out)
+		}
+	})
 }
 
 func TestInstalledHookPassesWhenTrustdiffIsMissing(t *testing.T) {
