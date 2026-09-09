@@ -15,8 +15,14 @@
 //
 // Every name is compared in its canonical spelling: model.NormalizeName followed
 // by lowercasing, so that "Requests", "requests" and "REQUESTS" are one name on
-// PyPI and the crates.io names, which the registry treats case-insensitively, are
-// too. A name that is itself popular is never a suspect.
+// PyPI, and "Express" and "express" one name here even though the npm registry
+// keeps legacy mixed-case names apart (a look-alike that differs only in case is
+// still a look-alike). For crates.io, which answers serde-json with serde_json
+// (verified 2026-09-09), "-" is folded to "_" as well: a crate referenced with
+// either separator is the popular crate and not a squat of itself, and the
+// underscore form is the identifier Rust code uses (serde_json::, proc_macro2::),
+// so it is the spelling the lists and the findings carry. A name that is itself
+// popular is never a suspect.
 package typosquat
 
 import (
@@ -71,10 +77,23 @@ var languageAffixes = []string{"python", "node", "py", "js"}
 // commonWords are the tokens a squatter appends to a popular name.
 var commonWords = map[string]bool{"dev": true, "utils": true, "cli": true, "js": true, "py": true}
 
+// minFuzzyLength is the shortest popular name the transposition and edit-distance
+// rules consider. Below it every other short name is within one edit (xo and ox,
+// np and pn, io and co), and the ecosyste-ms dataset has no confirmed typosquat of
+// a target shorter than four characters, so the fuzzy rules would add false
+// positives and no recall. The structural rules (separator, scope, affix,
+// confusable, common-word) are exact and apply at every length.
+const minFuzzyLength = 4
+
 // Canonical returns the spelling names are compared in: model.NormalizeName, then
-// lowercase, with surrounding whitespace removed.
+// lowercase, with surrounding whitespace removed; for Cargo "-" becomes "_", the
+// spelling crates.io itself answers with.
 func Canonical(eco model.Ecosystem, name string) string {
-	return strings.ToLower(strings.TrimSpace(model.NormalizeName(eco, name)))
+	c := strings.ToLower(strings.TrimSpace(model.NormalizeName(eco, name)))
+	if eco == model.Cargo {
+		c = strings.ReplaceAll(c, "-", "_")
+	}
+	return c
 }
 
 // stripSeparators removes every separator so that spellings that differ only in

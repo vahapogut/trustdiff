@@ -85,11 +85,13 @@ func TestParseListIgnoresCommentsAndBlankLines(t *testing.T) {
 }
 
 // TestEmbedded checks the generated snapshot: every listed ecosystem has a
-// substantial, sorted, unique list with full provenance, in a file that stays
-// under 15000 lines.
+// substantial, sorted, unique list with full provenance. The minimums are what
+// the sources publish (17338 npm, 15000 PyPI, 5000 crates on 2026-09-09) less
+// room for the sources to shrink a little; nothing caps the lists, since a
+// popular name left out is reported as a squat of the names that stayed.
 func TestEmbedded(t *testing.T) {
 	lists := Embedded()
-	minNames := map[model.Ecosystem]int{model.NPM: 10000, model.PyPI: 10000, model.Cargo: 4000}
+	minNames := map[model.Ecosystem]int{model.NPM: 16000, model.PyPI: 14500, model.Cargo: 4500}
 	for _, eco := range listed {
 		t.Run(string(eco), func(t *testing.T) {
 			list, ok := lists.List(eco)
@@ -124,8 +126,8 @@ func TestEmbedded(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if lines := bytes.Count(data, []byte("\n")); lines >= 15000 {
-				t.Errorf("%s has %d lines, want fewer than 15000", dataFile(eco), lines)
+			if lines := bytes.Count(data, []byte("\n")); lines != len(list.Names)+1 {
+				t.Errorf("%s has %d lines, want the NOTICE line and %d names", dataFile(eco), lines, len(list.Names))
 			}
 			set, ok := lists.Popular(eco)
 			if !ok || set.Len() != len(list.Names) {
@@ -158,7 +160,6 @@ func newListServer(t *testing.T) *listServer {
 	}
 	serve("/top-pypi-packages.min.json", "top-pypi-packages.json")
 	serve("/top.js", "npm-high-impact-top.js")
-	serve("/raw.json", "npm-rank.json")
 	mux.HandleFunc("/api/v1/crates", func(w http.ResponseWriter, r *http.Request) {
 		s.record(r)
 		q := r.URL.Query()
@@ -190,7 +191,6 @@ func (s *listServer) sources(pages int) Sources {
 	return Sources{
 		PyPI:          s.URL + "/top-pypi-packages.min.json",
 		NPMHighImpact: s.URL + "/top.js",
-		NPMRank:       s.URL + "/raw.json",
 		Crates:        s.URL + "/api/v1/crates",
 		CratesPages:   pages,
 	}
@@ -222,19 +222,18 @@ func TestFetch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Every name of every fixture, in rank order: the default limit drops nothing.
 	want := map[model.Ecosystem][]string{
-		model.NPM:   {"ansi-styles", "brace-expansion", "chalk", "commander", "debug", "fs-extra", "minimatch", "semver", "tslib"},
-		model.PyPI:  {"boto3", "certifi", "idna", "packaging", "typing-extensions"},
-		model.Cargo: {"base64", "bitflags", "getrandom", "hashbrown", "libc", "proc-macro2", "quote", "rand", "rand_core", "syn"},
+		model.NPM:   {"semver", "minimatch", "debug", "ansi-styles", "brace-expansion"},
+		model.PyPI:  {"boto3", "packaging", "typing-extensions", "certifi", "idna"},
+		model.Cargo: {"hashbrown", "syn", "getrandom", "bitflags", "rand_core", "rand", "libc", "quote", "proc_macro2", "base64"},
 	}
 	if len(lists) != len(want) {
 		t.Fatalf("Fetch() returned %d lists, want %d", len(lists), len(want))
 	}
 	for _, list := range lists {
-		names := slices.Clone(list.Names)
-		slices.Sort(names)
-		if !slices.Equal(names, want[list.Ecosystem]) {
-			t.Errorf("%s names = %v, want %v", list.Ecosystem, names, want[list.Ecosystem])
+		if !slices.Equal(list.Names, want[list.Ecosystem]) {
+			t.Errorf("%s names = %v, want %v", list.Ecosystem, list.Names, want[list.Ecosystem])
 		}
 		if !list.Fetched.Equal(fetchedDay) {
 			t.Errorf("%s fetched = %s, want %s", list.Ecosystem, list.Fetched, fetchedDay)
@@ -244,7 +243,7 @@ func TestFetch(t *testing.T) {
 		}
 	}
 	wantRequests := []string{
-		"/top.js", "/raw.json", "/top-pypi-packages.min.json",
+		"/top.js", "/top-pypi-packages.min.json",
 		"/api/v1/crates?sort=downloads&per_page=100&page=1",
 		"/api/v1/crates?sort=downloads&per_page=100&page=2",
 	}
@@ -280,7 +279,8 @@ func TestFetchErrors(t *testing.T) {
 		want   string
 	}{
 		{"pypi missing", func(s *Sources) { s.PyPI = server.URL + "/missing.json" }, "pypi list: GET"},
-		{"npm wrong shape", func(s *Sources) { s.NPMHighImpact = server.URL + "/raw.json" }, "npm list: parsing"},
+		{"npm wrong shape", func(s *Sources) { s.NPMHighImpact = server.URL + "/top-pypi-packages.min.json" }, "npm list: parsing"},
+		{"pypi wrong shape", func(s *Sources) { s.PyPI = server.URL + "/top.js" }, "pypi list: parsing"},
 		{"crates page missing", func(s *Sources) { s.CratesPages = 3 }, "cargo list: GET"},
 		{"nil client", nil, "client is required"},
 	}
@@ -349,6 +349,34 @@ func TestRefreshAndLoad(t *testing.T) {
 			t.Errorf("pypi origin = %q, want the refreshed file", got)
 		}
 	})
+}
+
+// TestRefreshedListsAndCacheClear checks the layout contract with httpcache: the
+// refreshed lists live in the one subdirectory httpcache.Stat counts and
+// httpcache.Clear removes, so "cache clear" keeps working after a refresh.
+func TestRefreshedListsAndCacheClear(t *testing.T) {
+	server := newListServer(t)
+	client := newTestClient(t, server)
+	cacheDir := client.Dir()
+	if err := Refresh(context.Background(), client, cacheDir, WithSources(server.sources(2))); err != nil {
+		t.Fatal(err)
+	}
+	stats, err := httpcache.Stat(cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Lists != len(listed) || stats.Entries == 0 {
+		t.Errorf("Stat() = %+v, want %d lists next to the source downloads", stats, len(listed))
+	}
+	if err := httpcache.Clear(cacheDir); err != nil {
+		t.Fatalf("Clear() after a refresh: %v", err)
+	}
+	if _, err := os.Stat(ListsDir(cacheDir)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("lists directory after Clear: %v, want removed", err)
+	}
+	if lists := Load(cacheDir, fetchedDay, nil); lists.Origin(model.NPM) != "embedded" {
+		t.Errorf("origin after Clear = %q, want embedded", lists.Origin(model.NPM))
+	}
 }
 
 func TestLoadWithoutRefreshedCopy(t *testing.T) {

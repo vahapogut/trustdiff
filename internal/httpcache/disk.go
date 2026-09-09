@@ -19,8 +19,21 @@ const (
 
 // entryFileName matches every file this package writes: the two entry files and
 // the temporary files os.CreateTemp creates for them (a decimal suffix, see
-// os.CreateTemp, verified 2026-09-09 on go1.26). Clear removes nothing else.
+// os.CreateTemp, verified 2026-09-09 on go1.26). Clear removes nothing else at
+// the top level of the directory.
 var entryFileName = regexp.MustCompile(`^[0-9a-f]{64}\.(json|body)(\.[0-9]+\.tmp)?$`)
+
+// ListsSubdir is the one subdirectory of the cache directory that belongs to
+// trustdiff without being written by this package: internal/typosquat keeps the
+// refreshed popular package lists there, as <ecosystem>.txt files. Stat counts
+// them and Clear removes them with the entries, so the directory stays clearable
+// after "cache refresh-lists"; every other subdirectory is foreign.
+const ListsSubdir = "lists"
+
+// listFileName matches the files internal/typosquat writes into ListsSubdir: one
+// <ecosystem>.txt per list and the temporary files WriteLists renames into place
+// (the same os.CreateTemp suffix as above).
+var listFileName = regexp.MustCompile(`^[a-z0-9]+\.txt(\.[0-9]+\.tmp)?$`)
 
 // entryMeta is the metadata half of a cache entry. TTL records what the writer
 // asked for, for cache status; freshness is decided by the current request.
@@ -280,7 +293,11 @@ func DefaultDir() (string, error) {
 type Stats struct {
 	// Entries is the number of entries with valid metadata.
 	Entries int
-	// Bytes is the size of every file this package wrote, including leftovers.
+	// Lists is the number of refreshed popular package lists (<ecosystem>.txt
+	// files) in the ListsSubdir subdirectory.
+	Lists int
+	// Bytes is the size of every file Clear would remove: the entries this
+	// package wrote, including leftovers, and the files of ListsSubdir.
 	Bytes int64
 	// OldestFetchedAt and NewestFetchedAt are zero when there are no entries.
 	OldestFetchedAt time.Time
@@ -288,7 +305,7 @@ type Stats struct {
 }
 
 // Stat summarizes dir. A directory that does not exist is an empty cache.
-// Files this package did not write are ignored.
+// Files neither this package nor internal/typosquat wrote are ignored.
 func Stat(dir string) (Stats, error) {
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -300,7 +317,15 @@ func Stat(dir string) (Stats, error) {
 	var s Stats
 	for _, e := range entries {
 		name := e.Name()
-		if e.IsDir() || !entryFileName.MatchString(name) {
+		if e.IsDir() {
+			if name == ListsSubdir {
+				if err := statLists(filepath.Join(dir, name), &s); err != nil {
+					return Stats{}, err
+				}
+			}
+			continue
+		}
+		if !entryFileName.MatchString(name) {
 			continue
 		}
 		info, err := e.Info()
@@ -336,10 +361,42 @@ func Stat(dir string) (Stats, error) {
 	return s, nil
 }
 
-// Clear removes every file this package wrote in dir and leaves the directory in
-// place. It refuses, with ErrForeignFiles, when dir holds any other file or a
-// subdirectory, so a mistyped directory never loses user data. A directory that
-// does not exist is already clear.
+// statLists adds the files of the lists subdirectory to s: every list file counts
+// toward Bytes and each finished <ecosystem>.txt toward Lists.
+func statLists(dir string, s *Stats) error {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("reading lists directory %s: %w", dir, err)
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !listFileName.MatchString(name) {
+			continue
+		}
+		info, err := e.Info()
+		if errors.Is(err, os.ErrNotExist) {
+			continue // removed between listing and stat
+		}
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", filepath.Join(dir, name), err)
+		}
+		s.Bytes += info.Size()
+		if strings.HasSuffix(name, ".txt") {
+			s.Lists++
+		}
+	}
+	return nil
+}
+
+// Clear removes every file this package wrote in dir, and the ListsSubdir
+// subdirectory with the popular lists internal/typosquat wrote into it, and
+// leaves dir itself in place. It refuses, with ErrForeignFiles, when dir or the
+// lists subdirectory holds any other file or subdirectory, so a mistyped
+// directory never loses user data. A directory that does not exist is already
+// clear.
 func Clear(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -348,16 +405,62 @@ func Clear(dir string) error {
 	if err != nil {
 		return fmt.Errorf("reading cache directory %s: %w", dir, err)
 	}
+	// Check everything before removing anything, so a refusal leaves the
+	// directory as it was.
+	var listsDir string
+	var listFiles []string
 	for _, e := range entries {
-		if e.IsDir() || !entryFileName.MatchString(e.Name()) {
+		switch {
+		case e.IsDir() && e.Name() == ListsSubdir:
+			listsDir = filepath.Join(dir, e.Name())
+			if listFiles, err = clearableListFiles(listsDir); err != nil {
+				return err
+			}
+		case e.IsDir(), !entryFileName.MatchString(e.Name()):
 			return fmt.Errorf("%w: %s contains %q", ErrForeignFiles, dir, e.Name())
 		}
 	}
 	for _, e := range entries {
-		path := filepath.Join(dir, e.Name())
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("removing %s: %w", path, err)
+		if e.IsDir() {
+			continue
 		}
+		if err := removeIfPresent(filepath.Join(dir, e.Name())); err != nil {
+			return err
+		}
+	}
+	if listsDir == "" {
+		return nil
+	}
+	for _, name := range listFiles {
+		if err := removeIfPresent(filepath.Join(listsDir, name)); err != nil {
+			return err
+		}
+	}
+	return removeIfPresent(listsDir)
+}
+
+// clearableListFiles lists the files of the lists subdirectory, refusing with
+// ErrForeignFiles when it holds anything internal/typosquat would not have
+// written there.
+func clearableListFiles(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("reading lists directory %s: %w", dir, err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() || !listFileName.MatchString(e.Name()) {
+			return nil, fmt.Errorf("%w: %s contains %q", ErrForeignFiles, dir, e.Name())
+		}
+		names = append(names, e.Name())
+	}
+	return names, nil
+}
+
+// removeIfPresent removes path; a file that disappeared in the meantime is fine.
+func removeIfPresent(path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("removing %s: %w", path, err)
 	}
 	return nil
 }

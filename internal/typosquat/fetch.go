@@ -1,7 +1,6 @@
 package typosquat
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,10 +14,12 @@ import (
 	"github.com/vahapogut/trustdiff/internal/model"
 )
 
-// maxNames caps every list so that each file, with its NOTICE line, stays under
-// 15000 lines. hugovk publishes 15000 PyPI names and the two npm sources
-// together exceed that; the least popular names are the ones dropped.
-const maxNames = 14900
+// maxNames bounds every list against a runaway source, well above what the
+// sources publish (17338 npm names, 15000 PyPI names and 5000 crates on
+// 2026-09-09), so that no popular name is dropped: a name left out of the list
+// is not only unprotected as a target, it is reported as a squat of the names
+// that stayed (http of https, vue-server-renderer of @vue/server-renderer).
+const maxNames = 50000
 
 // cratesPerPage is the largest page crates.io serves.
 const cratesPerPage = 100
@@ -41,15 +42,13 @@ type Sources struct {
 	// [{"download_count": N, "project": "name"}, ...]} ordered by downloads.
 	PyPI string
 	// NPMHighImpact is lib/top.js of wooorm/npm-high-impact: the packages npm
-	// calls high impact (one million weekly downloads or 500 dependents). Shape:
-	// a line "export const top = [" followed by one single-quoted name per line,
-	// most downloaded first.
+	// calls high impact (one million weekly downloads or 500 dependents), 17338
+	// names on 2026-09-09. Shape: a line "export const top = [" followed by one
+	// single-quoted name per line, most downloaded first. It is the only npm
+	// source: the tristan-f-r/npm-rank release asset (top 10000 by downloads,
+	// last built 2024-11-27, 6 MB) was compared against it on 2026-09-09 and
+	// contributed 20 names, all download-count spam, so it was dropped.
 	NPMHighImpact string
-	// NPMRank is raw.json of tristan-f-r/npm-rank (formerly LeoDog896/npm-rank;
-	// the old URL redirects): the top 10000 packages. Shape: a JSON array of
-	// objects with "name", ordered by popularity; the README promises the file
-	// name and the array shape stay stable.
-	NPMRank string
 	// Crates is the crates.io list endpoint without a query string. Fetch adds
 	// sort=downloads, per_page=100 and page=N. Shape: {"crates": [{"name":
 	// "..."}, ...], "meta": {"total": N, "next_page": "?sort=...&page=2" or null}}.
@@ -63,7 +62,6 @@ func DefaultSources() Sources {
 	return Sources{
 		PyPI:          "https://hugovk.dev/top-pypi-packages/top-pypi-packages.min.json",
 		NPMHighImpact: "https://raw.githubusercontent.com/wooorm/npm-high-impact/main/lib/top.js",
-		NPMRank:       "https://github.com/tristan-f-r/npm-rank/releases/download/latest/raw.json",
 		Crates:        "https://crates.io/api/v1/crates",
 		CratesPages:   defaultCratesPages,
 	}
@@ -73,7 +71,7 @@ func DefaultSources() Sources {
 // NOTICE line. The date is the observation, not the fetch.
 const (
 	licensePyPI  = "CC BY 4.0 per the Zenodo record linked from the hugovk/top-pypi-packages README (the repository carries no license file, observed 2026-09-09)"
-	licenseNPM   = "MIT (wooorm/npm-high-impact and tristan-f-r/npm-rank, observed 2026-09-09)"
+	licenseNPM   = "MIT (wooorm/npm-high-impact, observed 2026-09-09)"
 	licenseCargo = "none stated by crates.io (https://crates.io/data-access, observed 2026-09-09), fetched under its API rules of one request per second with an identifying User-Agent"
 )
 
@@ -103,8 +101,8 @@ func WithNow(now func() time.Time) Option {
 	}
 }
 
-// WithLimit caps the names kept per list. The default keeps each file under
-// 15000 lines.
+// WithLimit caps the names kept per list, most popular first. The default,
+// maxNames, is above what any source publishes.
 func WithLimit(n int) Option {
 	return func(f *fetcher) {
 		if n > 0 {
@@ -139,7 +137,7 @@ func newFetcher(client *httpcache.Client, opts []Option) *fetcher {
 }
 
 // Fetch downloads the popular lists of every listed ecosystem through client:
-// one request for PyPI, two for npm and CratesPages (by default 50) for
+// one request each for npm and PyPI and CratesPages (by default 50) for
 // crates.io, which the client spaces at one request per second. It stops at the
 // first failure and returns the lists in the order npm, pypi, cargo.
 func Fetch(ctx context.Context, client *httpcache.Client, opts ...Option) ([]*List, error) {
@@ -224,9 +222,7 @@ func (f *fetcher) pypi(ctx context.Context) (*List, error) {
 	return f.newList(model.PyPI, f.sources.PyPI, licensePyPI, ranked), nil
 }
 
-// npm unions the high-impact list (recent, ranked by downloads) with npm-rank
-// (broader, its release asset updates less often), high impact first, so that
-// the cap drops the least popular npm-rank names.
+// npm reads the high-impact list, ranked by downloads.
 func (f *fetcher) npm(ctx context.Context) (*List, error) {
 	body, err := f.get(ctx, f.sources.NPMHighImpact)
 	if err != nil {
@@ -236,17 +232,7 @@ func (f *fetcher) npm(ctx context.Context) (*List, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", f.sources.NPMHighImpact, err)
 	}
-	body, err = f.get(ctx, f.sources.NPMRank)
-	if err != nil {
-		return nil, err
-	}
-	rank, err := parseNPMRank(body)
-	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", f.sources.NPMRank, err)
-	}
-	ranked = append(ranked, rank...)
-	source := f.sources.NPMHighImpact + " " + f.sources.NPMRank
-	return f.newList(model.NPM, source, licenseNPM, ranked), nil
+	return f.newList(model.NPM, f.sources.NPMHighImpact, licenseNPM, ranked), nil
 }
 
 func (f *fetcher) cargo(ctx context.Context) (*List, error) {
@@ -315,24 +301,6 @@ func parseNPMHighImpact(data []byte) ([]string, error) {
 	}
 	if len(names) == 0 {
 		return nil, errors.New("no names")
-	}
-	return names, nil
-}
-
-// parseNPMRank reads the names of the npm-rank array, in rank order.
-func parseNPMRank(data []byte) ([]string, error) {
-	var packages []struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal(bytes.TrimSpace(data), &packages); err != nil {
-		return nil, err
-	}
-	if len(packages) == 0 {
-		return nil, errors.New("no packages")
-	}
-	names := make([]string, 0, len(packages))
-	for _, p := range packages {
-		names = append(names, p.Name)
 	}
 	return names, nil
 }

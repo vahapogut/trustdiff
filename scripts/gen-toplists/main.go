@@ -1,9 +1,10 @@
 // Command gen-toplists regenerates the popular package snapshots embedded in the
 // binary for typosquat detection (internal/typosquat/data/*.txt). It downloads
 // the same sources as "trustdiff cache refresh-lists": the hugovk
-// top-pypi-packages artifact, the npm-high-impact and npm-rank lists, and 50
-// pages of the crates.io list endpoint at one request per second with the
-// identifying User-Agent, so a run takes about a minute.
+// top-pypi-packages artifact, the wooorm/npm-high-impact list, and 50 pages of
+// the crates.io list endpoint at one request per second with the identifying
+// User-Agent, so a run takes about a minute. Every name a source publishes is
+// kept: a popular name left out would be reported as a squat of the names kept.
 //
 // Usage:
 //

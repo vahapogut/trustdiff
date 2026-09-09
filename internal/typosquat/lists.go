@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vahapogut/trustdiff/internal/httpcache"
 	"github.com/vahapogut/trustdiff/internal/model"
 )
 
@@ -24,8 +25,11 @@ const RefreshTTL = 30 * 24 * time.Hour
 
 // listsSubdir is the directory under the trustdiff cache directory that holds the
 // refreshed lists. It is a subdirectory, not a set of loose files, so that the
-// httpcache entries and the lists cannot be mistaken for each other.
-const listsSubdir = "lists"
+// httpcache entries and the lists cannot be mistaken for each other; httpcache
+// knows this one subdirectory by name, counts its files in Stat and removes it
+// in Clear together with the entries, so "cache clear" stays possible after a
+// refresh.
+const listsSubdir = httpcache.ListsSubdir
 
 // noticePrefix opens the first line of every list file.
 const noticePrefix = "# NOTICE "

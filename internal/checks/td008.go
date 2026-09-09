@@ -12,13 +12,16 @@ import (
 )
 
 // TD008 typosquat-suspect reports a package whose name looks like a misspelling
-// of a popular package in the same ecosystem. The name is compared, after
-// model.NormalizeName, with the ecosystem's popular list (internal/typosquat:
-// the embedded snapshot, or the copy "cache refresh-lists" wrote when it is less
-// than 30 days old) using the rules of that package: edit distance with a
-// length-based threshold, adjacent transpositions, separator swaps, npm scope
-// confusion, py, python, js and node affixes, digit and letter confusables and
-// common-word insertions. A name that is itself popular is never a suspect.
+// of a popular package in the same ecosystem. The name is compared, in the
+// canonical spelling of internal/typosquat (model.NormalizeName, lowercased, and
+// for Cargo with "-" folded to "_"), with the ecosystem's popular list (the
+// embedded snapshot, or the copy "cache refresh-lists" wrote when it is less
+// than 30 days old at the run's clock) using the rules of that package: edit
+// distance with a length-based threshold, adjacent transpositions, separator
+// swaps, npm scope confusion, py, python, js and node affixes, digit and letter
+// confusables and common-word insertions. A name that is itself popular is never
+// a suspect, and the fuzzy rules leave popular names shorter than four
+// characters alone.
 //
 // As a cross-check, deps.dev's similarly named packages are consulted through the
 // Loader: a neighbor that is much more popular (it is in the popular list, or its
@@ -38,6 +41,9 @@ import (
 //	                 transposition or edit-distance (when a rule matched)
 //	distance         the Damerau-Levenshtein distance to the neighbor (when a rule matched)
 //	list_fetched     the date of the popular list consulted, yyyy-mm-dd
+//	list_origin      where that list came from: "embedded" for the snapshot in
+//	                 the binary, the path of the refreshed file under the cache
+//	                 directory, or "custom" for lists a caller supplied
 //	deps_dev_neighbor a similarly named, much more popular package deps.dev
 //	                  returned (when the cross-check found one)
 //
@@ -60,11 +66,14 @@ const (
 
 // typosquatSuspect holds the popular lists, loaded on first use because the
 // refreshed copy lives in the cache directory and the embedded snapshot takes a
-// moment to index.
+// moment to index. The load takes the run's clock, so that the 30-day freshness
+// of a refreshed copy is judged at the same time as every other date of the run
+// (TRUSTDIFF_NOW) and never at the wall clock; the lists are then kept for the
+// life of the process.
 type typosquatSuspect struct {
 	mu    sync.Mutex
 	lists *typosquat.Lists
-	load  func() *typosquat.Lists
+	load  func(now time.Time) *typosquat.Lists
 }
 
 // registeredTyposquat is the instance the runner sees.
@@ -73,16 +82,17 @@ var registeredTyposquat = &typosquatSuspect{load: loadTyposquatLists}
 func init() { Register(registeredTyposquat) }
 
 // loadTyposquatLists prefers the refreshed copy under the trustdiff cache
-// directory (TRUSTDIFF_CACHE_DIR or the platform default) and falls back to the
-// embedded snapshot. The check has no logger, so a stale or unreadable copy is
-// not reported here; a caller that wants the diagnostics loads the lists with
-// typosquat.Load and its own logger and passes them to SetTyposquatLists.
-func loadTyposquatLists() *typosquat.Lists {
+// directory (TRUSTDIFF_CACHE_DIR or the platform default) when it is fresh at
+// now and falls back to the embedded snapshot. The check has no logger, so a
+// stale or unreadable copy is not reported here; a caller that wants the
+// diagnostics (the check command under -v) loads the lists with typosquat.Load,
+// its own clock and logger and passes them to SetTyposquatLists before the run.
+func loadTyposquatLists(now time.Time) *typosquat.Lists {
 	dir, err := httpcache.DefaultDir()
 	if err != nil {
 		return typosquat.Embedded()
 	}
-	return typosquat.Load(dir, time.Now(), nil)
+	return typosquat.Load(dir, now, nil)
 }
 
 // SetTyposquatLists replaces the popular lists TD008 consults, for a runner that
@@ -98,11 +108,12 @@ func (c *typosquatSuspect) set(lists *typosquat.Lists) {
 	c.lists = lists
 }
 
-func (c *typosquatSuspect) popular() *typosquat.Lists {
+// popular returns the lists, loading them at now on first use.
+func (c *typosquatSuspect) popular(now time.Time) *typosquat.Lists {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.lists == nil {
-		c.lists = c.load()
+		c.lists = c.load(now)
 	}
 	return c.lists
 }
@@ -119,10 +130,10 @@ func (*typosquatSuspect) Ecosystems() []model.Ecosystem { return nil }
 // Run implements Check.
 func (c *typosquatSuspect) Run(ctx context.Context, s *Subject) Result {
 	eco, name := s.Ref.Ecosystem, s.Ref.Name
-	lists := c.popular()
+	lists := c.popular(runClock(s))
 	set, ok := lists.Popular(eco)
 	if !ok || set.Len() == 0 {
-		return Skip(c.Name(), "no popular package list for "+string(eco))
+		return Skip(c.ID(), "no popular package list for "+string(eco))
 	}
 	if set.Has(name) {
 		return Result{}
@@ -137,6 +148,9 @@ func (c *typosquatSuspect) Run(ctx context.Context, s *Subject) Result {
 	evidence := map[string]any{"candidate": candidate}
 	if list, ok := lists.List(eco); ok {
 		evidence["list_fetched"] = list.Fetched.Format(listDateLayout)
+	}
+	if origin := lists.Origin(eco); origin != "" {
+		evidence["list_origin"] = origin
 	}
 	var title, explanation string
 	if suspect {
@@ -171,7 +185,7 @@ func describeRule(m typosquat.Match) string {
 	case typosquat.RuleAffix:
 		return fmt.Sprintf("is %q with a language prefix or suffix added or removed", m.Neighbor)
 	case typosquat.RuleConfusable:
-		return fmt.Sprintf("differs from %q only in look-alike characters (l, 1, i, o, 0)", m.Neighbor)
+		return fmt.Sprintf("differs from %q only in look-alike characters (1 for l, 0 for o)", m.Neighbor)
 	case typosquat.RuleCommonWord:
 		return fmt.Sprintf("is %q with a common word such as utils or cli inserted", m.Neighbor)
 	case typosquat.RuleTransposition:

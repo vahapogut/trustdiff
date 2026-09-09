@@ -31,6 +31,11 @@ type Match struct {
 // ecosystem, so a scoped spelling evaluated elsewhere can still be an
 // edit-distance match when the flattened popular name is long enough for two
 // edits.
+//
+// The transposition and edit-distance rules skip popular names shorter than
+// minFuzzyLength runes: two- and three-letter names are all within one edit of
+// each other, so xo is not a suspect of ox nor np of pn. The exact rules still
+// apply to them (ox-utils is a common-word match for ox).
 func Suspect(eco model.Ecosystem, name string, popular *Set) (Match, bool) {
 	c := Canonical(eco, name)
 	if c == "" || popular.Len() == 0 || popular.hasCanonical(c) {
@@ -75,19 +80,26 @@ func Suspect(eco model.Ecosystem, name string, popular *Set) (Match, bool) {
 	}
 
 	runes := []rune(c)
-	for i := 0; i+1 < len(runes); i++ {
-		if runes[i] == runes[i+1] {
-			continue
-		}
-		swapped := slices.Clone(runes)
-		swapped[i], swapped[i+1] = swapped[i+1], swapped[i]
-		if s := string(swapped); popular.hasCanonical(s) {
-			consider(s, RuleTransposition)
+	// A transposition keeps the length, so the popular name is exactly as short
+	// as the candidate.
+	if len(runes) >= minFuzzyLength {
+		for i := 0; i+1 < len(runes); i++ {
+			if runes[i] == runes[i+1] {
+				continue
+			}
+			swapped := slices.Clone(runes)
+			swapped[i], swapped[i+1] = swapped[i+1], swapped[i]
+			if s := string(swapped); popular.hasCanonical(s) {
+				consider(s, RuleTransposition)
+			}
 		}
 	}
 
 	var d distancer
 	for i, neighbor := range popular.names {
+		if len(popular.runes[i]) < minFuzzyLength {
+			continue
+		}
 		limit := Threshold(neighbor)
 		if absDiff(len(runes), len(popular.runes[i])) > limit {
 			continue

@@ -16,8 +16,12 @@ func TestCanonical(t *testing.T) {
 		{model.PyPI, "Foo_Bar.baz", "foo-bar-baz"},
 		{model.PyPI, " Requests ", "requests"},
 		{model.NPM, "React", "react"},
+		{model.NPM, "JSONStream", "jsonstream"},
 		{model.NPM, "@Types/Node", "@types/node"},
 		{model.Cargo, "Serde_JSON", "serde_json"},
+		{model.Cargo, "serde-json", "serde_json"},
+		{model.Cargo, "Rand-Core", "rand_core"},
+		{model.Cargo, "serde.json", "serde.json"},
 		{model.Deno, "Std", "std"},
 	}
 	for _, tt := range tests {
@@ -64,6 +68,8 @@ var suspectCases = []suspectCase{
 	{name: "separator removed", eco: model.PyPI, popular: []string{"python-dateutil"}, input: "pythondateutil", want: "python-dateutil", rule: RuleSeparator, distance: 1},
 	{name: "separator swapped", eco: model.NPM, popular: []string{"react-dom"}, input: "react_dom", want: "react-dom", rule: RuleSeparator, distance: 1},
 	{name: "separator added", eco: model.Cargo, popular: []string{"tokio"}, input: "tok.io", want: "tokio", rule: RuleSeparator, distance: 1},
+	{name: "cargo separators removed", eco: model.Cargo, popular: []string{"serde_json"}, input: "serdejson", want: "serde_json", rule: RuleSeparator, distance: 1},
+	{name: "cargo dot for underscore", eco: model.Cargo, popular: []string{"serde_json"}, input: "serde.json", want: "serde_json", rule: RuleSeparator, distance: 1},
 	{name: "scope written as prefix", eco: model.NPM, popular: []string{"@types/node"}, input: "types-node", want: "@types/node", rule: RuleScope, distance: 2},
 	{name: "prefix written as scope", eco: model.NPM, popular: []string{"babel-core"}, input: "@babel/core", want: "babel-core", rule: RuleScope, distance: 2},
 	{name: "scope confusion on jsr", eco: model.JSR, popular: []string{"@std/path"}, input: "std-path", want: "@std/path", rule: RuleScope, distance: 2},
@@ -80,6 +86,9 @@ var suspectCases = []suspectCase{
 	{name: "cli inserted", eco: model.PyPI, popular: []string{"requests"}, input: "requests-cli", want: "requests", rule: RuleCommonWord, distance: 4},
 	{name: "dev inserted in front", eco: model.Cargo, popular: []string{"serde"}, input: "dev-serde", want: "serde", rule: RuleCommonWord, distance: 4},
 	{name: "adjacent transposition", eco: model.PyPI, popular: []string{"requests"}, input: "reqeusts", want: "requests", rule: RuleTransposition, distance: 1},
+	{name: "transposition of a four-letter name", eco: model.NPM, popular: []string{"glob"}, input: "golb", want: "glob", rule: RuleTransposition, distance: 1},
+	{name: "one edit on a four-letter name", eco: model.NPM, popular: []string{"glob"}, input: "glib", want: "glob", rule: RuleEditDistance, distance: 1},
+	{name: "common word on a two-letter name", eco: model.NPM, popular: []string{"ox"}, input: "ox-utils", want: "ox", rule: RuleCommonWord, distance: 6},
 	{name: "one omission", eco: model.PyPI, popular: []string{"requests"}, input: "requets", want: "requests", rule: RuleEditDistance, distance: 1},
 	{name: "one addition", eco: model.NPM, popular: []string{"lodash"}, input: "lodashh", want: "lodash", rule: RuleEditDistance, distance: 1},
 	{name: "two edits on a long name", eco: model.PyPI, popular: []string{"beautifulsoup4"}, input: "beatifulsop4", want: "beautifulsoup4", rule: RuleEditDistance, distance: 2},
@@ -88,6 +97,12 @@ var suspectCases = []suspectCase{
 	{name: "alphabetical first on a tie", eco: model.PyPI, popular: []string{"lodasx", "lodas"}, input: "lodasy", want: "lodas", rule: RuleEditDistance, distance: 1},
 	{name: "popular itself", eco: model.PyPI, popular: []string{"requests"}, input: "requests"},
 	{name: "popular in another spelling", eco: model.PyPI, popular: []string{"requests"}, input: "Requests"},
+	{name: "popular npm name in another case", eco: model.NPM, popular: []string{"JSONStream"}, input: "jsonstream"},
+	{name: "cargo separator is the same crate", eco: model.Cargo, popular: []string{"serde_json"}, input: "serde-json"},
+	{name: "transposition of a two-letter name", eco: model.NPM, popular: []string{"ox"}, input: "xo"},
+	{name: "one edit on a two-letter name", eco: model.NPM, popular: []string{"ai"}, input: "ab"},
+	{name: "one edit on a three-letter name", eco: model.NPM, popular: []string{"vue"}, input: "vux"},
+	{name: "transposition of a three-letter name", eco: model.NPM, popular: []string{"vue"}, input: "uve"},
 	{name: "two edits on a short name", eco: model.PyPI, popular: []string{"requests"}, input: "reqest"},
 	{name: "three edits on a long name", eco: model.PyPI, popular: []string{"beautifulsoup4"}, input: "beatifulsop"},
 	{name: "unrelated", eco: model.NPM, popular: []string{"express", "lodash", "react"}, input: "left-pad"},
@@ -181,6 +196,21 @@ func TestSuspectAgainstEmbedded(t *testing.T) {
 		{model.NPM, "react", ""},
 		{model.PyPI, "requests", ""},
 		{model.Cargo, "tokio", ""},
+		// Short names: xo and np (one swap from ox and pn, which are in the list
+		// too) are in the uncapped list themselves; qz is not, and the fuzzy
+		// rules must not make it a squat of qs.
+		{model.NPM, "xo", ""},
+		{model.NPM, "np", ""},
+		{model.NPM, "qz", ""},
+		// Names the old 14900 cap dropped from the npm and PyPI lists, which then
+		// read as squats of the names that stayed (https, @vue/server-renderer,
+		// plaid-python).
+		{model.NPM, "http", ""},
+		{model.NPM, "vue-server-renderer", ""},
+		{model.PyPI, "paid-python", ""},
+		// A crate referenced with the other separator is the crate itself.
+		{model.Cargo, "serde-json", ""},
+		{model.Cargo, "rand-core", ""},
 	}
 	lists := Embedded()
 	for _, tt := range tests {

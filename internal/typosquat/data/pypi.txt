@@ -95,12 +95,14 @@ admin-search-plus
 adrf
 adtk
 advanced-alchemy
+advantage-air
 advent-of-code
 advocate
 adyen
 aegra-api
 aegra-cli
 aeidon
+aemet-opendata
 aenum
 aerich
 aerosandbox
@@ -109,6 +111,7 @@ aes-pkcs5
 aeventkit
 affine
 africastalking
+afsapi
 ag-ui-a2ui-toolkit
 ag-ui-adk
 ag-ui-langgraph
@@ -204,7 +207,9 @@ aioairzone-cloud
 aioamazondevices
 aioambient
 aioapns
+aioaquarite
 aioasuswrt
+aioauth
 aioautomower
 aioaws
 aioblescan
@@ -240,6 +245,7 @@ aioftp
 aiogithubapi
 aiogoogle
 aiogram
+aioguardian
 aiohappyeyeballs
 aioharmony
 aiohasupervisor
@@ -280,14 +286,17 @@ aiolifx-themes
 aiolimiter
 aiologic
 aiomcache
+aiomealie
 aiometer
 aiomisc
+aiomodernforms
 aiomonitor
 aiomoto
 aiomqtt
 aiomultiprocess
 aiomusiccast
 aiomysql
+aionotion
 aioodbc
 aiooss2
 aiooui
@@ -298,6 +307,7 @@ aioping
 aiopnsense
 aioprocessing
 aioprometheus
+aiopulse
 aiopvapi
 aioquic
 aioredis
@@ -465,6 +475,7 @@ altair
 altcha
 altex
 altgraph
+altimate-datapilot-cli
 always-updates
 amalgam-lang
 amazon-braket-default-simulator
@@ -479,6 +490,7 @@ amazon-textract-response-parser
 amazon-textract-textractor
 amazon-transcribe
 amazoncaptcha
+amcrest
 amplitude-analytics
 amplitude-experiment
 amplpy
@@ -738,6 +750,7 @@ ar
 ara
 arabic-reshaper
 arc-agi
+arc4
 arcade
 arcade-ai
 arcade-core
@@ -1192,6 +1205,7 @@ axe-selenium-python
 axiom-py
 axioms-fastapi
 axis
+ayla-iot-unofficial
 az-cli
 azdev
 azure
@@ -1207,6 +1221,7 @@ azure-ai-evaluation
 azure-ai-formrecognizer
 azure-ai-inference
 azure-ai-language-conversations
+azure-ai-language-questionanswering
 azure-ai-ml
 azure-ai-projects
 azure-ai-textanalytics
@@ -1502,6 +1517,7 @@ bc-detect-secrets
 bc-jsonpath-ng
 bc-python-hcl2
 bce-python-sdk
+bcp47
 bcpandas
 bcrypt
 bcsfe
@@ -1532,6 +1548,7 @@ behavex-images
 bellows
 benchling-api-client
 benchling-sdk
+benchmark-runner
 benchpots
 bencode-py
 bencode2
@@ -1573,6 +1590,7 @@ bigtree
 biip
 bilibili-api-python
 billiard
+binance-common
 binance-connector
 binapy
 binary
@@ -1604,6 +1622,7 @@ bitarray
 bitarray-hardbyte
 bitcoin-utils
 bitcoinlib
+bitmap
 bitmath
 bitsandbytes
 bitstring
@@ -1622,6 +1641,7 @@ blackfire
 blackjax
 blacksheep
 blake3
+blastdns
 blasthttp
 blaxel
 bleach
@@ -1767,6 +1787,7 @@ btsocket
 bubus
 budoux
 bugsnag
+buienradar
 build
 build123d
 buildkite-sdk
@@ -1911,6 +1932,7 @@ cdk-monitoring-constructs
 cdk-nag
 cdk-secret-manager-wrapper-layer
 cdk-serverless-clamscan
+cdk-watchful
 cdk8s
 cdktf
 cdktf-cdktf-provider-aws
@@ -2322,6 +2344,7 @@ colour-runner
 colour-science
 colourmap
 colpali-engine
+colt5-attention
 columnar
 comet-ml
 comfy-aimdo
@@ -2449,6 +2472,7 @@ copier-templates-extensions
 copilotkit
 copulas
 copybook
+copychat
 coqpit
 coqpit-config
 coqui-tts
@@ -2477,6 +2501,7 @@ cotyledon
 couchbase
 couchdb
 country-converter
+country-list
 countryinfo
 courlan
 courts-db
@@ -3007,6 +3032,8 @@ deepl
 deeplake
 deepmerge
 deepsearch-glm
+deepseek-harness-runtime-bin
+deepseek-harness-sdk
 deepspeed
 deepteam
 defcon
@@ -3220,6 +3247,7 @@ django-components
 django-compression-middleware
 django-compressor
 django-concurrency
+django-config-models
 django-configurations
 django-constance
 django-contrib-comments
@@ -3376,6 +3404,7 @@ django-pandas
 django-parler
 django-password-validators
 django-pattern-library
+django-peeringdb
 django-perf-rec
 django-permissionedforms
 django-permissions-policy
@@ -3643,6 +3672,7 @@ dopamine-rl
 doppler-env
 doppler-sdk
 dora-search
+doroutes
 dotenv
 dotenv-linter
 dotmap
@@ -3802,6 +3832,7 @@ ecs-logging
 ecsapi
 ed25519-blake2b-fork
 edalize
+edfio
 edgartools
 edge-mdt-cl
 edge-tts
@@ -4057,6 +4088,7 @@ eyes-selenium
 ezdxf
 ezodf
 f5-icontrol-rest
+f5-sdk
 f5-tts
 f90nml
 fa3-fwd
@@ -4226,6 +4258,7 @@ faust-cchardet
 faust-streaming
 favicon
 fawltydeps
+fbgemm-gpu-nightly-cpu
 fbmessenger
 fbscribelogger
 fbuild
@@ -4437,6 +4470,7 @@ flask-executor
 flask-graphql
 flask-httpauth
 flask-injector
+flask-json
 flask-jwt-extended
 flask-limiter
 flask-log-request-id
@@ -4459,6 +4493,7 @@ flask-orjson
 flask-paginate
 flask-paranoid
 flask-principal
+flask-prometheus-metrics
 flask-pydantic
 flask-pymongo
 flask-redis
@@ -4723,6 +4758,7 @@ geoarrow-pandas
 geoarrow-pyarrow
 geoarrow-types
 geobuf
+geocif
 geocoder
 geodatasets
 geode-background
@@ -4777,8 +4813,10 @@ gigaml-secrets
 gigatoken
 gilknocker
 gimme-aws-creds
+gimpformats
 gin-config
 ginza
+gios
 girder
 girder-client
 git-changelog
@@ -4786,6 +4824,7 @@ git-cliff
 git-credentials
 git-dumper
 git-filter-repo
+git-lfs
 git-me-the-url
 git-python
 git-remote-codecommit
@@ -5036,8 +5075,10 @@ govuk-bank-holidays
 gower
 gpiod
 gpiozero
+gplugins
 gprof2dot
 gprofiler-official
+gps3
 gpsoauth
 gpt-researcher
 gptcache
@@ -5134,6 +5175,7 @@ grpc-interceptor
 grpc-requests
 grpc-stubs
 grpcio
+grpcio-admin
 grpcio-channelz
 grpcio-csds
 grpcio-gcp
@@ -5342,6 +5384,7 @@ homematicip
 honcho
 honcho-ai
 honeybadger
+honeybee-core
 honeybee-energy
 honeybee-radiance
 hops-deltalake
@@ -5469,6 +5512,7 @@ hypothesis
 hypothesis-fspaths
 hypothesis-graphql
 hypothesis-jsonschema
+hypothesmith
 hyppo
 hyundai-kia-connect-api
 i18nice
@@ -5561,6 +5605,7 @@ imgtool
 imgui
 imgui-bundle
 imgviz
+imgw-pib
 iminuit
 immutabledict
 immutables
@@ -5615,6 +5660,7 @@ initools
 inject
 injective-py
 injector
+inkbird-ble
 inline-snapshot
 inngest
 innoday
@@ -5962,6 +6008,7 @@ jstyleson
 jubilant
 judgeval
 judoscale
+jugaad-data
 juju
 juliacall
 julian
@@ -6037,6 +6084,7 @@ jxlpy
 jxmlease
 k-means-constrained
 k3d
+k5test
 k8
 k8s-agent-sandbox
 kafka
@@ -6078,8 +6126,10 @@ kedro-telemetry
 kedro-viz
 keepa
 keepachangelog
+keeper-pam-webrtc-rs
 keeper-secrets-manager-core
 keepercommander
+kegtron-ble
 keke
 kekik
 kenbun
@@ -6221,6 +6271,7 @@ langchain-anthropic
 langchain-astradb
 langchain-aws
 langchain-azure-ai
+langchain-azure-cosmosdb
 langchain-baseten
 langchain-cerebras
 langchain-chroma
@@ -6310,9 +6361,11 @@ langwatch-scenario
 lap
 lapx
 large-image
+large-image-converter
 large-image-source-gdal
 large-image-source-openslide
 large-image-source-pil
+large-image-source-test
 large-image-source-tiff
 lark
 lark-js
@@ -6479,6 +6532,7 @@ linear-tsv
 linearmodels
 lineax
 linecache2
+linehaul
 lingua-language-detector
 linkchecker
 linkedin-api
@@ -6989,6 +7043,7 @@ metaflow-stubs
 metaflow-torchrun
 metakernel
 metaphone
+metaphor-python
 metar
 metatrader5
 meteofrance-api
@@ -7282,6 +7337,7 @@ morfessor
 morphys
 mosaicml-streaming
 mosek
+motionblinds
 motmetrics
 moto
 moto-ext
@@ -7295,6 +7351,7 @@ moviepy
 moyopy
 moz-l10n
 moz-sql-parser
+mozart-api
 mozcrash
 mozdebug
 mozdevice
@@ -7985,6 +8042,7 @@ newspaper4k
 newton
 newton-actuators
 newton-usd-schemas
+nexia
 nextcloud-mcp-server
 nextcord
 nexus-rpc
@@ -8032,6 +8090,7 @@ nodriver
 noiseprotocol
 noisereduce
 nokap
+nomad
 nominal
 nominal-api
 nominal-api-protos
@@ -8080,6 +8139,8 @@ nr-date
 nr-stream
 nr-util
 nrel-pysam
+nsj-gcf-utils
+nsj-multi-database-lib
 nsj-rest-lib
 nslookup
 ntc-templates
@@ -8104,6 +8165,7 @@ number-parser
 numbers-parser
 numcodecs
 numdifftools
+numerary
 numerize
 numexpr
 numkong
@@ -8249,6 +8311,7 @@ ocrmypdf
 ocsf-lib
 ocspbuilder
 ocspresponder
+oct2py
 octave-kernel
 octodns
 od
@@ -8395,6 +8458,7 @@ openbb-regulators
 openbb-sec
 openbb-tiingo
 openbb-tradingeconomics
+openbb-us-eia
 openbb-yfinance
 openbricks
 opencage
@@ -8406,6 +8470,7 @@ openccu-loom-types
 opencensus
 opencensus-context
 opencensus-ext-azure
+opencensus-ext-flask
 opencensus-ext-logging
 opencensus-ext-requests
 opencensus-ext-sqlalchemy
@@ -8810,6 +8875,7 @@ pagerduty
 pagerduty-mcp
 paginate
 paho-mqtt
+paid-python
 pairmux
 palettable
 pallets-sphinx-themes
@@ -8907,7 +8973,9 @@ passagemath-combinat
 passagemath-coxeter3
 passagemath-glpk
 passagemath-glucose
+passagemath-graphs
 passagemath-groups
+passagemath-gsl
 passagemath-homfly
 passagemath-kissat
 passagemath-libbraiding
@@ -9112,6 +9180,7 @@ pickleshare
 pickley
 picobox
 piconnect
+picows
 pictex
 pid
 piecewise-rational
@@ -9285,6 +9354,7 @@ pokerkit
 polar-sdk
 polarion
 polars
+polars-cloud
 polars-ds
 polars-hash
 polars-lts-cpu
@@ -9717,6 +9787,7 @@ pyap2
 pyapacheatlas
 pyapns-client
 pyarabic
+pyarango
 pyarmor
 pyarmor-cli-core
 pyarrow
@@ -9941,6 +10012,7 @@ pydoris-custom
 pydot
 pydot-ng
 pydotplus
+pydrawise
 pydriller
 pydrive
 pydrive2
@@ -9978,6 +10050,7 @@ pyexecjs
 pyexiftool
 pyexiv2
 pyexr
+pyezvizapi
 pyfaidx
 pyfakefs
 pyfarmhash
@@ -10100,6 +10173,7 @@ pyiso8583
 pyisy
 pyjanitor
 pyjarowinkler
+pyjdbc
 pyjks
 pyjls
 pyjnius
@@ -10269,6 +10343,7 @@ pymupdf-stubs
 pymupdf4llm
 pymupdfb
 pymupdfpro
+pymysensors
 pymysql
 pymysqllock
 pymzml
@@ -10575,9 +10650,11 @@ pyqwest
 pyrabbit2
 pyrad
 pyrage
+pyrainbird
 pyramid
 pyramid-debugtoolbar
 pyramid-jinja2
+pyramid-mailer
 pyramid-mako
 pyramid-session-redis
 pyramid-tm
@@ -10602,6 +10679,7 @@ pyrfxtrx
 pyric
 pyrig
 pyright
+pyrisco
 pyrit
 pyrnnoise
 pyro-api
@@ -10687,6 +10765,7 @@ pyslang
 pysmartdl
 pysmartthings
 pysmb
+pysmbclient
 pysmi
 pysmi-lextudio
 pysmlight
@@ -10722,6 +10801,7 @@ pyspnego
 pysqlite3
 pysqlite3-binary
 pysqlsync
+pysqueezebox
 pysrt
 pystac
 pystac-client
@@ -10760,6 +10840,7 @@ pyston
 pyston-autoload
 pystow
 pystray
+pystrich
 pystyle
 pysubs2
 pysubtypes
@@ -10844,6 +10925,7 @@ pytest-embedded-serial-esp
 pytest-emoji
 pytest-enabler
 pytest-env
+pytest-error-for-skips
 pytest-examples
 pytest-excel
 pytest-extra-durations
@@ -10998,6 +11080,7 @@ pytest-timeout
 pytest-timeouts
 pytest-timer
 pytest-timestamper
+pytest-tinybird
 pytest-tornado
 pytest-tornasync
 pytest-trio
@@ -11040,6 +11123,7 @@ python-binary-memcached
 python-bitcoinlib
 python-bitcoinrpc
 python-box
+python-bsblan
 python-calamine
 python-can
 python-cas
@@ -11274,6 +11358,7 @@ pytorch-lightning
 pytorch-metric-learning
 pytorch-msssim
 pytorch-optimizer
+pytorch-pretrained-bert
 pytorch-ranger
 pytorch-revgrad
 pytorch-seed
@@ -11329,6 +11414,7 @@ pyvicare
 pyvim
 pyvips
 pyvips-binary
+pyvirtualcam
 pyvirtualdisplay
 pyvis
 pyvisa
@@ -11489,12 +11575,14 @@ qwix
 r2pipe
 r2r
 r7insight-python
+rachiopy
 radios
 radish-bdd
 radon
 raft-dask-cu12
 ragas
 ragged
+railroad-diagrams
 raindrop-ai
 raiutils
 rake-nltk
@@ -11873,6 +11961,7 @@ ropgadget
 ropwr
 rosbags
 rosdistro
+rosettasciio
 rospkg
 rotary-embedding-torch
 rouge
@@ -12101,6 +12190,7 @@ scikit-learn
 scikit-learn-extra
 scikit-learn-intelex
 scikit-learn-stubs
+scikit-lego
 scikit-misc
 scikit-network
 scikit-optimize
@@ -12223,6 +12313,7 @@ sendblue
 sendgrid
 sendsafely
 sensai-utils
+sense-energy
 sensor-state-data
 sentence-splitter
 sentence-stream
@@ -12233,6 +12324,7 @@ sentinel
 sentinelhub
 sentinels
 sentry-arroyo
+sentry-auth-oidc
 sentry-cli
 sentry-kafka-schemas
 sentry-protos
@@ -12628,6 +12720,7 @@ spec-kitty-events
 spec-kitty-tracker
 specify-cli
 spectree
+specutils
 speechbrain
 speechmatics-batch
 speechmatics-python
@@ -12651,6 +12744,7 @@ sphinx-basic-ng
 sphinx-book-theme
 sphinx-bootstrap-theme
 sphinx-click
+sphinx-codeautolink
 sphinx-comments
 sphinx-copybutton
 sphinx-data-viewer
@@ -12951,6 +13045,7 @@ stix2
 stix2-patterns
 stix2-validator
 stm32loader
+stochastic
 stockdex
 stockfish
 stockstats
@@ -13786,6 +13881,7 @@ types-aioboto3-lite
 types-aiobotocore
 types-aiobotocore-acm
 types-aiobotocore-athena
+types-aiobotocore-autoscaling
 types-aiobotocore-batch
 types-aiobotocore-bedrock
 types-aiobotocore-bedrock-agent
@@ -13913,6 +14009,7 @@ types-deprecated
 types-django-filter
 types-docker
 types-docutils
+types-editdistance
 types-emoji
 types-enum34
 types-factory-boy
@@ -14236,6 +14333,7 @@ utide
 utils
 utilsforecast
 utm
+uttlv
 uuid
 uuid-extension
 uuid-utils
@@ -14335,6 +14433,7 @@ vhacdx
 vibium
 vibium-linux-x64
 vicinity
+victron-ble
 victron-mqtt
 videohash2
 viennarna
@@ -14520,6 +14619,7 @@ wheel-stub
 whenever
 whey
 whichcraft
+whirlpool-sixth-sense
 whisper
 whisper-normalizer
 whisper-timestamped

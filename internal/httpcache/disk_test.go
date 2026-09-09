@@ -146,6 +146,66 @@ func TestStatCountsLeftoverTempFilesAsBytesOnly(t *testing.T) {
 	}
 }
 
+// writeLists lays out the lists subdirectory the way internal/typosquat does:
+// finished <ecosystem>.txt files and, after an interrupted write, a temporary
+// file with the os.CreateTemp suffix.
+func writeLists(t *testing.T, dir string, names ...string) string {
+	t.Helper()
+	lists := filepath.Join(dir, ListsSubdir)
+	if err := os.MkdirAll(lists, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(lists, name), []byte("# NOTICE source: x; fetched: 2026-09-09; license: MIT\nexpress\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return lists
+}
+
+// TestStatAndClearWithLists covers the one subdirectory Clear accepts: the
+// refreshed popular lists are counted by Stat and removed with the entries.
+func TestStatAndClearWithLists(t *testing.T) {
+	ts := newTestServer(t, okHandler("0123456789"))
+	env := newTestEnv(t, ts, nil)
+	if _, err := env.client.Get(context.Background(), ts.URL+"/a", Request{}); err != nil {
+		t.Fatal(err)
+	}
+	withoutLists, err := Stat(env.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lists := writeLists(t, env.dir, "npm.txt", "pypi.txt", "cargo.txt.123456.tmp")
+
+	stats, err := Stat(env.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Entries != 1 || stats.Lists != 2 {
+		t.Errorf("Entries = %d, Lists = %d; want 1 and 2 (the temporary file is not a list)", stats.Entries, stats.Lists)
+	}
+	if stats.Bytes <= withoutLists.Bytes {
+		t.Errorf("Bytes = %d, want more than %d: the list files count", stats.Bytes, withoutLists.Bytes)
+	}
+
+	if err := Clear(env.dir); err != nil {
+		t.Fatalf("Clear with a lists subdirectory: %v", err)
+	}
+	if names := entryFiles(t, env.dir); len(names) != 0 {
+		t.Fatalf("files after Clear = %v, want none, the lists directory included", names)
+	}
+	if _, err := os.Stat(lists); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("lists directory after Clear: %v, want removed", err)
+	}
+	if _, err := os.Stat(env.dir); err != nil {
+		t.Fatalf("Clear removed the directory itself: %v", err)
+	}
+	after, err := Stat(env.dir)
+	if err != nil || after != (Stats{}) {
+		t.Fatalf("Stat after Clear = %+v, %v", after, err)
+	}
+}
+
 func TestStatAndClearOnMissingDir(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "never-created")
 	stats, err := Stat(dir)
@@ -174,6 +234,17 @@ func TestClearRefusesForeignDirectories(t *testing.T) {
 				t.Fatal(err)
 			}
 		}},
+		{name: "foreign file in the lists subdirectory", setup: func(t *testing.T, dir string) {
+			t.Helper()
+			writeLists(t, dir, "npm.txt", "notes.md")
+		}},
+		{name: "subdirectory in the lists subdirectory", setup: func(t *testing.T, dir string) {
+			t.Helper()
+			lists := writeLists(t, dir, "npm.txt")
+			if err := os.Mkdir(filepath.Join(lists, "old"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -183,15 +254,45 @@ func TestClearRefusesForeignDirectories(t *testing.T) {
 				t.Fatal(err)
 			}
 			tt.setup(t, env.dir)
+			before := entryFiles(t, env.dir)
 			err := Clear(env.dir)
 			if !errors.Is(err, ErrForeignFiles) {
 				t.Fatalf("Clear = %v, want ErrForeignFiles", err)
 			}
-			if names := entryFiles(t, env.dir); len(names) != 3 {
-				t.Fatalf("Clear removed something from a refused directory: %v", names)
+			if names := entryFiles(t, env.dir); len(names) != 3 || len(names) != len(before) {
+				t.Fatalf("Clear removed something from a refused directory: %v, had %v", names, before)
+			}
+			if lists := filepath.Join(env.dir, ListsSubdir); strings.Contains(tt.name, "lists") {
+				if _, err := os.Stat(filepath.Join(lists, "npm.txt")); err != nil {
+					t.Fatalf("Clear removed a list from a refused directory: %v", err)
+				}
 			}
 			if _, err := Stat(env.dir); err != nil {
 				t.Fatalf("Stat must still work on a mixed directory: %v", err)
+			}
+		})
+	}
+}
+
+func TestListFileNameScheme(t *testing.T) {
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{name: "npm.txt", want: true},
+		{name: "pypi.txt", want: true},
+		{name: "cargo.txt.123456.tmp", want: true},
+		{name: "npm.txt.tmp", want: false},
+		{name: "NPM.txt", want: false},
+		{name: "npm.json", want: false},
+		{name: "notes.txt.bak", want: false},
+		{name: "notes.md", want: false},
+		{name: ".DS_Store", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := listFileName.MatchString(tt.name); got != tt.want {
+				t.Fatalf("listFileName.MatchString(%q) = %v, want %v", tt.name, got, tt.want)
 			}
 		})
 	}

@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/vahapogut/trustdiff/internal/advisory"
 	"github.com/vahapogut/trustdiff/internal/advisory/depsdev"
+	"github.com/vahapogut/trustdiff/internal/httpcache"
 	"github.com/vahapogut/trustdiff/internal/model"
 	"github.com/vahapogut/trustdiff/internal/policy"
 	"github.com/vahapogut/trustdiff/internal/registry"
@@ -61,11 +63,11 @@ var listDateT = time.Date(2026, time.September, 9, 0, 0, 0, 0, time.UTC)
 // newTyposquatT builds the check over a small popular list per ecosystem.
 func newTyposquatT() *typosquatSuspect {
 	lists := typosquat.NewLists(
-		&typosquat.List{Ecosystem: model.NPM, Fetched: listDateT, Names: []string{"express", "lodash", "react", "@types/node", "cross-env"}},
+		&typosquat.List{Ecosystem: model.NPM, Fetched: listDateT, Names: []string{"express", "lodash", "react", "@types/node", "cross-env", "ox"}},
 		&typosquat.List{Ecosystem: model.PyPI, Fetched: listDateT, Names: []string{"requests", "colorama"}},
-		&typosquat.List{Ecosystem: model.Cargo, Fetched: listDateT, Names: []string{"serde", "tokio"}},
+		&typosquat.List{Ecosystem: model.Cargo, Fetched: listDateT, Names: []string{"serde", "tokio", "serde_json"}},
 	)
-	return &typosquatSuspect{lists: lists, load: func() *typosquat.Lists { panic("load must not be called when lists are set") }}
+	return &typosquatSuspect{lists: lists, load: func(time.Time) *typosquat.Lists { panic("load must not be called when lists are set") }}
 }
 
 func subjectT(ref string, loader Loader, downloads int64) *Subject {
@@ -131,8 +133,22 @@ func TestTyposquatSuspect(t *testing.T) {
 				"rule":         "edit-distance",
 				"distance":     "1",
 				"list_fetched": "2026-09-09",
+				"list_origin":  "custom",
 			},
 			text: []string{`"exprss"`, `"express"`, "within 1 edit(s)", "rule edit-distance"},
+		},
+		{
+			name: "confusable digit",
+			ref:  "npm:1odash@1.0.0",
+			down: -1,
+			want: 1,
+			evidence: map[string]string{
+				"candidate": "1odash",
+				"neighbor":  "lodash",
+				"rule":      "confusable-characters",
+				"distance":  "1",
+			},
+			text: []string{`"1odash"`, `"lodash"`, "look-alike characters (1 for l, 0 for o)"},
 		},
 		{
 			name: "separator swap with the deps.dev neighbor confirming",
@@ -256,6 +272,18 @@ func TestTyposquatSuspect(t *testing.T) {
 			text: []string{`"sedre"`, `"serde"`, "adjacent characters swapped"},
 		},
 		{
+			name: "cargo crate with the other separator is the crate itself",
+			ref:  "cargo:serde-json@1.0.0",
+			down: -1,
+			want: 0,
+		},
+		{
+			name: "short popular name is left to the exact rules",
+			ref:  "npm:xo@1.0.0",
+			down: -1,
+			want: 0,
+		},
+		{
 			name:    "ecosystem without a list",
 			ref:     "deno:oak@1.0.0",
 			down:    -1,
@@ -272,8 +300,8 @@ func TestTyposquatSuspect(t *testing.T) {
 			s := subjectT(tt.ref, loader, tt.down)
 			res := c.Run(context.Background(), s)
 			if tt.skipped != "" {
-				if res.Skipped == nil || res.Skipped.Check != c.Name() || res.Skipped.Reason != tt.skipped {
-					t.Fatalf("Run() = %+v, want skipped %q", res, tt.skipped)
+				if res.Skipped == nil || res.Skipped.Check != c.ID() || res.Skipped.Reason != tt.skipped {
+					t.Fatalf("Run() = %+v, want skipped %q under %s", res, tt.skipped, c.ID())
 				}
 				return
 			}
@@ -325,11 +353,12 @@ func TestTyposquatSuspectPolicyLevel(t *testing.T) {
 }
 
 // TestTyposquatSuspectLazyLoad checks that the lists are loaded once, on first
-// use, and that SetTyposquatLists replaces them.
+// use and at the run's clock, and that SetTyposquatLists replaces them.
 func TestTyposquatSuspectLazyLoad(t *testing.T) {
 	loads := 0
+	var loadedAt time.Time
 	custom := typosquat.NewLists(&typosquat.List{Ecosystem: model.NPM, Fetched: listDateT, Names: []string{"express"}})
-	c := &typosquatSuspect{load: func() *typosquat.Lists { loads++; return custom }}
+	c := &typosquatSuspect{load: func(now time.Time) *typosquat.Lists { loads++; loadedAt = now; return custom }}
 	for range 3 {
 		if res := c.Run(context.Background(), subjectT("npm:exprss@1.0.0", nil, -1)); len(res.Findings) != 1 {
 			t.Fatalf("Run() = %+v, want one finding", res)
@@ -338,21 +367,93 @@ func TestTyposquatSuspectLazyLoad(t *testing.T) {
 	if loads != 1 {
 		t.Errorf("lists loaded %d times, want once", loads)
 	}
+	if !loadedAt.Equal(listDateT) {
+		t.Errorf("lists loaded at %s, want the run's clock %s", loadedAt, listDateT)
+	}
 	c.set(typosquat.NewLists(&typosquat.List{Ecosystem: model.NPM, Fetched: listDateT, Names: []string{"exprss"}}))
 	if res := c.Run(context.Background(), subjectT("npm:exprss@1.0.0", nil, -1)); len(res.Findings) != 0 {
 		t.Errorf("Run() after set = %+v, want no finding", res)
 	}
 }
 
-// TestTyposquatSuspectEmbedded runs the registered check with its real lists
-// once, so the lazy load path and the embedded snapshot are exercised.
+// TestTyposquatSuspectEmbedded runs the check with its real lists once, so the
+// lazy load path and the embedded snapshot are exercised. The cache directory
+// is pointed at an empty temporary directory so that a refreshed or hand-edited
+// list on the developer's machine cannot change the outcome.
 func TestTyposquatSuspectEmbedded(t *testing.T) {
+	t.Setenv(httpcache.EnvDir, t.TempDir())
 	c := &typosquatSuspect{load: loadTyposquatLists}
 	res := c.Run(context.Background(), subjectT("pypi:reqeusts@1.0.0", nil, -1))
 	if len(res.Findings) != 1 || res.Findings[0].Evidence["neighbor"] != "requests" {
-		t.Errorf("Run() = %+v, want a finding naming requests", res)
+		t.Fatalf("Run() = %+v, want a finding naming requests", res)
+	}
+	if origin := res.Findings[0].Evidence["list_origin"]; origin != "embedded" {
+		t.Errorf("list_origin = %v, want embedded", origin)
 	}
 	if res := c.Run(context.Background(), subjectT("pypi:requests@2.32.0", nil, -1)); len(res.Findings) != 0 || res.Skipped != nil {
 		t.Errorf("Run() for a popular package = %+v, want nothing", res)
 	}
+}
+
+// TestTyposquatSuspectRefreshedList covers the documented lookup order at the
+// check level: a copy "cache refresh-lists" wrote is preferred while it is less
+// than 30 days old at the run's clock, and the embedded snapshot is used
+// otherwise. The refreshed copy makes reqeusts popular, so the outcome shows
+// which list was consulted.
+func TestTyposquatSuspectRefreshedList(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(httpcache.EnvDir, dir)
+	embeddedList, ok := typosquat.Embedded().List(model.PyPI)
+	if !ok {
+		t.Fatal("no embedded pypi list")
+	}
+	path := filepath.Join(typosquat.ListsDir(dir), "pypi.txt")
+	refresh := func(t *testing.T, fetched time.Time) {
+		t.Helper()
+		list := &typosquat.List{Ecosystem: model.PyPI, Source: "https://example.test/top.json", Fetched: fetched, License: "MIT", Names: []string{"reqeusts"}}
+		if err := typosquat.WriteLists(typosquat.ListsDir(dir), []*typosquat.List{list}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := func(now time.Time, ref string) Result {
+		c := &typosquatSuspect{load: loadTyposquatLists}
+		s := subjectT(ref, nil, -1)
+		s.Now = now
+		return c.Run(context.Background(), s)
+	}
+
+	t.Run("fresh copy is consulted", func(t *testing.T) {
+		refresh(t, listDateT.AddDate(0, 0, -20))
+		res := run(listDateT, "pypi:requests@2.32.0")
+		if len(res.Findings) != 1 {
+			t.Fatalf("Run() = %+v, want requests reported against the refreshed list", res)
+		}
+		ev := res.Findings[0].Evidence
+		if ev["list_fetched"] != listDateT.AddDate(0, 0, -20).Format(listDateLayout) || ev["list_origin"] != path {
+			t.Errorf("evidence = %v, want the refreshed file's date and path %s", ev, path)
+		}
+		if res := run(listDateT, "pypi:reqeusts@1.0.0"); len(res.Findings) != 0 {
+			t.Errorf("Run() for the refreshed list's own name = %+v, want nothing", res)
+		}
+	})
+	t.Run("stale copy falls back to the embedded snapshot", func(t *testing.T) {
+		refresh(t, listDateT.AddDate(0, 0, -31))
+		res := run(listDateT, "pypi:reqeusts@1.0.0")
+		if len(res.Findings) != 1 {
+			t.Fatalf("Run() = %+v, want reqeusts reported against the embedded list", res)
+		}
+		ev := res.Findings[0].Evidence
+		if ev["list_fetched"] != embeddedList.Fetched.Format(listDateLayout) || ev["list_origin"] != "embedded" {
+			t.Errorf("evidence = %v, want the embedded date %s and origin embedded", ev, embeddedList.Fetched.Format(listDateLayout))
+		}
+	})
+	t.Run("freshness is judged at the run's clock", func(t *testing.T) {
+		// A copy 20 days old on the wall clock is 60 days old for a run whose
+		// TRUSTDIFF_NOW is 40 days ahead.
+		refresh(t, time.Now().AddDate(0, 0, -20))
+		res := run(time.Now().AddDate(0, 0, 40), "pypi:reqeusts@1.0.0")
+		if len(res.Findings) != 1 || res.Findings[0].Evidence["list_origin"] != "embedded" {
+			t.Errorf("Run() = %+v, want the embedded list", res)
+		}
+	})
 }
