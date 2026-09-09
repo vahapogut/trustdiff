@@ -33,24 +33,35 @@ type Signals interface {
 const defaultJobs = 8
 
 // Observe reads the trust signals of every ref and returns one entry per package,
-// sorted the way the file stores them, together with the problems that kept an
-// entry from being complete, worded for a note beside the report.
+// sorted the way the file stores them, the problems that kept an entry from being
+// complete, worded for a note beside the report, and the packages a data source
+// did not answer for.
 //
 // A problem is never a failure: a package whose owners could not be read is
-// recorded without a maintainer set, and the check that wanted one reports itself
-// as skipped later rather than reading the gap as a change. jobs bounds the
-// concurrent lookups; values below 1 mean defaultJobs.
+// recorded without a maintainer set, Put then keeps whatever the file already
+// recorded for it, and the check that wanted one reports itself as skipped later
+// rather than reading the gap as a change. jobs bounds the concurrent lookups;
+// values below 1 mean defaultJobs.
+//
+// unavailable is the subset of the problems a policy's on_data_unavailable is
+// about: a lookup that failed or a facet the registry did not answer for. The
+// ordinary lines are not in it, because a package locked at two versions and a
+// registry that lists no maintainer at all are answers, not outages, and a run
+// that reported them has consulted everything it was asked to. A lookup that
+// failed because the registry no longer has the package counts with the rest:
+// this package cannot tell that apart without knowing a registry client's errors,
+// and either way the run recorded less than it set out to.
 //
 // A ref without a version is not observed at all: an entry says which release the
 // publisher and the provenance were read from, and there is no such release for a
 // package name on its own. A project that locks one package at several versions
 // gets one entry, at the first version in ref order, and a problem line says so.
-func Observe(ctx context.Context, src Signals, refs []model.PackageRef, now time.Time, jobs int) ([]Entry, []string) {
+func Observe(ctx context.Context, src Signals, refs []model.PackageRef, now time.Time, jobs int) (entries []Entry, problems []string, unavailable []model.PackageRef) {
 	targets, problems := targets(refs)
 	if jobs < 1 {
 		jobs = defaultJobs
 	}
-	entries := make([]Entry, len(targets))
+	entries = make([]Entry, len(targets))
 	found := make([][]string, len(targets))
 	sem := make(chan struct{}, jobs)
 	var wg sync.WaitGroup
@@ -73,8 +84,13 @@ func Observe(ctx context.Context, src Signals, refs []model.PackageRef, now time
 		}
 		return strings.Compare(a.Name, b.Name)
 	})
+	for i := range entries {
+		if entries[i].outage != 0 {
+			unavailable = append(unavailable, entries[i].Package())
+		}
+	}
 	slices.Sort(problems)
-	return entries, problems
+	return entries, problems, unavailable
 }
 
 // targets reduces the refs of a run to one per package, in the file's order, and
@@ -104,16 +120,22 @@ func targets(refs []model.PackageRef) ([]model.PackageRef, []string) {
 }
 
 // observe reads one package's signals. The two lookups are independent: what one
-// of them could not answer leaves its field absent and the other's answer stands.
+// of them could not answer leaves its field absent, marks the signal as one this
+// observation is missing so that Put keeps whatever was recorded for it, and the
+// other's answer stands.
 func observe(ctx context.Context, src Signals, ref model.PackageRef, now time.Time) (Entry, []string) {
 	e := Entry{Ecosystem: ref.Ecosystem, Name: ref.Name, Version: ref.Version, ObservedAt: now}
 	var problems []string
 	info, err := src.VersionInfo(ctx, ref)
 	if err != nil {
-		problems = append(problems, fmt.Sprintf("%s: the release was not read (%v), so its publisher and provenance were not recorded", ref, err))
+		e.missing |= signalRelease
+		e.outage |= signalRelease
+		problems = append(problems, fmt.Sprintf("%s: the release was not read (%v), so the publisher and the provenance the baseline already holds were kept", ref, err))
 	} else {
 		if reason, unknown := info.Unknown[model.FacetProvenance]; unknown {
-			problems = append(problems, fmt.Sprintf("%s: provenance was not read (%s), so it was not recorded", ref, reason))
+			e.missing |= signalProvenance
+			e.outage |= signalProvenance
+			problems = append(problems, fmt.Sprintf("%s: provenance was not read (%s), so what the baseline already holds was kept", ref, reason))
 		} else if info.Provenance.Kind != "" {
 			e.Provenance = &Provenance{Kind: info.Provenance.Kind, Verified: info.Provenance.Verified, Identity: info.Provenance.Identity}
 		}
@@ -121,11 +143,18 @@ func observe(ctx context.Context, src Signals, ref model.PackageRef, now time.Ti
 	}
 	owners, err := src.Owners(ctx, ref.Ecosystem, ref.Name)
 	if err != nil {
-		problems = append(problems, fmt.Sprintf("%s: the maintainer set was not read (%v), so it was not recorded", ref.Package(), err))
+		e.missing |= signalMaintainers
+		e.outage |= signalMaintainers
+		problems = append(problems, fmt.Sprintf("%s: the maintainer set was not read (%v), so the one the baseline already holds was kept", ref.Package(), err))
 	} else {
 		e.Maintainers = names(owners)
 		if len(e.Maintainers) == 0 {
-			problems = append(problems, fmt.Sprintf("%s: the registry named no maintainer, so none was recorded", ref.Package()))
+			// An empty answer is an answer, not a gap: the registry was asked and
+			// named nobody. The record is left alone all the same, because a package
+			// with no maintainer at all is far more likely a registry that answered
+			// oddly than a package everybody walked away from.
+			e.missing |= signalMaintainers
+			problems = append(problems, fmt.Sprintf("%s: the registry named no maintainer, so the set the baseline already holds was kept", ref.Package()))
 		}
 	}
 	e.normalize()
@@ -169,7 +198,11 @@ func names(publishers []model.Publisher) []string {
 
 // Update merges observations into the baseline at path and writes it back,
 // creating the file and the directory when the project has none. It returns the
-// entries it dropped and the file it wrote, so the caller can say what changed.
+// entries it dropped, so the caller can say what went; what it wrote is the file
+// at path, which the caller names in the same note.
+//
+// Merging is Put's: a signal an observation could not read keeps what the record
+// holds, and an observation that read nothing changes nothing.
 //
 // keep, when it is not nil, is every package the project locks: entries for
 // anything else are dropped, which is what a full snapshot does. A partial run

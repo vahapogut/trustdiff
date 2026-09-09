@@ -167,6 +167,7 @@ func TestSetLookupPrefersTheBaseRevision(t *testing.T) {
 		wantFound     bool
 		wantVersion   string
 		wantRewritten bool
+		wantAdded     bool
 		wantCurrent   bool
 	}{
 		{
@@ -211,6 +212,10 @@ func TestSetLookupPrefersTheBaseRevision(t *testing.T) {
 			wantRewritten: true,
 		},
 		{
+			// The record is one the change under review invented, so it is reported
+			// as added and the checks skip on it. It used to be handed over as an
+			// ordinary observation, which let a change claim its own maintainers for
+			// a package nothing had ever recorded and take a pass for it.
 			name: "the change added a record the base revision never had",
 			set: Set{
 				Head: file(entry("pypi:requests@2.32.3", 0, "alice")),
@@ -218,6 +223,7 @@ func TestSetLookupPrefersTheBaseRevision(t *testing.T) {
 			},
 			wantFound:   true,
 			wantVersion: "2.32.3",
+			wantAdded:   true,
 		},
 	}
 	for _, tt := range tests {
@@ -234,6 +240,9 @@ func TestSetLookupPrefersTheBaseRevision(t *testing.T) {
 			}
 			if got.Rewritten != tt.wantRewritten {
 				t.Errorf("rewritten = %v, want %v", got.Rewritten, tt.wantRewritten)
+			}
+			if got.Added != tt.wantAdded {
+				t.Errorf("added = %v, want %v", got.Added, tt.wantAdded)
 			}
 			if (got.Current != nil) != tt.wantCurrent {
 				t.Errorf("current = %v, want present %v", got.Current, tt.wantCurrent)

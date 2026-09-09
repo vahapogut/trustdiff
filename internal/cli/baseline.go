@@ -80,9 +80,9 @@ func (a *App) runBaseline(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	// The record that is about to be replaced is read first: it is what the
-	// packages whose maintainers changed are compared with, and after the write
-	// it is gone.
+	// The record the run is about to write into is read first: it is what the
+	// packages whose maintainers changed are compared with, and the write replaces
+	// every signal this run managed to observe.
 	recorded, err := a.readBaseline(path)
 	if err != nil {
 		return err
@@ -100,7 +100,7 @@ func (a *App) runBaseline(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	observed, problems := baseline.Observe(cmd.Context(), loader, refs, now, a.Opts.Jobs)
+	observed, problems, unavailable := baseline.Observe(cmd.Context(), loader, refs, now, a.Opts.Jobs)
 	changes := baseline.Compare(recorded, observed)
 	// A run that could not read every lockfile must not delete the record of the
 	// packages it therefore never saw, so pruning is left to a complete run.
@@ -123,7 +123,13 @@ func (a *App) runBaseline(cmd *cobra.Command, args []string) error {
 	}, st.failOn)
 	// Something the run could not read, a lockfile or a registry answer, makes the
 	// record incomplete, and the policy decides whether that is worth an exit code.
-	if rep.Summary.ExitCode == ExitOK && unreadFails(st.pol, incomplete || len(problems) > 0) {
+	// A registry that did not answer is put to the policy of its own package's
+	// ecosystem, the way a check outcome is; a lockfile no parser got through
+	// belongs to no ecosystem and is put to the top-level setting. The rest of the
+	// problem lines are not outages at all: a package locked at two versions and a
+	// registry that lists nobody are answers, and exit code 3 says a data source
+	// was unavailable.
+	if rep.Summary.ExitCode == ExitOK && (unreadFails(st.pol, incomplete) || refsDataUnavailableFail(st.pol, unavailable)) {
 		rep.SetExitCode(ExitUnavailable)
 	}
 	if err := st.writer.Write(a.Stdout, rep); err != nil {
@@ -188,15 +194,12 @@ func (a *App) evaluateWithBaseline(ctx context.Context, cmd *cobra.Command, st *
 		return fmt.Errorf("write report: %w", err)
 	}
 	// The baseline is written after the report, so a run that is killed while
-	// writing it has still said what it found. The run's own loader is used: every
-	// answer it needs is already memoized, so this costs no request.
+	// writing it has still said what it found, and only when the report stopped at
+	// nothing. A run that reported a maintainer takeover would otherwise record the
+	// attacker's set as the new truth, in the file the README tells people to
+	// commit, and the next run would compare with it and pass.
 	if update, _ := cmd.Flags().GetBool("update-baseline"); update {
-		observed, problems := baseline.Observe(ctx, loader, inputRefs(inputs), baselineClock(st), a.Opts.Jobs)
-		dropped, err := baseline.Update(path, observed, nil, baselineClock(st))
-		if err != nil {
-			return fmt.Errorf("update the baseline: %w", err)
-		}
-		if err := a.writeNotes(append([]string{baselineWritten(path, len(observed), dropped, true)}, problems...)); err != nil {
+		if err := a.updateBaseline(ctx, st, loader, inputs, path, rep.Summary.ExitCode); err != nil {
 			return err
 		}
 	}
@@ -204,6 +207,42 @@ func (a *App) evaluateWithBaseline(ctx context.Context, cmd *cobra.Command, st *
 		return Exit(rep.Summary.ExitCode, nil)
 	}
 	return nil
+}
+
+// updateBaseline records what the run observed, which is what --update-baseline
+// asks for, unless the report exits with anything but 0. The run's own loader is
+// used: every answer it needs is already memoized, so this costs no request.
+//
+// A failure here is returned as a plain error, which is exit code 2. It cannot
+// take an exit code away from the findings, because a run with findings does not
+// reach the write in the first place.
+func (a *App) updateBaseline(ctx context.Context, st *settings, src baseline.Signals, inputs []checks.Input, path string, exitCode int) error {
+	if exitCode != ExitOK {
+		return a.writeNotes([]string{fmt.Sprintf(
+			"the baseline was not updated: the run exits %d, and a record refreshed by a run that reported something is a record of what it reported",
+			exitCode)})
+	}
+	// The packages a registry did not answer for are already in the outcomes the
+	// report was built from, so what they are worth has been decided above.
+	observed, problems, _ := baseline.Observe(ctx, src, inputRefs(inputs), baselineClock(st), a.Opts.Jobs)
+	dropped, err := baseline.Update(path, observed, nil, baselineClock(st))
+	if err != nil {
+		return fmt.Errorf("update the baseline: %w", err)
+	}
+	return a.writeNotes(append([]string{baselineWritten(path, len(observed), dropped, true)}, problems...))
+}
+
+// refsDataUnavailableFail reports whether a data source that did not answer for
+// one of these packages should make the exit code 3, asking the policy of each
+// package's own ecosystem the way dataUnavailableFails asks it for a check
+// outcome.
+func refsDataUnavailableFail(pol *policy.Policy, refs []model.PackageRef) bool {
+	for _, ref := range refs {
+		if pol.Effective(ref.Ecosystem).OnDataUnavailable == policy.OnDataUnavailableFail {
+			return true
+		}
+	}
+	return false
 }
 
 // readLockfiles parses the lockfiles of a directory into subjects to observe. It
@@ -247,6 +286,13 @@ func baselineClock(st *settings) time.Time {
 // baselinePath is the file the run reads and writes: the one found upward from
 // dir, the way the policy file is found, or the one this directory would hold
 // when the project has none yet.
+//
+// The answer is always absolute, as Find's is. A relative path is what a run
+// started in the working directory would get for a baseline that is not there,
+// and baselineSet has to place that path inside the repository to read the base
+// revision's copy of it: a relative path cannot be placed, the comparison reads
+// as "outside the repository", and the base revision is then never consulted.
+// That is the whole gate, turned off by deleting a file.
 func (a *App) baselinePath(dir string) (string, error) {
 	found, ok, err := baseline.Find(dir)
 	if err != nil {
@@ -255,7 +301,11 @@ func (a *App) baselinePath(dir string) (string, error) {
 	if ok {
 		return found, nil
 	}
-	return baseline.Path(dir), nil
+	path, err := filepath.Abs(baseline.Path(dir))
+	if err != nil {
+		return "", Usagef("resolve %q: %v", baseline.Path(dir), err)
+	}
+	return path, nil
 }
 
 // readBaseline loads the project's baseline. A project that has none is not a
@@ -460,12 +510,25 @@ func driftFinding(c *baseline.Change, level model.Level, now time.Time) model.Fi
 }
 
 // resolve follows the links in a path so that two spellings of one directory
-// compare equal. A path that cannot be resolved is returned as it came: the
-// caller only needs the two sides to agree, and a path that does not exist has
-// nothing to disagree about.
+// compare equal.
+//
+// A path that does not exist is resolved through the deepest ancestor that does,
+// and its own last elements are appended unchanged. The file that is not there is
+// the case that matters: a baseline the change under review deleted still has to
+// be placed inside the repository so that the base revision's copy is read, and a
+// path left in the spelling it arrived in would compare as though it lay
+// somewhere else altogether, because a temporary directory is a link on macOS
+// (/var against /private/var) and carries a short name on Windows (RUNNER~1)
+// while git always answers with the resolved one.
 func resolve(path string) string {
 	if evaluated, err := filepath.EvalSymlinks(path); err == nil {
 		return evaluated
 	}
-	return path
+	parent := filepath.Dir(path)
+	if parent == path {
+		// The root of a volume, which either resolved above or cannot be resolved
+		// at all; there is nothing left to walk up to.
+		return path
+	}
+	return filepath.Join(resolve(parent), filepath.Base(path))
 }

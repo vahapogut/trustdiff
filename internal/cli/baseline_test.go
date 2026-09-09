@@ -138,6 +138,24 @@ func TestBaselineRewriteIsStable(t *testing.T) {
 	if !bytes.Equal(first, second) {
 		t.Errorf("a second run rewrote the file:\n%s\n%s", first, second)
 	}
+
+	// The same again two days later. An entry whose signals a run found unchanged
+	// keeps the time it carries, so a project of five hundred packages produces a
+	// one line diff and not five hundred; only the file's own updated_at moves.
+	later := baselineNow.Add(48 * time.Hour)
+	t.Setenv(nowEnv, later.Format(time.RFC3339))
+	run(t, "baseline")
+	moved := readBaselineFile(t, dir)
+	if !moved.UpdatedAt.Equal(later) {
+		t.Errorf("updated_at = %s, want the later run's clock", moved.UpdatedAt)
+	}
+	for i := range moved.Packages {
+		e := &moved.Packages[i]
+		if !e.ObservedAt.Equal(baselineNow) {
+			t.Errorf("%s observed_at = %s, want the first run's %s: nothing about its signals moved",
+				e.Package(), e.ObservedAt, baselineNow)
+		}
+	}
 }
 
 // The case no run over a lockfile change can see: the locked version did not
@@ -215,6 +233,52 @@ func TestBaselineHonorsThePolicyLevel(t *testing.T) {
 	}
 	if _, ok := readBaselineFile(t, dir).Lookup(model.MustParseRef("npm:trustdiff-fixture-lib")); !ok {
 		t.Error("the observation was not written")
+	}
+}
+
+// lockOf is a lockfile locking the package the fake loader serves at one version,
+// so that two of them lock the same package at two versions.
+func lockOf(version string) string {
+	return `{
+  "name": "fixture",
+  "lockfileVersion": 3,
+  "packages": {
+    "node_modules/trustdiff-fixture-lib": {
+      "version": "` + version + `",
+      "resolved": "https://registry.npmjs.org/trustdiff-fixture-lib/-/trustdiff-fixture-lib-` + version + `.tgz",
+      "integrity": "sha512-Zm9ydGhlbGli"
+    }
+  }
+}
+`
+}
+
+// Exit code 3 says a data source was unavailable. A package the project locks at
+// two versions is a line the run writes about the project, not an outage, so it
+// must not raise the code even where the policy fails on unavailable data; a
+// release the registry did not answer for must.
+func TestBaselineExitsThreeOnlyForAnUnavailableSource(t *testing.T) {
+	dir := scanFixture(t)
+	writePolicy(t, "version: 1\non_data_unavailable: fail\n")
+	writeFile(t, dir, "package-lock.json", lockOf("1.0.0"))
+	writeFile(t, dir, "web/package-lock.json", lockOf("2.0.0"))
+
+	code, stdout, stderr := run(t, "baseline")
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want 0: every request was answered (stdout: %s, stderr: %s)", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "is locked at 1.0.0 and at 2.0.0") {
+		t.Errorf("stdout does not report the package locked twice:\n%s", stdout)
+	}
+
+	// The same policy over a release the registry does not have exits 3, which is
+	// what the setting is for.
+	writeFile(t, dir, "package-lock.json", baseLock)
+	if err := os.Remove(filepath.Join(dir, "web", "package-lock.json")); err != nil {
+		t.Fatal(err)
+	}
+	if code, stdout, stderr = run(t, "baseline"); code != ExitUnavailable {
+		t.Fatalf("exit = %d, want 3 for a release the registry did not answer for (stdout: %s, stderr: %s)", code, stdout, stderr)
 	}
 }
 
@@ -366,6 +430,90 @@ func TestEvaluateWithBaselineComparesTheBaseRevision(t *testing.T) {
 		return
 	}
 	t.Errorf("TD003 did not compare with the base revision's record: findings %+v, skipped %+v", lib.Findings, lib.Skipped)
+}
+
+// Deleting the record is the same attack as rewriting it, with a bigger eraser,
+// and it is answered the same way: the base revision's copy is read and compared.
+// The deletion used to be the one that worked, because the path of a file that is
+// not there was relative, could not be placed inside the repository, and the base
+// side was dropped with nothing but a debug line to show for it.
+func TestEvaluateWithBaselineReadsABaselineTheChangeDeleted(t *testing.T) {
+	r := diffFixture(t)
+	r.write("package-lock.json", baseLock)
+	writeBaselineFile(t, r.dir, recorded("npm:trustdiff-fixture-lib@1.0.0", "alice"))
+	r.commit("base")
+	if err := os.Remove(baseline.Path(r.dir)); err != nil {
+		t.Fatal(err)
+	}
+	r.commit("the change under review")
+
+	app, stdout, _ := baselineApp(t, "json")
+	cmd := app.newDiffCommand()
+	st, err := app.settle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs, _, _ := app.readLockfiles(r.dir, []string{"package-lock.json"})
+	_ = app.evaluateWithBaseline(context.Background(), cmd, st, inputs, false, ".")
+
+	rep := decodeReport(t, stdout.String())
+	lib := subjectFor(t, &rep, "npm:trustdiff-fixture-lib@1.0.0")
+	for _, f := range lib.Findings {
+		if f.ID != "TD003" {
+			continue
+		}
+		if f.Evidence["baseline_deleted"] != true || f.Evidence["baseline_rewritten"] != true {
+			t.Errorf("evidence = %v, want the deletion reported", f.Evidence)
+		}
+		if !strings.Contains(f.Explanation, "deleted this package's baseline entry") {
+			t.Errorf("explanation = %q, want the deletion in words", f.Explanation)
+		}
+		return
+	}
+	t.Errorf("TD003 did not read the deleted record from the base revision: findings %+v, skipped %+v", lib.Findings, lib.Skipped)
+}
+
+// A run that reported something must not record what it reported. The file is the
+// one the README tells people to commit, so a run that found a maintainer
+// takeover would otherwise write the new set in as the truth and pass next time.
+func TestEvaluateWithBaselineDoesNotWriteWhenTheRunBlocked(t *testing.T) {
+	dir := scanFixture(t)
+	writeFile(t, dir, "package-lock.json", baseLock)
+	writeBaselineFile(t, dir, recorded("npm:trustdiff-fixture-lib@1.0.0", "alice"))
+	before, err := os.ReadFile(baseline.Path(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app, _, stderr := baselineApp(t, "json")
+	// The maintainer set change TD003 reports is a warning, so this is what a
+	// project that gates on warnings sees.
+	app.Opts.FailOn = "warn"
+	cmd := app.newScanCommand()
+	if err := cmd.Flags().Set("update-baseline", "true"); err != nil {
+		t.Fatal(err)
+	}
+	st, err := app.settle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs, _, _ := app.readLockfiles(dir, []string{"package-lock.json"})
+	err = app.evaluateWithBaseline(context.Background(), cmd, st, inputs, false, dir)
+
+	var exit *ExitError
+	if !errors.As(err, &exit) || exit.Code != ExitFindings {
+		t.Fatalf("err = %v, want exit code 1: the maintainer change is a finding", err)
+	}
+	after, readErr := os.ReadFile(baseline.Path(dir))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("the run recorded the signals it blocked on:\n%s\n%s", before, after)
+	}
+	if !strings.Contains(stderr.String(), "the baseline was not updated") {
+		t.Errorf("the run did not say why the record was left alone:\n%s", stderr)
+	}
 }
 
 // The baseline is found upward from the working directory, the way the policy

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -52,17 +53,49 @@ func Find(startDir string) (path string, found bool, err error) {
 	}
 }
 
+// sizeLimit is how much of a baseline is read. A project of five thousand
+// packages writes about a megabyte and a half, so this leaves room for one many
+// times larger while keeping a run from allocating whatever a repository
+// committed under the name.
+const sizeLimit = 8 << 20
+
 // Load reads and validates the baseline at path. A file that is not there is
 // reported with fs.ErrNotExist, which the caller takes as a project that has no
 // baseline yet rather than as a failure.
+//
+// Only a plain file is read. A repository in a pull request decides what its
+// files are and git records a symbolic link as a blob holding the link text, so a
+// fork can commit .trustdiff/baseline.json as a link to any path on the runner;
+// following it would put whatever that file holds into the comparison the gate
+// rests on. internal/cli/lockfiles.go refuses a link for a lockfile and
+// internal/doctor/read.go refuses one for a configuration file, both for this
+// reason, and this is the same rule for the record itself.
 func Load(path string) (*File, error) {
-	data, err := os.ReadFile(path) // #nosec G304 -- the path is the project's own baseline, found upward from the working directory or named by the caller
+	name := filepath.ToSlash(path)
+	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
 	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s: not a regular file, so not a baseline trustdiff reads", name)
+	}
+	file, err := os.Open(path) // #nosec G304 -- the path is the project's own baseline, found upward from the working directory or named by the caller, and Lstat above has refused everything that is not a plain file
+	if err != nil {
+		return nil, err
+	}
+	// Nothing was written, so a close error says nothing a caller could act on.
+	defer func() { _ = file.Close() }()
+
+	data, err := io.ReadAll(io.LimitReader(file, sizeLimit+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > sizeLimit {
+		return nil, fmt.Errorf("%s: larger than %d bytes, which no baseline is", name, sizeLimit)
+	}
 	f, err := Parse(data)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", filepath.ToSlash(path), err)
+		return nil, fmt.Errorf("%s: %w", name, err)
 	}
 	return f, nil
 }
@@ -81,6 +114,13 @@ func Parse(data []byte) (*File, error) {
 	var f File
 	if err := dec.Decode(&f); err != nil {
 		return nil, fmt.Errorf("decode the baseline: %w", err)
+	}
+	// Everything after the first value is refused rather than read past, the way
+	// internal/policy refuses a second YAML document. A document with a second one
+	// appended, or with anything at all after it, was written by something nobody
+	// meant to run, and bytes no parser looked at are bytes no reviewer looked at.
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, errors.New("decode the baseline: data follows the document")
 	}
 	if f.Schema != SchemaID {
 		return nil, fmt.Errorf("%w: schema is %q, want %q", ErrWrongSchema, f.Schema, SchemaID)
@@ -132,15 +172,31 @@ func Bytes(f *File) ([]byte, error) {
 
 // Write stores the file at path, creating the directory when it is missing.
 //
-// The write is atomic: the bytes go to a temporary file in the same directory and
-// are then renamed over the target, so a run that is interrupted leaves the
-// previous record whole instead of half a document. The temporary file is removed
-// when anything fails, and the rename is what makes the new content visible, on
-// Windows as on Unix.
+// What it replaces must be a plain file. Following a symbolic link would write
+// the project's record wherever the link points, which is a path a pull request
+// gets to choose, and renaming over one would silently turn a link the project
+// meant to keep into a regular file. Load refuses to read a link for the same
+// reason.
+//
+// The bytes go to a temporary file in the same directory, are flushed to the
+// disk, and the temporary file is then renamed over the target, on Windows as on
+// Unix. What that guarantees is that no reader ever sees half a document and that
+// a run which is interrupted or crashes leaves either the previous record or the
+// new one, whole. What it does not guarantee is which of the two a crash leaves:
+// the directory entry the rename changed is not flushed, so a machine that loses
+// power in the moment after the rename may come back to the previous record. That
+// is a run to repeat, not a file to repair. The temporary file is removed when
+// anything fails.
 func Write(path string, f *File) error {
 	data, err := Bytes(f)
 	if err != nil {
 		return err
+	}
+	switch info, err := os.Lstat(path); {
+	case err == nil && !info.Mode().IsRegular():
+		return fmt.Errorf("replace %s: not a regular file, so not a baseline trustdiff writes", filepath.ToSlash(path))
+	case err != nil && !errors.Is(err, fs.ErrNotExist):
+		return fmt.Errorf("stat %s: %w", filepath.ToSlash(path), err)
 	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
@@ -160,6 +216,12 @@ func Write(path string, f *File) error {
 	if _, err := tmp.Write(data); err != nil {
 		return cleanUp(tmp, name, fmt.Errorf("write %s: %w", filepath.ToSlash(path), err))
 	}
+	// The bytes are flushed before the rename, because a rename that beats them to
+	// the disk is what turns a crash into a file holding the right length and the
+	// wrong content.
+	if err := syncFile(tmp); err != nil {
+		return cleanUp(tmp, name, fmt.Errorf("flush %s: %w", filepath.ToSlash(path), err))
+	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(name)
 		return fmt.Errorf("write %s: %w", filepath.ToSlash(path), err)
@@ -170,6 +232,13 @@ func Write(path string, f *File) error {
 	}
 	return nil
 }
+
+// syncFile flushes what has been written to the disk. It is a variable so that a
+// test can put a failure where no filesystem will produce one on demand, and so
+// that a test can see that the flush happens at all: it is the step that decides
+// whether the atomicity in Write's comment survives a crash and not only a killed
+// process.
+var syncFile = (*os.File).Sync
 
 // chmodBaseline gives the temporary file the mode a committed file has. On
 // Windows the call is a no-op in practice, which is why its failure is not worth

@@ -239,6 +239,16 @@ func TestParseRejects(t *testing.T) {
 			doc:  "# a policy file, not a baseline\n",
 			want: "decode the baseline",
 		},
+		{
+			name: "something appended to a valid document",
+			doc:  valid + "THIS IS NOT JSON",
+			want: "data follows the document",
+		},
+		{
+			name: "a second document appended to a valid one",
+			doc:  valid + "\n" + valid,
+			want: "data follows the document",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -250,6 +260,128 @@ func TestParseRejects(t *testing.T) {
 				t.Errorf("err = %v, want it to name %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// A registry name is kept in the spelling the schema states, whatever spelling
+// the file used. An entry left saying "NPM" matches no lookup, is dropped as no
+// longer locked while the package is locked, lets Put record the package a second
+// time, and fails the schema's own enum.
+func TestParseKeepsTheCanonicalEcosystem(t *testing.T) {
+	doc := `{"schema":"trustdiff.baseline/1","updated_at":"2026-09-09T12:00:00Z","packages":[` +
+		`{"ecosystem":"NPM","name":"example-lib","version":"1.0.0","observed_at":"2026-09-08T12:00:00Z","maintainers":["alice"]},` +
+		`{"ecosystem":"PyPI","name":"Zope.Interface","version":"6.0","observed_at":"2026-09-08T12:00:00Z"}]}`
+	f, err := Parse([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Packages[0].Ecosystem != model.NPM || f.Packages[1].Ecosystem != model.PyPI {
+		t.Fatalf("ecosystems = %q and %q, want the canonical spellings",
+			f.Packages[0].Ecosystem, f.Packages[1].Ecosystem)
+	}
+	if f.Packages[1].Name != "zope-interface" {
+		t.Errorf("name = %q, want the PEP 503 spelling, which needs the ecosystem to be known", f.Packages[1].Name)
+	}
+	if _, ok := f.Lookup(model.MustParseRef("npm:example-lib")); !ok {
+		t.Error("a lookup of the recorded package found nothing")
+	}
+	// A second observation of the same package replaces the entry rather than
+	// adding one beside it.
+	fresh := entry("npm:example-lib@2.0.0", 0, "alice")
+	f.Put(&fresh)
+	if len(f.Packages) != 2 {
+		t.Errorf("packages = %+v, want the npm entry replaced rather than doubled", f.Packages)
+	}
+	// The written document is what the published schema describes.
+	data, err := Bytes(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(data, []byte(`"NPM"`)) || bytes.Contains(data, []byte(`"PyPI"`)) {
+		t.Errorf("the written file keeps a spelling the schema's enum refuses:\n%s", data)
+	}
+}
+
+// A baseline is a file a pull request gets to choose the content of, so a link is
+// refused rather than followed, the way a lockfile and a configuration file are.
+func TestLoadRefusesASymbolicLink(t *testing.T) {
+	dir := t.TempDir()
+	elsewhere := filepath.Join(dir, "elsewhere.json")
+	if err := Write(elsewhere, file(entry("npm:example-lib@1.0.0", day, "alice"))); err != nil {
+		t.Fatal(err)
+	}
+	path := Path(dir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, path); err != nil {
+		t.Skipf("this platform does not let the test make a symbolic link: %v", err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Errorf("err = %v, want a refusal naming the file", err)
+	}
+	// Nor is a link replaced by a plain file, which would throw away what the
+	// project meant to point at.
+	if err := Write(path, New(now)); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Errorf("err = %v, want the write refused too", err)
+	}
+}
+
+// The name says nothing about the size, so a run must not be made to allocate
+// whatever a repository committed under it.
+func TestLoadRefusesAFileTooLargeToBeABaseline(t *testing.T) {
+	path := Path(t.TempDir())
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	// A valid document followed by enough padding to pass the limit, so what the
+	// test measures is the size and not the syntax.
+	data := append([]byte(`{"schema":"trustdiff.baseline/1","updated_at":"2026-09-09T12:00:00Z","packages":[]}`),
+		bytes.Repeat([]byte(" "), sizeLimit)...)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Errorf("err = %v, want the size refused", err)
+	}
+}
+
+// The bytes reach the disk before the rename makes them the record. A flush that
+// failed is a failed write, and it leaves the previous record and no temporary
+// file behind.
+func TestWriteFlushesBeforeTheRename(t *testing.T) {
+	dir := t.TempDir()
+	path := Path(dir)
+	if err := Write(path, file(entry("npm:example-lib@1.0.0", day, "alice"))); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	flushed := errors.New("the disk did not take it")
+	old := syncFile
+	syncFile = func(*os.File) error { return flushed }
+	t.Cleanup(func() { syncFile = old })
+
+	err = Write(path, file(entry("npm:example-lib@2.0.0", 0, "alice")))
+	if !errors.Is(err, flushed) {
+		t.Fatalf("err = %v, want the flush failure: the bytes must reach the disk before the rename", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("the previous record was replaced by a write that never reached the disk:\n%s", after)
+	}
+	left, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 1 {
+		t.Errorf("directory holds %d entries, want only %s: a temporary file was left behind", len(left), FileName)
 	}
 }
 

@@ -1,6 +1,7 @@
 package checks
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -363,6 +364,51 @@ func TestTD003ReobservationIsNotARewrite(t *testing.T) {
 	if f.Evidence["baseline_age_days"] != 0 {
 		t.Errorf("baseline_age_days = %v, want the working tree's fresher record", f.Evidence["baseline_age_days"])
 	}
+}
+
+// An entry the change under review invented answers nothing. The base revision
+// records nothing for the package, so the only record there is says what whoever
+// wrote the change wanted it to say, and a check that read it as an observation
+// would answer a takeover with the pass the takeover supplied.
+func TestTD003SkipsAnEntryTheChangeAdded(t *testing.T) {
+	s := subjectA(model.Cargo, "serde", "1.0.200")
+	s.Owners = publishersA("mallory")
+	withRewrittenBaselineT(s, []*baseline.Entry{entryT("cargo:serde@1.0.200", 0, "mallory")}, nil)
+	runA(t, "TD003", s, outcomeA{skip: "the change under review added the baseline entry for cargo:serde"})
+
+	// A run that compares against no revision is not that case: the working tree's
+	// record is the only one there has ever been, and it still answers.
+	scan := subjectA(model.Cargo, "serde", "1.0.200")
+	scan.Owners = publishersA("mallory")
+	withBaselineT(scan, entryT("cargo:serde@1.0.200", 5, "alice"))
+	runA(t, "TD003", scan, outcomeA{findings: 1})
+}
+
+// A rewritten entry that names nobody is reported as an empty list and never as
+// null, the way added and removed are, so that a reader can tell a record which
+// claims nobody from one which claims nothing.
+func TestTD003RewrittenMaintainersAreNeverNull(t *testing.T) {
+	s := subjectA(model.PyPI, "requests", "2.32.0")
+	s.Owners = publishersA("alice", "mallory")
+	// The change kept the entry and emptied its maintainer set, which is the
+	// quietest way to rewrite it.
+	withRewrittenBaselineT(s,
+		[]*baseline.Entry{entryT("pypi:requests@2.32.0", 0)},
+		[]*baseline.Entry{entryT("pypi:requests@2.31.0", 30, "alice")})
+
+	f := runA(t, "TD003", s, outcomeA{findings: 1}).Findings[0]
+	claimed, ok := f.Evidence["baseline_rewritten_maintainers"]
+	if !ok {
+		t.Fatalf("evidence = %v, want what the rewritten record claims", f.Evidence)
+	}
+	data, err := json.Marshal(claimed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "[]" {
+		t.Errorf("baseline_rewritten_maintainers = %s, want an empty list: null cannot be told from a record that claims nothing", data)
+	}
+	wantTextA(t, "explanation", f.Explanation, "which now records no maintainer")
 }
 
 // The check never passes on missing data: every way of not being able to answer

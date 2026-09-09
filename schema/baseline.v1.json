@@ -12,7 +12,7 @@
       "const": "trustdiff.baseline/1"
     },
     "updated_at": {
-      "description": "When the file was last written, in RFC 3339 with second precision in UTC. It is the run's clock, not the wall clock of the file system, so a rewrite that observed nothing new produces no diff beyond this line.",
+      "description": "When the file was last written, in RFC 3339 with second precision in UTC. It is the run's clock, not the wall clock of the file system, and an entry whose signals a rerun found unchanged keeps the observed_at it already carried, so a rewrite that observed nothing new produces no diff beyond this line.",
       "type": "string",
       "format": "date-time"
     },
@@ -47,7 +47,7 @@
           "pattern": "^[^\\s]+$"
         },
         "observed_at": {
-          "description": "When the signals below were read from the registry, in RFC 3339 with second precision in UTC. A finding built on this entry states its age, because an old record still answers but says less about when a change happened.",
+          "description": "When the signals below were first seen at the registry, in RFC 3339 with second precision in UTC. A rerun that reads the same signals leaves it alone, so that a project which observed nothing new rewrites no entry; the document's updated_at says when the record was last confirmed. A finding built on this entry states its age, because an old record still answers but says less about when a change happened. A signal a run could not read keeps the value recorded before rather than being erased, so an entry may hold signals read at different times, with observed_at naming the oldest of them.",
           "type": "string",
           "format": "date-time"
         },

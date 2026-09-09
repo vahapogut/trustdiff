@@ -80,9 +80,12 @@ func TestObserveRecordsWhatEachRegistryExposes(t *testing.T) {
 		model.MustParseRef("pypi:example-tool@2.32.3"),
 		model.MustParseRef("npm:example-lib@4.19.2"),
 	}
-	got, problems := Observe(context.Background(), src, refs, now, 2)
+	got, problems, unavailable := Observe(context.Background(), src, refs, now, 2)
 	if len(problems) != 0 {
 		t.Fatalf("problems = %v, want none", problems)
+	}
+	if len(unavailable) != 0 {
+		t.Fatalf("unavailable = %v, want none: every lookup answered", unavailable)
 	}
 	if len(got) != 2 || got[0].Ecosystem != model.NPM || got[1].Ecosystem != model.PyPI {
 		t.Fatalf("entries = %+v, want them sorted by ecosystem", got)
@@ -127,9 +130,12 @@ func TestObserveReportsWhatItCouldNotRead(t *testing.T) {
 		model.MustParseRef("npm:example-lib"),
 		model.MustParseRef("npm:example-lib@9.9.9"),
 	}
-	got, problems := Observe(context.Background(), src, refs, now, 1)
+	got, problems, unavailable := Observe(context.Background(), src, refs, now, 1)
 	if len(got) != 2 {
 		t.Fatalf("entries = %+v, want one per package that carried a version", got)
+	}
+	if len(unavailable) != 2 {
+		t.Fatalf("unavailable = %v, want both packages: one lookup failed and one facet was not answered", unavailable)
 	}
 	for _, e := range got {
 		if e.Provenance != nil {
@@ -230,6 +236,161 @@ func TestUpdateRefusesADocumentItCannotRead(t *testing.T) {
 	}
 	if _, err := Update(path, []Entry{entry("npm:example-lib@1.0.0", 0, "alice")}, nil, now); !errors.Is(err, ErrWrongSchema) {
 		t.Fatalf("err = %v, want ErrWrongSchema", err)
+	}
+}
+
+// A run whose lookups all failed must leave the record exactly as it was. The
+// maintainer set of a PyPI or crates.io package is the only answer TD002 and
+// TD003 have there, and a rate limit, a 5xx, an interrupt or a package the
+// registry has removed is not a reason to forget it.
+func TestUpdateKeepsARecordAnObservationCouldNotMake(t *testing.T) {
+	dir := t.TempDir()
+	path := Path(dir)
+	before := entry("pypi:example-tool@2.32.3", 30*day, "alice", "bob")
+	before.Publisher = "github:example/example-tool/publish.yml"
+	before.PublisherSource = FromProvenance
+	before.Provenance = &Provenance{Kind: model.ProvenanceAttestation, Verified: true}
+	if err := Write(path, file(before)); err != nil {
+		t.Fatal(err)
+	}
+
+	// Everything the run asks for fails, which is what --offline, a rate limit or
+	// a registry outage looks like from here.
+	src := &signals{fail: map[string]error{
+		"pypi:example-tool@2.32.3": errors.New("connection refused"),
+		"pypi:example-tool":        errors.New("connection refused"),
+	}}
+	observed, problems, unavailable := Observe(context.Background(), src,
+		[]model.PackageRef{model.MustParseRef("pypi:example-tool@2.32.3")}, now, 1)
+	if len(unavailable) != 1 {
+		t.Fatalf("unavailable = %v, want the package neither lookup answered for", unavailable)
+	}
+	if _, err := Update(path, observed, nil, now); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, ok := got.Lookup(model.MustParseRef("pypi:example-tool"))
+	if !ok {
+		t.Fatalf("the record was deleted by a run that read nothing: %+v", got.Packages)
+	}
+	if len(e.Maintainers) != 2 || e.Maintainers[0] != "alice" || e.Maintainers[1] != "bob" {
+		t.Errorf("maintainers = %v, want the recorded set kept", e.Maintainers)
+	}
+	if e.Publisher != before.Publisher || e.PublisherSource != before.PublisherSource || e.Provenance == nil {
+		t.Errorf("entry = %+v, want the recorded publisher and provenance kept", e)
+	}
+	if !e.ObservedAt.Equal(ago(30 * day)) {
+		t.Errorf("observed_at = %s, want the recorded time: nothing was observed", e.ObservedAt)
+	}
+	joined := strings.Join(problems, "\n")
+	for _, want := range []string{"the release was not read", "the maintainer set was not read", "was kept"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("problems do not say %q:\n%s", want, joined)
+		}
+	}
+}
+
+// A package that has no record yet and could not be read is not recorded at all:
+// an entry holding a name and a timestamp claims an observation nobody made.
+func TestUpdateRecordsNothingForAPackageItCouldNotRead(t *testing.T) {
+	path := Path(t.TempDir())
+	src := &signals{fail: map[string]error{
+		"cargo:example-crate@1.0.200": errors.New("connection refused"),
+		"cargo:example-crate":         errors.New("connection refused"),
+	}}
+	observed, _, _ := Observe(context.Background(), src,
+		[]model.PackageRef{model.MustParseRef("cargo:example-crate@1.0.200")}, now, 1)
+	if _, err := Update(path, observed, nil, now); err != nil {
+		t.Fatal(err)
+	}
+	f, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Packages) != 0 {
+		t.Errorf("packages = %+v, want none: nothing was read to record", f.Packages)
+	}
+}
+
+// One lookup that failed must not take the other's answer with it: the maintainer
+// set belongs to the package and the publisher belongs to the release.
+func TestUpdateKeepsTheHalfOfARecordThatWasNotRead(t *testing.T) {
+	dir := t.TempDir()
+	path := Path(dir)
+	before := entry("npm:example-lib@1.0.0", 30*day, "alice")
+	before.Publisher = "alice"
+	before.PublisherSource = FromRegistry
+	if err := Write(path, file(before)); err != nil {
+		t.Fatal(err)
+	}
+	// The owners answer, the release does not.
+	src := &signals{
+		owners: map[string][]model.Publisher{"npm:example-lib": publishers("alice", "mallory")},
+		fail:   map[string]error{"npm:example-lib@2.0.0": errors.New("503 from the registry")},
+	}
+	observed, _, _ := Observe(context.Background(), src,
+		[]model.PackageRef{model.MustParseRef("npm:example-lib@2.0.0")}, now, 1)
+	if _, err := Update(path, observed, nil, now); err != nil {
+		t.Fatal(err)
+	}
+	f, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, _ := f.Lookup(model.MustParseRef("npm:example-lib"))
+	if len(e.Maintainers) != 2 || e.Maintainers[1] != "mallory" {
+		t.Errorf("maintainers = %v, want the set the registry answered with", e.Maintainers)
+	}
+	if e.Publisher != "alice" || e.Version != "1.0.0" {
+		t.Errorf("entry = %+v, want the release half left at the release it was read from", e)
+	}
+	if !e.ObservedAt.Equal(now) {
+		t.Errorf("observed_at = %s, want the run clock: the maintainer set moved", e.ObservedAt)
+	}
+}
+
+// A rerun that saw nothing new must rewrite no entry. The file is committed and
+// compared in pull requests, so five hundred packages that did not change are
+// five hundred lines nobody should have to read past.
+func TestUpdateKeepsObservedAtWhenNothingChanged(t *testing.T) {
+	dir := t.TempDir()
+	path := Path(dir)
+	if err := Write(path, file(entry("npm:example-lib@1.0.0", 30*day, "alice"))); err != nil {
+		t.Fatal(err)
+	}
+	later := now.Add(7 * day)
+
+	// The same signals, observed a week later.
+	if _, err := Update(path, []Entry{entry("npm:example-lib@1.0.0", -7*day, "alice")}, nil, later); err != nil {
+		t.Fatal(err)
+	}
+	f, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, _ := f.Lookup(model.MustParseRef("npm:example-lib"))
+	if !e.ObservedAt.Equal(ago(30 * day)) {
+		t.Errorf("observed_at = %s, want the recorded %s: nothing about the signals moved", e.ObservedAt, ago(30*day))
+	}
+	if !f.UpdatedAt.Equal(later) {
+		t.Errorf("updated_at = %s, want the run clock: the file itself was written", f.UpdatedAt)
+	}
+
+	// A signal that did move takes the time with it, or the record would say the
+	// new set has been there all along.
+	if _, err := Update(path, []Entry{entry("npm:example-lib@1.0.0", -7*day, "alice", "mallory")}, nil, later); err != nil {
+		t.Fatal(err)
+	}
+	if f, err = Load(path); err != nil {
+		t.Fatal(err)
+	}
+	e, _ = f.Lookup(model.MustParseRef("npm:example-lib"))
+	if !e.ObservedAt.Equal(later) {
+		t.Errorf("observed_at = %s, want %s: the maintainer set changed", e.ObservedAt, later)
 	}
 }
 

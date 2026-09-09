@@ -38,8 +38,10 @@ import (
 // Names are compared case-insensitively. The check is skipped, never passed, when
 // neither way can answer: without a previous version, when either version records
 // no maintainers at all (an empty set is more likely missing data than a package
-// that lost every maintainer), and when the project has no baseline entry for the
-// package or the registry did not answer with an owner set.
+// that lost every maintainer), when the project has no baseline entry for the
+// package, when the entry is one the change under review added and the base
+// revision holds no record to compare it with, and when the registry did not
+// answer with an owner set.
 //
 // Evidence keys of the registry way:
 //
@@ -61,7 +63,8 @@ import (
 //	baseline_rewritten     true when the change under review edited or deleted the
 //	                       record, in which case the base revision's record is what
 //	                       was compared
-//	baseline_rewritten_maintainers  what the working tree's record now claims
+//	baseline_rewritten_maintainers  what the working tree's record now claims,
+//	                       an empty list and never null when it claims nobody
 //	baseline_deleted       true when the change deleted the record altogether
 type td003 struct{}
 
@@ -226,6 +229,14 @@ func baselineRecord(s *Subject) (baseline.Record, string) {
 	if !found {
 		return baseline.Record{}, fmt.Sprintf("no baseline entry for %s (record one with trustdiff baseline)", s.Ref.Package())
 	}
+	if record.Added {
+		// The change under review wrote this entry and the base revision records
+		// nothing for the package, so the only record there is says what whoever
+		// wrote the change wanted it to say. An entry that vouches for itself is
+		// not an observation, and a check that read it as one would answer a
+		// takeover with the pass the takeover supplied.
+		return baseline.Record{}, fmt.Sprintf("the change under review added the baseline entry for %s, so there is no record from before it to compare with", s.Ref.Package())
+	}
 	return record, ""
 }
 
@@ -262,7 +273,10 @@ func baselineEvidence(evidence map[string]any, record *baseline.Record, now time
 		evidence["baseline_deleted"] = true
 		return "; the change under review deleted this package's baseline entry, so the record the base revision holds was compared"
 	}
-	evidence["baseline_rewritten_maintainers"] = record.Current.Maintainers
+	// The key is written as an empty array rather than as null when the rewritten
+	// entry names nobody, the way added and removed are, so that a consumer can
+	// tell a record which claims nobody from one which claims nothing.
+	evidence["baseline_rewritten_maintainers"] = namesOrNone(record.Current.Maintainers)
 	if record.Current.Publisher != "" {
 		evidence["baseline_rewritten_publisher"] = record.Current.Publisher
 	}
@@ -283,6 +297,15 @@ func publisherNames(publishers []model.Publisher) []string {
 		}
 	}
 	sort.Strings(names)
+	return names
+}
+
+// namesOrNone returns names, or an empty list when there are none, so evidence
+// never carries a JSON null where a reader is promised a list.
+func namesOrNone(names []string) []string {
+	if names == nil {
+		return []string{}
+	}
 	return names
 }
 

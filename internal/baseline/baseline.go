@@ -12,10 +12,11 @@
 //
 // The document is schema/baseline.v1.json, published beside the report and policy
 // schemas and embedded here as SchemaJSON. Entries are sorted by ecosystem and
-// name and times are written in UTC with second precision, so a rewrite that
-// observed nothing new produces a one-line diff; Write replaces the file
-// atomically, so an interrupted run leaves the previous record intact rather than
-// half a file.
+// name and times are written in UTC with second precision, and an entry whose
+// signals a rerun found unchanged keeps the observation time it already carries,
+// so a rerun that saw nothing new rewrites the file's own updated_at line and not
+// one line per package. Write replaces the file atomically, so a reader never
+// sees half a document; see Write for what that promises and what it does not.
 //
 // The package imports internal/model and the standard library only. It must not
 // import internal/checks or internal/gitdiff: internal/checks reads a baseline, and
@@ -86,6 +87,27 @@ type Provenance struct {
 	Identity string `json:"identity,omitempty"`
 }
 
+// signal is a half of what observing a package reads. The maintainer set belongs
+// to the package and the publisher and the provenance belong to one release, and
+// a run reads them with separate requests, so one lookup that answered must not
+// be thrown away because the other did not.
+type signal uint8
+
+const (
+	// signalMaintainers is the maintainer or owner set the registry lists.
+	signalMaintainers signal = 1 << iota
+	// signalRelease is everything read from the release itself: the version the
+	// record is taken from, the publisher, its source and the provenance.
+	signalRelease
+	// signalProvenance is the provenance alone, for a release that was read while
+	// the registry could not answer for its publishing evidence.
+	signalProvenance
+	// everySignal is what an observation that read nothing at all is missing.
+	// signalProvenance is not part of it: a release nobody could read carries no
+	// provenance either, so signalRelease already covers it.
+	everySignal = signalMaintainers | signalRelease
+)
+
 // Entry is what one package's record holds. Every field but the identity and the
 // time may be absent, and absent always means "was not read" rather than "is
 // empty": a check reads an absent field as no answer, never as a change.
@@ -94,7 +116,10 @@ type Entry struct {
 	Name      string          `json:"name"`
 	// Version is the release the observation was taken from.
 	Version string `json:"version"`
-	// ObservedAt is when the signals were read, in UTC with second precision.
+	// ObservedAt is when the signals below were first seen, in UTC with second
+	// precision. A rerun that finds them unchanged leaves it alone, so that a
+	// project which observed nothing new rewrites no entry; the file's UpdatedAt
+	// says when the record was last confirmed.
 	ObservedAt time.Time `json:"observed_at"`
 	// Maintainers is the maintainer or owner set the registry showed, sorted and
 	// without repeats.
@@ -105,6 +130,21 @@ type Entry struct {
 	PublisherSource PublisherSource `json:"publisher_source,omitempty"`
 	// Provenance is the evidence Version carried.
 	Provenance *Provenance `json:"provenance,omitempty"`
+
+	// missing says which signals the observation behind this entry could not read.
+	// It is unexported and never written to the file, because it describes one
+	// observation and not the record: Put keeps what the file already holds for
+	// every signal it names. A gap written over a record would erase the only
+	// answer TD002 and TD003 have for PyPI and crates.io, and a rate limit, a 5xx
+	// or a package the registry has removed is not a reason to forget who
+	// maintained it.
+	missing signal
+	// outage is the subset of missing a data source did not answer for at all, as
+	// against answering with nothing. It is kept apart because only an outage is
+	// what a policy's on_data_unavailable is about: a registry that lists no
+	// maintainer has answered the question, and a run that reports it has
+	// consulted everything it was asked to.
+	outage signal
 }
 
 // Ref returns the ref of the release the entry was observed at. The receiver is a
@@ -159,6 +199,12 @@ func (e *Entry) SameSignals(other *Entry) bool {
 // changes the entry in place, so every path into a file goes through it and no
 // caller can forget the result.
 func (e *Entry) normalize() {
+	// The ecosystem is canonicalized first, because the name is normalized for the
+	// ecosystem it belongs to: "PyPI" would leave a PyPI name in whatever spelling
+	// it arrived in and no lookup would ever match it.
+	if eco, err := model.ParseEcosystem(string(e.Ecosystem)); err == nil {
+		e.Ecosystem = eco
+	}
 	e.Name = model.NormalizeName(e.Ecosystem, e.Name)
 	e.ObservedAt = e.ObservedAt.UTC().Truncate(time.Second)
 	e.Maintainers = normalizeNames(e.Maintainers)
@@ -172,9 +218,15 @@ func (e *Entry) normalize() {
 // file fails with a sentence rather than with a wrong comparison later.
 func (e *Entry) validate(i int) error {
 	where := fmt.Sprintf("packages[%d]", i)
-	if _, err := model.ParseEcosystem(string(e.Ecosystem)); err != nil {
+	eco, err := model.ParseEcosystem(string(e.Ecosystem))
+	if err != nil {
 		return fmt.Errorf("%s: %w", where, err)
 	}
+	// The canonical spelling is kept, not only checked. An entry left saying "NPM"
+	// would match no lookup, be dropped as no longer locked while the package is
+	// locked, let Put record the same package a second time, and fail the enum the
+	// published schema states.
+	e.Ecosystem = eco
 	switch {
 	case strings.TrimSpace(e.Name) == "":
 		return fmt.Errorf("%s: empty package name", where)
@@ -245,20 +297,73 @@ func (f *File) Lookup(ref model.PackageRef) (Entry, bool) {
 	return Entry{}, false
 }
 
-// Put records an entry, replacing the package's previous one. The file stays
-// sorted, so the caller may put entries in any order. The entry is normalized in
-// place first, which is why it is taken by pointer: every path into a file goes
-// through the same shaping, and the caller sees the entry it stored.
+// Put records an observation of a package, merging it into the entry the file
+// already holds. The file stays sorted, so the caller may put entries in any
+// order. The entry is normalized in place first, which is why it is taken by
+// pointer: every path into a file goes through the same shaping, and the caller
+// sees its observation in the shape the file gives it.
+//
+// A signal the observation could not read keeps the value the record holds
+// rather than erasing it, and an observation that read nothing at all changes
+// nothing at all: absent means "was not read", and a run that was rate limited,
+// answered with a 5xx or interrupted must not delete what an earlier run saw. An
+// observation of a package the file does not hold yet, which read nothing, is
+// not recorded either, because an entry carrying only a name and a timestamp
+// claims an observation that never happened.
 func (f *File) Put(e *Entry) {
 	e.normalize()
 	for i := range f.Packages {
 		if f.Packages[i].Ecosystem == e.Ecosystem && f.Packages[i].Name == e.Name {
-			f.Packages[i] = *e
+			f.Packages[i] = merge(&f.Packages[i], e)
 			return
 		}
 	}
-	f.Packages = append(f.Packages, *e)
+	if e.missing&everySignal == everySignal {
+		// Nothing was read and nothing was recorded before, so there is nothing to
+		// record.
+		return
+	}
+	stored := *e
+	stored.missing, stored.outage = 0, 0
+	f.Packages = append(f.Packages, stored)
 	f.sort()
+}
+
+// merge is what a package the file already holds records after an observation:
+// the fresh signals, with the recorded value kept for every signal the run could
+// not read, and the recorded time kept when nothing about the signals moved.
+func merge(was, now *Entry) Entry {
+	if now.missing&everySignal == everySignal {
+		// Nothing was read, so nothing was observed and nothing moves, not even
+		// observed_at: the record still says when the signals it holds were seen.
+		return *was
+	}
+	out := *now
+	out.missing, out.outage = 0, 0
+	if now.missing&signalMaintainers != 0 {
+		out.Maintainers = was.Maintainers
+	}
+	switch {
+	case now.missing&signalRelease != 0:
+		// The publisher and the provenance were read from the release in Version,
+		// so the release half of a record moves together or not at all. Carrying a
+		// publisher over to another version would say that account published a
+		// release nobody was able to look at.
+		out.Version, out.Publisher, out.PublisherSource, out.Provenance =
+			was.Version, was.Publisher, was.PublisherSource, was.Provenance
+	case now.missing&signalProvenance != 0 && was.Version == out.Version:
+		// The release was read and its evidence was not, so what the record holds
+		// for that same release stands.
+		out.Provenance = was.Provenance
+	}
+	if was.SameSignals(&out) {
+		// A rerun that saw nothing new leaves the line alone, so a project of five
+		// hundred packages rewrites one line and not five hundred. The time an
+		// entry carries is therefore when its signals were first seen, and the
+		// file's updated_at is when they were last confirmed.
+		out.ObservedAt = was.ObservedAt
+	}
+	return out
 }
 
 // Keep drops every entry whose package is not in refs and returns what it
@@ -310,6 +415,13 @@ type Record struct {
 	// Rewritten is true when the change under review edited or deleted the entry
 	// the base revision recorded. A finding reports it as evidence.
 	Rewritten bool
+	// Added is true when the entry is one the change under review invented: the
+	// working tree records it and the base revision recorded nothing for the
+	// package. There is no record from before the change to compare with, so a
+	// check reports itself as skipped rather than passing on a record the same
+	// change supplied. It is false for a run that compares against no revision,
+	// where the working tree's record is the only one there has ever been.
+	Added bool
 	// Current is the entry the working tree's baseline holds when Rewritten is
 	// true, and nil when the change deleted the entry altogether.
 	Current *Entry
@@ -338,7 +450,12 @@ func (s *Set) Lookup(ref model.PackageRef) (Record, bool) {
 	case !inBase && !inHead:
 		return Record{}, false
 	case !inBase:
-		return Record{Observed: head}, true
+		// A run with a base revision that records nothing for the package is
+		// looking at an entry the change under review wrote, and an entry a change
+		// wrote about itself answers nothing: it is reported as added so that the
+		// checks skip rather than pass. A run comparing against no revision has
+		// only ever had the working tree's record, and that is not the same thing.
+		return Record{Observed: head, Added: s.Base != nil}, true
 	case inHead && head.SameSignals(&base):
 		// The change left the record alone. The working tree's entry is used so
 		// that a re-observation which only moved observed_at is not read as a
