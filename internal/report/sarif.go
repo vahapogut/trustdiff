@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -226,8 +225,14 @@ func sarifLocations(loc *model.Location) []sarifLocation {
 // such as a space or a number sign, are percent encoded. The path stays relative when
 // the report carries it relative, because a code scanning service resolves it against
 // the checkout.
+//
+// The backslash is replaced whatever the platform, not with filepath.ToSlash, which
+// does nothing outside Windows: a report written on a Windows machine is read by a
+// service running on Linux, and a path it left as packages\api\pnpm-lock.yaml would
+// arrive percent encoded and match no file. A Linux file whose name really contains a
+// backslash is the price, and it is one no lockfile pays.
 func artifactURI(path string) string {
-	return (&url.URL{Path: filepath.ToSlash(path)}).EscapedPath()
+	return (&url.URL{Path: strings.ReplaceAll(path, `\`, "/")}).EscapedPath()
 }
 
 // sarifLevel maps a finding level to the four SARIF levels. A finding at LevelOff
