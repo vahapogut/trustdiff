@@ -28,11 +28,15 @@ import (
 // pass. The closing line is the exit code and what it means, so that the comment says
 // whether the gate failed without anyone opening the log.
 //
-// The table is the whole report a reviewer sees, so cells are escaped: a pipe or a
-// backslash in a finding cannot break the columns, and a newline cannot break the
-// row. There is no HTML anywhere, which keeps the comment readable as text in a diff
-// and in an email notification. The full explanation of a finding stays in the json
-// and sarif formats; a table cell holds the title.
+// The table is the whole report a reviewer sees, and everything in it comes from a
+// lockfile a pull request may have written, so every value is escaped: a pipe or a
+// backslash cannot break the columns, a newline cannot break the row, and none of the
+// punctuation that starts markdown or HTML can turn a package name into a link, an
+// image or a details block that hides the rest of the row. What the comment renders
+// is therefore the text the lockfile holds, character for character, and there is no
+// HTML anywhere, which also keeps it readable as text in a diff and in an email
+// notification. The full explanation of a finding stays in the json and sarif
+// formats; a table cell holds the title.
 type Markdown struct{}
 
 // Write renders r to w in one call.
@@ -96,7 +100,9 @@ func writeMarkdownRow(b *strings.Builder, cells ...string) {
 }
 
 // writeMarkdownSkipped writes one line per subject that has no findings but has
-// checks that could not run, each followed by a blank line.
+// checks that could not run, each followed by a blank line. The package ref and the
+// reason are escaped like a table cell: they come from the same lockfile and the same
+// registry, and a line outside the table renders markup just as readily as one in it.
 func writeMarkdownSkipped(b *strings.Builder, r *Report) {
 	for i := range r.Subjects {
 		s := &r.Subjects[i]
@@ -105,10 +111,10 @@ func writeMarkdownSkipped(b *strings.Builder, r *Report) {
 		}
 		reasons := make([]string, 0, len(s.Skipped))
 		for _, sk := range s.Skipped {
-			reasons = append(reasons, oneLine(sk.Check)+": "+oneLine(sk.Reason))
+			reasons = append(reasons, escapeCell(sk.Check)+": "+escapeCell(sk.Reason))
 		}
 		fmt.Fprintf(b, "%s: no findings, %s (%s).\n\n",
-			oneLine(s.Ref.String()),
+			escapeCell(s.Ref.String()),
 			plural(len(s.Skipped), "skipped check", "skipped checks"),
 			strings.Join(reasons, "; "))
 	}
@@ -126,14 +132,35 @@ func markdownLocation(loc *model.Location) string {
 	return loc.Path
 }
 
-// escapeCell makes a string safe to put between two pipes. A backslash is doubled
-// first so that the backslash escaping the pipe cannot be swallowed by a backslash
-// already in the text, and every kind of line break becomes a space, because a table
-// row is one line and nothing a check writes may end it.
+// markdownSpecial is the punctuation escapeCell puts a backslash in front of. Each
+// character can start inline markup or raw HTML: a backtick opens code, an asterisk
+// or an underscore emphasis, a bracket a link or, after an exclamation mark, an
+// image, a tilde a strikethrough, an ampersand a character reference, an angle
+// bracket an HTML tag or an autolink, and a pipe ends the cell. The exclamation mark
+// needs no escape of its own once the bracket carries one. GFM accepts a backslash
+// before any ASCII punctuation, so escaping a character that did not need it changes
+// nothing a reader sees.
+const markdownSpecial = "`*_[]<>&~|"
+
+// escapeCell makes a string safe to put between two pipes, whoever wrote it: a
+// lockfile in a pull request from a fork decides the package names and versions this
+// comment prints, and a name spelled "[trustdiff passed](https://example.test)" or a
+// version carrying an HTML tag would otherwise render as the tool's own words. Every
+// character of markdownSpecial is escaped, the backslash included so that the escape
+// cannot be swallowed by a backslash already in the text, and every kind of line
+// break becomes a space, because a table row is one line and nothing may end it.
 func escapeCell(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, "|", `\|`)
-	return oneLine(s)
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		// Only ASCII is escaped, and every byte of a multi-byte rune is above ASCII,
+		// so walking the bytes cannot split one.
+		if c := s[i]; c == '\\' || strings.IndexByte(markdownSpecial, c) >= 0 {
+			b.WriteByte('\\')
+		}
+		b.WriteByte(s[i])
+	}
+	return oneLine(b.String())
 }
 
 // oneLine collapses CR, LF and CRLF into single spaces and trims the ends.

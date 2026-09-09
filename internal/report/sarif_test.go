@@ -324,34 +324,121 @@ func TestArtifactURI(t *testing.T) {
 	}
 }
 
-// The fingerprint is what keeps a second run from adding a second annotation for a
-// finding that is already there, so it must not move with the line number and must
-// separate two findings that differ in check, package or title.
-func TestFingerprint(t *testing.T) {
-	base := model.Finding{
-		ID: "TD001", Name: "young-version", Ref: model.MustParseRef("npm:example-lib@4.19.3"),
-		Title: "Version is 6 hours old", Location: &model.Location{Path: "package-lock.json", Line: 42},
+// fingerprintFixture is one finding on one lockfile line, as a subject holds it.
+func fingerprintFixture() (model.Finding, Subject) {
+	loc := &model.Location{Path: "package-lock.json", Line: 42}
+	ref := model.MustParseRef("npm:example-lib@4.19.3")
+	f := model.Finding{
+		ID: "TD001", Name: "young-version", Ref: ref, Location: loc,
+		Title:       "Published 2d2h47m15s ago, inside the 3d cooldown",
+		Explanation: "4.19.3 was published 2d2h47m15s before this run",
 	}
-	want := fingerprint(&base)
+	return f, Subject{Ref: ref, Location: loc, Evaluated: []string{"TD001"}, Findings: []model.Finding{f}}
+}
 
-	moved := base
-	moved.Location = &model.Location{Path: "package-lock.json", Line: 4711}
-	moved.Explanation = "reworded by a later release"
-	if got := fingerprint(&moved); got != want {
-		t.Errorf("fingerprint moved with the line and the explanation: %q, want %q", got, want)
+// The fingerprint is what a code scanning service recognizes a finding by, so a
+// re-run of an unchanged pull request has to produce the same one: several checks
+// build their title from the run's clock, and a fingerprint that follows it closes
+// the alert and opens a new one every time the gate runs.
+func TestFingerprintSurvivesARerun(t *testing.T) {
+	base, subject := fingerprintFixture()
+	want := fingerprint(&base, &subject)
+
+	// The same finding an hour later: the age in the title and the explanation has
+	// moved on, and an edit above the entry has moved its line.
+	later := base
+	later.Title = "Published 2d3h47m15s ago, inside the 3d cooldown"
+	later.Explanation = "4.19.3 was published 2d3h47m15s before this run"
+	later.Location = &model.Location{Path: "package-lock.json", Line: 4711}
+	if got := fingerprint(&later, &subject); got != want {
+		t.Errorf("fingerprint = %q after an hour, want %q: the clock and the line are not identity", got, want)
 	}
+}
 
-	for _, changed := range []func(f *model.Finding){
-		func(f *model.Finding) { f.ID = "TD002" },
-		func(f *model.Finding) { f.Ref.Version = "4.19.4" },
-		func(f *model.Finding) { f.Ref.Name = "example-other" },
-		func(f *model.Finding) { f.Title = "Version is 7 hours old" },
-	} {
-		other := base
-		changed(&other)
-		if got := fingerprint(&other); got == want {
-			t.Errorf("%+v has the fingerprint of %+v", other, base)
+// It must separate anything that is not the same finding: another check, another
+// package version, another lockfile, and another of the several findings one check
+// can report for one package.
+func TestFingerprintSeparatesFindings(t *testing.T) {
+	base, subject := fingerprintFixture()
+	base.Evidence = map[string]any{"signal": "missing-hash"}
+	want := fingerprint(&base, &subject)
+
+	tests := []struct {
+		name    string
+		changed func(f *model.Finding, s *Subject)
+	}{
+		{name: "another check", changed: func(f *model.Finding, _ *Subject) { f.ID = "TD002" }},
+		{name: "another version", changed: func(f *model.Finding, _ *Subject) { f.Ref.Version = "4.19.4" }},
+		{name: "another package", changed: func(f *model.Finding, _ *Subject) { f.Ref.Name = "example-other" }},
+		{
+			name: "another lockfile",
+			changed: func(f *model.Finding, _ *Subject) {
+				f.Location = &model.Location{Path: "apps/api/package-lock.json", Line: 42}
+			},
+		},
+		{
+			name: "the lockfile the subject came from",
+			changed: func(f *model.Finding, s *Subject) {
+				f.Location = nil
+				s.Location = &model.Location{Path: "apps/api/package-lock.json", Line: 42}
+			},
+		},
+		{
+			name:    "another signal of the same check",
+			changed: func(f *model.Finding, _ *Subject) { f.Evidence = map[string]any{"signal": "plain-http"} },
+		},
+		{
+			name: "another advisory of the same check",
+			changed: func(f *model.Finding, _ *Subject) {
+				f.Evidence = map[string]any{"advisory_id": "GHSA-1111-2222-3333"}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			other, otherSubject := base, subject
+			tt.changed(&other, &otherSubject)
+			if got := fingerprint(&other, &otherSubject); got == want {
+				t.Errorf("%+v has the fingerprint of %+v", other, base)
+			}
+		})
+	}
+}
+
+// Two byte-identical lockfiles in one repository pin the same version on the same
+// line, and a service that saw one fingerprint twice would keep one annotation and
+// drop the other, so the results of one run are all distinct even when the findings
+// carry nothing to tell them apart.
+func TestSARIFFingerprintsAreDistinctWithinARun(t *testing.T) {
+	ref := model.MustParseRef("npm:example-lib@4.19.3")
+	finding := func(path string) model.Finding {
+		return model.Finding{
+			ID: "TD013", Name: "exotic-source", Level: model.LevelBlock, Ref: ref,
+			Title: "resolved from a git repository instead of the npm registry", Explanation: "pins no commit sha",
+			Location: &model.Location{Path: path, Line: 14},
 		}
+	}
+	subject := func(path string) Subject {
+		return Subject{
+			Ref: ref, Location: &model.Location{Path: path, Line: 14}, Evaluated: []string{"TD013"},
+			Findings: []model.Finding{finding(path)},
+		}
+	}
+	web, api := subject("apps/web/package-lock.json"), subject("apps/api/package-lock.json")
+	// A third subject repeats the first exactly, which is what a check reporting two
+	// findings with nothing between them would look like.
+	log := decodeSARIF(t, renderSARIF(t, Build([]Subject{web, api, web}, testTool(), testPolicy(), model.LevelBlock)))
+
+	results := log.Runs[0].Results
+	if len(results) != 3 {
+		t.Fatalf("results = %d, want one per finding", len(results))
+	}
+	seen := make(map[string]int, len(results))
+	for _, r := range results {
+		seen[r.PartialFingerprints[fingerprintKey]]++
+	}
+	if len(seen) != len(results) {
+		t.Errorf("%d results carry %d fingerprints: %v", len(results), len(seen), seen)
 	}
 }
 
@@ -360,27 +447,55 @@ func TestFingerprint(t *testing.T) {
 // into a dash. Comparing the table with the document keeps the two from drifting: a
 // check documented but not described here would ship a log without its rule, and a
 // rule here that the document lost would link into nothing.
+//
+// The short description is compared as text as well. An alert whose rule denies the
+// case the finding reports, while its helpUri points at the document that describes
+// it, is worse than no rule at all, so every Short has to be a sentence of that
+// check's section, or the opening clause of one.
 func TestCheckRulesMatchDocs(t *testing.T) {
 	doc, err := os.ReadFile(filepath.Join("..", "..", "docs", "checks.md"))
 	if err != nil {
 		t.Fatalf("read docs/checks.md: %v", err)
 	}
+	text := string(normalizeNewlines(doc))
 	heading := regexp.MustCompile(`(?m)^## (TD[0-9]{3}) ([a-z0-9-]+)$`)
-	documented := heading.FindAllStringSubmatch(string(doc), -1)
+	documented := heading.FindAllStringSubmatchIndex(text, -1)
 	if len(documented) == 0 {
 		t.Fatal("docs/checks.md has no check sections; the pattern or the document changed")
 	}
 	if len(documented) != len(checkRules) {
 		t.Fatalf("docs/checks.md documents %d checks, checkRules has %d", len(documented), len(checkRules))
 	}
-	for i, section := range documented {
+	for i, match := range documented {
 		rule := checkRules[i]
-		if rule.ID != section[1] || rule.Name != section[2] {
-			t.Errorf("checkRules[%d] = %s %s, docs/checks.md has %s %s", i, rule.ID, rule.Name, section[1], section[2])
+		id, name := text[match[2]:match[3]], text[match[4]:match[5]]
+		if rule.ID != id || rule.Name != name {
+			t.Errorf("checkRules[%d] = %s %s, docs/checks.md has %s %s", i, rule.ID, rule.Name, id, name)
 			continue
 		}
-		if want := checksDocURI + "#" + strings.ToLower(section[1]) + "-" + section[2]; helpURI(rule.ID, rule.Name) != want {
+		if want := checksDocURI + "#" + strings.ToLower(id) + "-" + name; helpURI(rule.ID, rule.Name) != want {
 			t.Errorf("helpUri of %s = %q, want %q", rule.ID, helpURI(rule.ID, rule.Name), want)
 		}
+		end := len(text)
+		if i+1 < len(documented) {
+			end = documented[i+1][0]
+		}
+		if section := docSectionText(text[match[0]:end]); !strings.Contains(section, docSentence(rule.Short)) {
+			t.Errorf("shortDescription of %s is not a sentence of its section of docs/checks.md:\n%s", rule.ID, rule.Short)
+		}
 	}
+}
+
+// docSectionText renders a section of docs/checks.md as the plain prose the rule is
+// compared with: the backticks a document puts around a setting or a value are not
+// part of the sentence, and a sentence that wraps over two lines is still one.
+func docSectionText(section string) string {
+	return strings.Join(strings.Fields(strings.ReplaceAll(section, "`", "")), " ")
+}
+
+// docSentence is the part of a short description that has to appear in the document:
+// the sentence without its final period, so that a rule may stop at a clause where
+// the document carries on into detail a one-line description does not need.
+func docSentence(short string) string {
+	return strings.TrimSuffix(short, ".")
 }

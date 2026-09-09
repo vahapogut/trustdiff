@@ -69,10 +69,6 @@ func TestMarkdownComment(t *testing.T) {
 	if want := "Exit code 1 (blocking findings)."; lines[len(lines)-1] != want {
 		t.Errorf("last line = %q, want %q", lines[len(lines)-1], want)
 	}
-	if strings.Contains(out, "<") {
-		t.Errorf("the comment must be markdown, with no HTML in it:\n%s", out)
-	}
-
 	rows := tableRows(t, out)
 	if len(rows) != 4 {
 		t.Fatalf("table has %d rows, want a header, a rule and the two findings:\n%s", len(rows), out)
@@ -140,6 +136,83 @@ func TestMarkdownEscapesCells(t *testing.T) {
 	}
 }
 
+// unescapedSpecial returns the first character of a rendered cell that would start
+// markup, that is one of markdownSpecial with no backslash in front of it.
+func unescapedSpecial(cell string) (byte, bool) {
+	for i := 0; i < len(cell); i++ {
+		if cell[i] == '\\' {
+			i++ // whatever follows is escaped, including another backslash
+			continue
+		}
+		if strings.IndexByte(markdownSpecial, cell[i]) >= 0 {
+			return cell[i], true
+		}
+	}
+	return 0, false
+}
+
+// In the GitHub Action the head lockfile is the pull request's own file, so a fork
+// writes the package names, the versions and the paths this comment prints. None of
+// it may render: a name spelled as a link puts words in the tool's mouth inside the
+// tool's own comment, and a details block folds the rest of the report away.
+func TestMarkdownEscapesLockfileMarkup(t *testing.T) {
+	// The lockfile parsers build a ref from the file without validating the
+	// characters, so this is what a hostile package-lock.json produces.
+	ref := model.PackageRef{
+		Ecosystem: model.NPM,
+		Name:      "[trustdiff passed - click to view report](https://evil.example)",
+		Version:   "1.0.0 <img src=x onerror=alert(1)> <details><summary>ok</summary>hidden</details>",
+	}
+	loc := &model.Location{Path: "packages/<b>a</b>_b/package-lock.json", Line: 14}
+	r := Build([]Subject{
+		{
+			Ref: ref, Location: loc, Evaluated: []string{"TD013"},
+			Findings: []model.Finding{{
+				ID: "TD013", Name: "exotic-source", Level: model.LevelBlock, Ref: ref,
+				Title:       "resolved from a git repository (git+ssh://git@github.com/acme/~x_y.git#main)",
+				Explanation: "the title is what a table cell has to survive",
+				Location:    loc,
+			}},
+		},
+		{
+			Ref:     model.PackageRef{Ecosystem: model.PyPI, Name: "a`b*c", Version: "1.0.0"},
+			Skipped: []model.Skipped{{Check: "TD001", Reason: "pypi.org unavailable <see the log>"}},
+		},
+	}, testTool(), testPolicy(), model.LevelBlock)
+
+	out := renderMarkdown(t, r)
+	rows := tableRows(t, out)
+	if len(rows) != 3 {
+		t.Fatalf("table has %d rows, want a header, a rule and one finding:\n%s", len(rows), out)
+	}
+	for i, cell := range rows[2] {
+		if c, found := unescapedSpecial(cell); found {
+			t.Errorf("cell %d renders as markup at %q: %q", i, string(c), cell)
+		}
+	}
+	// Escaping hides nothing: a renderer drops the backslashes again, so the reviewer
+	// reads the text the lockfile holds.
+	for _, want := range []string{
+		`\[trustdiff passed - click to view report\]`,
+		`\<img src=x onerror=alert(1)\>`,
+		`\~x\_y.git#main`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("comment does not carry %q:\n%s", want, out)
+		}
+	}
+	// A subject with no findings says so outside the table, on a line that renders
+	// the same lockfile text.
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.HasPrefix(line, "pypi:") {
+			continue
+		}
+		if c, found := unescapedSpecial(line); found {
+			t.Errorf("the skipped line renders as markup at %q: %q", string(c), line)
+		}
+	}
+}
+
 func TestMarkdownWithoutFindings(t *testing.T) {
 	r := Build([]Subject{
 		{
@@ -204,6 +277,12 @@ func TestEscapeCell(t *testing.T) {
 		{name: "pipe", in: "a|b", want: `a\|b`},
 		{name: "backslash", in: `a\b`, want: `a\\b`},
 		{name: "backslash before pipe", in: `a\|b`, want: `a\\\|b`},
+		{name: "link", in: "[label](https://evil.example)", want: `\[label\](https://evil.example)`},
+		{name: "html tag", in: "<img src=x>", want: `\<img src=x\>`},
+		{name: "entity", in: "a&lt;b", want: `a\&lt;b`},
+		{name: "emphasis", in: "*a* _b_ ~c~", want: `\*a\* \_b\_ \~c\~`},
+		{name: "code", in: "`a`", want: "\\`a\\`"},
+		{name: "a rune outside ascii is not touched", in: "ünïcodé", want: "ünïcodé"},
 		{name: "line feed", in: "a\nb", want: "a b"},
 		{name: "carriage return line feed", in: "a\r\nb", want: "a b"},
 		{name: "carriage return", in: "a\rb", want: "a b"},
