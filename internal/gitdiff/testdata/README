@@ -1,0 +1,13 @@
+Fixtures for the internal/gitdiff tests.
+
+The tests build a repository under t.TempDir(), commit these bytes into it and
+read them back through git, so a fixture here is compared byte for byte with
+what FileAt returns. Nothing in this directory is parsed: the lockfile parsers
+have their own fixtures under internal/lockfile.
+
+ripgrep-Cargo.lock
+  Project: ripgrep, https://github.com/BurntSushi/ripgrep
+  URL: https://raw.githubusercontent.com/BurntSushi/ripgrep/14.1.1/Cargo.lock
+  Release: 14.1.1, commit 4649aa9700619f94cf9c66876e9549d83420e16c of 2024-09-09
+  Downloaded: 2026-09-09
+  License: Unlicense or MIT
