@@ -38,6 +38,10 @@ func TestParsePattern(t *testing.T) {
 		{in: "  npm:foo  ", wantEcosystem: model.NPM, wantString: "npm:foo"},
 		{in: "*", wantEcosystem: "", wantString: "*"},
 		{in: "jsr:@std/*", wantEcosystem: model.JSR, wantString: "jsr:@std/*"},
+		// Cargo names are not normalized, so the class survives as written.
+		{in: "cargo:foo[a-z_]bar", wantEcosystem: model.Cargo, wantString: "cargo:foo[a-z_]bar"},
+		// npm lowercases, which keeps a class well formed.
+		{in: "npm:foo[A-Z_]bar", wantEcosystem: model.NPM, wantString: "npm:foo[A-Z_]bar"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
@@ -73,6 +77,10 @@ func TestParsePatternRejects(t *testing.T) {
 		{in: "npm:[a-", wantErr: "malformed"},
 		{in: "npm:foo@[", wantErr: "malformed"},
 		{in: "npm:foo:bar", wantErr: "colon"},
+		// PyPI normalization rewrites the class to [a-z-], which path.Match rejects,
+		// so the pattern would silently match nothing.
+		{in: "pypi:foo[a-z_]bar", wantErr: "malformed"},
+		{in: "foo[a-z_]bar", wantErr: "malformed"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {

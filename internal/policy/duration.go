@@ -76,6 +76,11 @@ func ParseDuration(s string) (time.Duration, error) {
 	if err != nil {
 		return 0, fmt.Errorf("duration %q: %w", text, err)
 	}
+	if d < 0 {
+		// Not reachable while the overflow guards below hold; kept so that a change
+		// to the arithmetic can never turn a huge cooldown into a negative one.
+		return 0, fmt.Errorf("duration %q: too large", text)
+	}
 	return d, nil
 }
 
@@ -117,11 +122,21 @@ func parsePlainDuration(text string) (time.Duration, error) {
 		}
 		seen[unitText] = true
 		total += value * float64(unit)
-		if total > math.MaxInt64 {
-			return 0, errors.New("too large")
+		if err := checkTotal(total); err != nil {
+			return 0, err
 		}
 	}
 	return time.Duration(math.Round(total)), nil
+}
+
+// checkTotal rejects a total that does not fit a time.Duration. The comparison is
+// against 2^63 (which is what math.MaxInt64 becomes as a float64) and must include
+// it: a product that rounds to exactly 2^63 would wrap to a negative duration.
+func checkTotal(total float64) error {
+	if total >= math.MaxInt64 {
+		return errors.New("too large")
+	}
+	return nil
 }
 
 // parseISODuration handles the part after the leading P: nW, or nD optionally
@@ -217,8 +232,8 @@ func isoComponents(text string) ([]isoComponent, error) {
 }
 
 func isoTotal(total float64) (time.Duration, error) {
-	if total > math.MaxInt64 {
-		return 0, errors.New("too large")
+	if err := checkTotal(total); err != nil {
+		return 0, err
 	}
 	return time.Duration(math.Round(total)), nil
 }

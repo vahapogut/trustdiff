@@ -46,6 +46,28 @@ const (
 	ExpiredAllowName = "expired-allow"
 )
 
+// Window is the previous_versions_window value: how many previous versions
+// publisher-changed looks back at. Like Duration it refuses zero in the file, where a
+// zero window would be indistinguishable from an absent one, which means the default.
+type Window int
+
+// UnmarshalYAML accepts a whole number of at least 1.
+func (w *Window) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind != yaml.ScalarNode {
+		return fmt.Errorf("line %d: previous_versions_window: want a whole number, got a %s", n.Line, yamlKind(n))
+	}
+	var v int
+	// The tag check refuses 5.5, which yaml would otherwise truncate to 5.
+	if n.ShortTag() != "!!int" || n.Decode(&v) != nil {
+		return fmt.Errorf("line %d: previous_versions_window: want a whole number, got %q", n.Line, n.Value)
+	}
+	if v < 1 {
+		return fmt.Errorf("line %d: previous_versions_window must be at least 1, got %d", n.Line, v)
+	}
+	*w = Window(v)
+	return nil
+}
+
 // Policy is the .trustdiff.yaml file as written. Zero values mean "not set": Effective
 // fills in the built-in defaults, so callers should go through it rather than read the
 // fields directly.
@@ -53,7 +75,7 @@ type Policy struct {
 	Version                int                                   `yaml:"version"`
 	Cooldown               Duration                              `yaml:"cooldown,omitempty"`
 	CooldownExclude        []Pattern                             `yaml:"cooldown_exclude,omitempty"`
-	PreviousVersionsWindow int                                   `yaml:"previous_versions_window,omitempty"`
+	PreviousVersionsWindow Window                                `yaml:"previous_versions_window,omitempty"`
 	Checks                 map[string]CheckConfig                `yaml:"checks,omitempty"`
 	Allow                  []AllowEntry                          `yaml:"allow,omitempty"`
 	OnDataUnavailable      OnDataUnavailable                     `yaml:"on_data_unavailable,omitempty"`
@@ -69,12 +91,12 @@ type CheckConfig struct {
 	MinWeeklyDownloads *int64
 }
 
-// UnmarshalYAML accepts the bare level and the object form. Unknown keys inside the
-// object are errors, like everywhere else in the file.
+// UnmarshalYAML accepts the bare level and the object form. Unknown and repeated keys
+// inside the object are errors, like everywhere else in the file.
 func (c *CheckConfig) UnmarshalYAML(n *yaml.Node) error {
 	switch n.Kind {
 	case yaml.ScalarNode:
-		level, err := model.ParseLevel(n.Value)
+		level, err := parseLevel(n.Value)
 		if err != nil {
 			return fmt.Errorf("line %d: %w", n.Line, err)
 		}
@@ -82,14 +104,19 @@ func (c *CheckConfig) UnmarshalYAML(n *yaml.Node) error {
 		return nil
 	case yaml.MappingNode:
 		out := CheckConfig{}
+		seen := map[string]bool{}
 		for i := 0; i+1 < len(n.Content); i += 2 {
 			key, value := n.Content[i], n.Content[i+1]
+			if seen[key.Value] {
+				return fmt.Errorf("line %d: key %q already defined in this check entry", key.Line, key.Value)
+			}
+			seen[key.Value] = true
 			if value.Kind != yaml.ScalarNode {
 				return fmt.Errorf("line %d: %s: want a scalar, got a %s", value.Line, key.Value, yamlKind(value))
 			}
 			switch key.Value {
 			case "level":
-				level, err := model.ParseLevel(value.Value)
+				level, err := parseLevel(value.Value)
 				if err != nil {
 					return fmt.Errorf("line %d: level: %w", value.Line, err)
 				}
@@ -112,6 +139,21 @@ func (c *CheckConfig) UnmarshalYAML(n *yaml.Node) error {
 	default:
 		return fmt.Errorf("line %d: want a level such as warn or an object such as {level: block, min_severity: high}, got a %s", n.Line, yamlKind(n))
 	}
+}
+
+// parseLevel accepts a level spelled exactly as the published schema lists it.
+// model.ParseLevel folds case for the command line, but a file that says "Warn" would
+// pass the typed decoder and then fail the schema's enum without a line number, so
+// it is rejected here first.
+func parseLevel(value string) (model.Level, error) {
+	level, err := model.ParseLevel(value)
+	if err != nil {
+		return 0, err
+	}
+	if level.String() != value {
+		return 0, fmt.Errorf("level %q must be written in lowercase as %s", value, level)
+	}
+	return level, nil
 }
 
 // MarshalYAML writes the shortest form: a bare level when no option is set.

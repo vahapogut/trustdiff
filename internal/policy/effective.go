@@ -52,7 +52,7 @@ func (p *Policy) Effective(eco model.Ecosystem) Settings {
 		s.Cooldown = time.Duration(p.Cooldown)
 	}
 	if p.PreviousVersionsWindow != 0 {
-		s.PreviousVersionsWindow = p.PreviousVersionsWindow
+		s.PreviousVersionsWindow = int(p.PreviousVersionsWindow)
 	}
 	if p.OnDataUnavailable != "" {
 		s.OnDataUnavailable = p.OnDataUnavailable

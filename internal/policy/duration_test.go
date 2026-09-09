@@ -38,6 +38,9 @@ func TestParseDuration(t *testing.T) {
 		{in: "PT30S", want: 30 * time.Second},
 		{in: "P0D", want: 0},
 		{in: "P2DT3H4M5S", want: 2*day + 3*time.Hour + 4*time.Minute + 5*time.Second},
+		{in: "PT1H5S", want: time.Hour + 5*time.Second},
+		// Just below the int64 limit.
+		{in: "2562047h", want: 2562047 * time.Hour},
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
@@ -86,6 +89,11 @@ func TestParseDurationRejects(t *testing.T) {
 		{in: "-P3D", wantErr: "negative"},
 		{in: "999999999999w", wantErr: "too large"},
 		{in: "P999999999999W", wantErr: "too large"},
+		// These round to exactly 2^63, which float64(math.MaxInt64) is as well, so a
+		// guard written with > lets them through and the conversion wraps negative.
+		{in: "9223372036.854776s", wantErr: "too large"},
+		{in: "PT9223372036.854776S", wantErr: "too large"},
+		{in: "153722867.280912936m", wantErr: "too large"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {

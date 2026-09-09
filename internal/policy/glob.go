@@ -31,7 +31,8 @@ type Pattern struct {
 
 // ParsePattern parses the textual form. It rejects an empty pattern, an unknown
 // ecosystem prefix, whitespace, "**", an empty version after "@" and a malformed
-// glob.
+// glob, including one that becomes malformed once the name is normalized for an
+// ecosystem the pattern applies to (PyPI turns "[a-z_]" into "[a-z-]").
 func ParsePattern(s string) (Pattern, error) {
 	text := strings.TrimSpace(s)
 	if text == "" {
@@ -69,6 +70,20 @@ func ParsePattern(s string) (Pattern, error) {
 		}
 		if _, err := path.Match(part, ""); err != nil {
 			return Pattern{}, fmt.Errorf("package pattern %q: malformed glob %q: %w", text, part, err)
+		}
+	}
+	// Match normalizes the name for the ecosystem being matched and swallows a
+	// path.Match error as "no match", so check every spelling it may use here.
+	for _, eco := range model.Ecosystems() {
+		if p.ecosystem != "" && p.ecosystem != eco {
+			continue
+		}
+		normalized := model.NormalizeName(eco, p.name)
+		if normalized == p.name {
+			continue
+		}
+		if _, err := path.Match(normalized, ""); err != nil {
+			return Pattern{}, fmt.Errorf("package pattern %q: malformed glob after %s name normalization to %q: %w", text, eco, normalized, err)
 		}
 	}
 	return p, nil

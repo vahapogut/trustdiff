@@ -305,6 +305,15 @@ allow:
 	if !expired[0].Expired(after) || expired[0].Expired(before) {
 		t.Error("Expired disagrees with ExpiredAllows")
 	}
+	// The expiry day is a UTC day, whatever zone the clock reports in.
+	west := time.Date(2027, time.March, 1, 20, 0, 0, 0, time.FixedZone("UTC-5", -5*3600))
+	if !p.Allow[0].Expired(west) {
+		t.Error("20:00 UTC-5 on the expiry day is 01:00 UTC the next day and must count as expired")
+	}
+	east := time.Date(2027, time.March, 2, 13, 0, 0, 0, time.FixedZone("UTC+14", 14*3600))
+	if p.Allow[0].Expired(east) {
+		t.Error("13:00 UTC+14 on the day after is still 23:00 UTC on the expiry day")
+	}
 
 	f := ExpiredAllowFinding(&expired[0], esbuild, after)
 	if f.ID != "TD000" || ExpiredAllowID != "TD000" || f.Name != "expired-allow" || ExpiredAllowName != "expired-allow" || f.Level != model.LevelWarn {
