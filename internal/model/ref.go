@@ -1,0 +1,117 @@
+package model
+
+import (
+	"fmt"
+	"regexp"
+	"strings"
+)
+
+// PackageRef names a package, optionally at one version, in one ecosystem.
+// The textual form is <ecosystem>:<name>[@<version>], for example npm:express@4.19.2,
+// npm:@types/node@20.0.0, pypi:requests or cargo:serde.
+type PackageRef struct {
+	Ecosystem Ecosystem `json:"ecosystem"`
+	Name      string    `json:"name"`
+	Version   string    `json:"version,omitempty"`
+}
+
+// pep503Separators matches runs of the characters PEP 503 collapses into one dash.
+var pep503Separators = regexp.MustCompile(`[-_.]+`)
+
+// ParseRef parses the textual form. Names are normalized with NormalizeName.
+func ParseRef(s string) (PackageRef, error) {
+	s = strings.TrimSpace(s)
+	eco, rest, ok := strings.Cut(s, ":")
+	if !ok {
+		return PackageRef{}, fmt.Errorf("invalid ref %q: want <ecosystem>:<name>[@<version>]", s)
+	}
+	ecosystem, err := ParseEcosystem(eco)
+	if err != nil {
+		return PackageRef{}, fmt.Errorf("invalid ref %q: %w", s, err)
+	}
+
+	name, version := splitVersion(rest)
+	if name == "" {
+		return PackageRef{}, fmt.Errorf("invalid ref %q: empty package name", s)
+	}
+	if strings.ContainsAny(name, " \t\\") {
+		return PackageRef{}, fmt.Errorf("invalid ref %q: package name %q contains illegal characters", s, name)
+	}
+	// npm and JSR names may carry a scope: @scope/name. Nothing else may contain "/" or start with "@".
+	scoped := (ecosystem == NPM || ecosystem == JSR) && strings.HasPrefix(name, "@")
+	if scoped {
+		scope, pkg, ok := strings.Cut(name[1:], "/")
+		if !ok || scope == "" || pkg == "" || strings.Contains(pkg, "/") {
+			return PackageRef{}, fmt.Errorf("invalid ref %q: scoped name must look like @scope/name", s)
+		}
+	} else {
+		if strings.HasPrefix(name, "@") {
+			return PackageRef{}, fmt.Errorf("invalid ref %q: package name must not start with @", s)
+		}
+		if strings.Contains(name, "/") {
+			return PackageRef{}, fmt.Errorf("invalid ref %q: package name %q contains a slash", s, name)
+		}
+	}
+	// A trailing "@" (anything after the scope marker) means a version was intended but not given.
+	if version == "" && strings.LastIndex(rest, "@") > 0 {
+		return PackageRef{}, fmt.Errorf("invalid ref %q: empty version after @", s)
+	}
+	if strings.ContainsAny(version, " \t") {
+		return PackageRef{}, fmt.Errorf("invalid ref %q: version %q contains whitespace", s, version)
+	}
+	return PackageRef{Ecosystem: ecosystem, Name: NormalizeName(ecosystem, name), Version: version}, nil
+}
+
+// splitVersion separates name and version at the last "@" that is not the leading
+// scope marker of an npm name.
+func splitVersion(rest string) (name, version string) {
+	at := strings.LastIndex(rest, "@")
+	if at <= 0 {
+		return rest, ""
+	}
+	return rest[:at], rest[at+1:]
+}
+
+// MustParseRef is ParseRef for tests and constants; it panics on error.
+func MustParseRef(s string) PackageRef {
+	r, err := ParseRef(s)
+	if err != nil {
+		panic(err)
+	}
+	return r
+}
+
+// NormalizeName applies the registry's canonical spelling so that the same package
+// compares equal however it was written: PEP 503 for PyPI (lowercase, runs of "-",
+// "_" and "." become one "-"), lowercase for npm (the registry rejects mixed case
+// for new packages and treats lookups case-insensitively), unchanged otherwise.
+func NormalizeName(eco Ecosystem, name string) string {
+	switch eco {
+	case PyPI:
+		return strings.ToLower(pep503Separators.ReplaceAllString(name, "-"))
+	case NPM:
+		return strings.ToLower(name)
+	default:
+		return name
+	}
+}
+
+// String renders the ref in the form ParseRef accepts.
+func (r PackageRef) String() string {
+	if r.Version == "" {
+		return fmt.Sprintf("%s:%s", r.Ecosystem, r.Name)
+	}
+	return fmt.Sprintf("%s:%s@%s", r.Ecosystem, r.Name, r.Version)
+}
+
+// HasVersion reports whether the ref pins a version.
+func (r PackageRef) HasVersion() bool { return r.Version != "" }
+
+// Package returns the ref without its version.
+func (r PackageRef) Package() PackageRef { return PackageRef{Ecosystem: r.Ecosystem, Name: r.Name} }
+
+// WithVersion returns a copy of the ref at the given version.
+func (r PackageRef) WithVersion(v string) PackageRef {
+	r.Version = v
+	return r
+}
