@@ -181,7 +181,7 @@ jobs:
   integration:
     name: integration (live registries)
     # Weekly schedule and manual dispatch only; the job never runs for a push or a pull
-    # request. Real integration tests arrive with docs/PLAN.md task 1.8.
+    # request. The live tests live in internal/integration behind the integration tag.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
