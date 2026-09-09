@@ -93,12 +93,15 @@ jobs:
           # the proxy variables at a closed port turns any accidental request into an
           # immediate failure instead of a silent success, so "offline" is enforced rather
           # than asserted. Port 9 is the discard port and nothing listens on it here.
+          #
+          # Only the upper case spellings are set. The env context of a workflow is
+          # case insensitive, so listing http_proxy beside HTTP_PROXY is a duplicate
+          # key and the whole file is rejected before a single job starts, which is
+          # what this job did from the day it was written until 2026-09-10. Bun reads
+          # either case, so one is enough.
           HTTP_PROXY: http://127.0.0.1:9
           HTTPS_PROXY: http://127.0.0.1:9
-          http_proxy: http://127.0.0.1:9
-          https_proxy: http://127.0.0.1:9
           NO_PROXY: ""
-          no_proxy: ""
           # setup-bun and Bun itself both look at this; there is nothing to report anyway.
           DO_NOT_TRACK: "1"
         run: bun test
