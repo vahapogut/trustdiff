@@ -290,6 +290,18 @@ func (rn *run) load(ctx context.Context, s *Subject) {
 	} else {
 		s.Package = list
 		s.Previous = registry.Previous(list, ref)
+		// The list entry carries what the package-level response had; the checks
+		// that compare against the previous version (dependencies, install
+		// scripts, provenance) need its full detail, which may take another
+		// request. Fall back to the list entry when that request fails.
+		if s.Previous != nil {
+			if prev, err := rn.loader.VersionInfo(ctx, s.Previous.Ref); err != nil {
+				rn.log.Debug("previous version details unavailable, using the list entry", "ref", s.Previous.Ref.String(), "error", err)
+			} else {
+				copied := *prev
+				s.Previous = &copied
+			}
+		}
 	}
 	if info, err := rn.loader.VersionInfo(ctx, ref); err != nil {
 		if _, seen := s.Unavailable[SourceRegistry]; !seen {

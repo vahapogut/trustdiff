@@ -381,6 +381,44 @@ func TestRunUnsupportedDownloadsIsRecorded(t *testing.T) {
 	}
 }
 
+// The previous version must carry its full detail: the version list only has
+// what the package-level response offered, while the comparisons (dependencies,
+// install scripts, provenance) need the per-version answer.
+func TestRunFillsPreviousVersionDetails(t *testing.T) {
+	loader := libLoaderR()
+	prev := model.MustParseRef("npm:lib@1.1.0")
+	detailed := *loader.infos[prev]
+	detailed.Dependencies = map[string]string{"left-pad": "^1.0.0"}
+	detailed.Scripts = map[string]string{"postinstall": "node setup.js"}
+	loader.infos[prev] = &detailed
+
+	var got *model.VersionInfo
+	check := fakeCheckR{id: "TD007", name: "new-dependency-introduced", run: func(_ context.Context, s *Subject) Result {
+		got = s.Previous
+		return Result{}
+	}}
+	newRunnerR(loader, check).Run(context.Background(), inputsR("npm:lib@2.0.0"))
+	if got == nil || got.Ref != prev {
+		t.Fatalf("Previous = %+v, want the 1.1.0 entry", got)
+	}
+	if got.Dependencies["left-pad"] != "^1.0.0" || got.Scripts["postinstall"] == "" {
+		t.Fatalf("Previous carries the list entry, not the detailed version: %+v", got)
+	}
+	// The detailed entry is shared through the memoizing loader; the runner must not hand out the loader's pointer.
+	if got == loader.infos[prev] {
+		t.Fatal("Previous points at the loader's memoized entry")
+	}
+
+	// When the detail request fails, the list entry still serves as the previous version.
+	loader.infos[prev] = nil
+	delete(loader.infos, prev)
+	got = nil
+	newRunnerR(loader, check).Run(context.Background(), inputsR("npm:lib@2.0.0"))
+	if got == nil || got.Ref != prev || got.Dependencies != nil {
+		t.Fatalf("fallback Previous = %+v, want the plain list entry for 1.1.0", got)
+	}
+}
+
 func TestRunTimeout(t *testing.T) {
 	slow := fakeCheckR{id: "TD001", name: "young-version", run: func(ctx context.Context, _ *Subject) Result {
 		<-ctx.Done()
