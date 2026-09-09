@@ -311,7 +311,10 @@ func TestCheckUsageErrors(t *testing.T) {
 		want string
 	}{
 		{name: "bad ref", args: []string{"check", "express"}, want: "invalid ref"},
-		{name: "manifest path is planned", args: []string{"check", "package.json"}, want: "later release"},
+		// A path that is not one of the manifests keeps the invalid-ref error: it
+		// is a ref that could not be read, not a file trustdiff knows how to open.
+		{name: "a path no reader knows", args: []string{"check", "setup.py"}, want: "invalid ref"},
+		{name: "a manifest that is not there", args: []string{"check", "package.json"}, want: "package.json"},
 		{name: "unknown package", args: []string{"check", "npm:trustdiff-unknown-package-x9q@1.0.0"}, want: ""},
 	}
 	for _, tt := range tests {
@@ -399,6 +402,280 @@ func TestCheckUnknownVersionStillRunsAdvisoryChecks(t *testing.T) {
 		if slices.Contains(s.Evaluated, id) {
 			t.Errorf("%s ran although the registry does not list the version", id)
 		}
+	}
+}
+
+// writeManifest puts a manifest in the working directory and returns its name, the
+// way the command is pointed at one.
+func writeManifest(t *testing.T, name, body string) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return name
+}
+
+// The brief's last piece of the check surface: a manifest path evaluates the direct
+// dependencies it declares, at the versions those declarations resolve to today.
+func TestCheckEvaluatesAManifest(t *testing.T) {
+	useFakeLoader(t)
+	name := writeManifest(t, "package.json", `{
+	  "name": "trustdiff-fixture-app",
+	  "dependencies": {
+	    "trustdiff-fixture-lib": "^1.0.0",
+	    "left-pad": "file:../left-pad"
+	  },
+	  "devDependencies": {
+	    "aliased": "npm:trustdiff-fixture-lib@^2"
+	  }
+	}`)
+
+	code, stdout, stderr := run(t, "--fail-on", "never", "check", name)
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want 0 (stderr %q)\n%s", code, stderr, stdout)
+	}
+	// ^1.0.0 resolves to 1.0.0 and the alias's ^2 to 2.0.0, both of which are
+	// versions the fake registry lists.
+	for _, want := range []string{
+		"package.json: evaluating 2 direct dependencies",
+		"npm:trustdiff-fixture-lib@1.0.0",
+		"npm:trustdiff-fixture-lib@2.0.0",
+		`left-pad "file:../left-pad": a path on this machine`,
+		"1 declaration was not resolved",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, stdout)
+		}
+	}
+
+	// The document formats keep stdout to the document alone, so the notes go to
+	// stderr, and the report says which manifest each subject came from.
+	code, stdout, stderr = run(t, "--format", "json", "--fail-on", "never", "check", name)
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want 0 (stderr %q)", code, stderr)
+	}
+	if !strings.Contains(stderr, "package.json: evaluating 2 direct dependencies") {
+		t.Errorf("stderr lacks the count note:\n%s", stderr)
+	}
+	rep := decodeReport(t, stdout)
+	if len(rep.Subjects) != 2 {
+		t.Fatalf("report has %d subjects, want 2", len(rep.Subjects))
+	}
+	for i := range rep.Subjects {
+		s := &rep.Subjects[i]
+		if s.Location == nil || s.Location.Path != "package.json" {
+			t.Errorf("subject %s has location %+v, want the manifest it came from", s.Ref, s.Location)
+		}
+		if !s.Direct {
+			t.Errorf("subject %s is not marked direct, and a manifest declares direct dependencies", s.Ref)
+		}
+	}
+}
+
+// One manifest per ecosystem, read the way the brief describes them.
+func TestCheckEvaluatesEveryManifestFormat(t *testing.T) {
+	useFakeLoader(t)
+	tests := []struct {
+		name string
+		file string
+		body string
+		want []string
+	}{
+		{
+			name: "package.json",
+			file: "package.json",
+			body: `{"dependencies":{"trustdiff-fixture-lib":"~1.0"}}`,
+			want: []string{"evaluating 1 direct dependency", "npm:trustdiff-fixture-lib@1.0.0"},
+		},
+		{
+			name: "pyproject.toml",
+			file: "pyproject.toml",
+			body: "[project]\nname = \"app\"\ndependencies = [\"trustdiff-fixture-missing>=1\"]\n",
+			// The fake registry has no PyPI package, so the declaration comes
+			// back unresolved rather than resolved to something invented.
+			want: []string{"evaluating 0 direct dependencies", "not found in the registry"},
+		},
+		{
+			name: "Cargo.toml",
+			file: "Cargo.toml",
+			body: "[package]\nname = \"app\"\n\n[dependencies]\nlocaldep = { path = \"../localdep\" }\n",
+			want: []string{"evaluating 0 direct dependencies", "a path on this machine"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			name := writeManifest(t, tt.file, tt.body)
+			t.Cleanup(func() {
+				if err := os.Remove(name); err != nil {
+					t.Fatal(err)
+				}
+			})
+			code, stdout, stderr := run(t, "--fail-on", "never", "check", name)
+			if code != ExitOK {
+				t.Fatalf("exit = %d, want 0 (stderr %q)\n%s", code, stderr, stdout)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(stdout, want) {
+					t.Errorf("stdout lacks %q:\n%s", want, stdout)
+				}
+			}
+		})
+	}
+}
+
+// A manifest that declares nothing is a run with no subjects, not an error: the
+// report is still written, which is what a document format needs.
+func TestCheckManifestWithNoDependencies(t *testing.T) {
+	useFakeLoader(t)
+	name := writeManifest(t, "package.json", `{"name":"trustdiff-fixture-empty"}`)
+	code, stdout, stderr := run(t, "--format", "json", "check", name)
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want 0 (stderr %q)", code, stderr)
+	}
+	if !strings.Contains(stderr, "evaluating 0 direct dependencies") {
+		t.Errorf("stderr lacks the count note:\n%s", stderr)
+	}
+	rep := decodeReport(t, stdout)
+	if len(rep.Subjects) != 0 || rep.Summary.Subjects != 0 {
+		t.Fatalf("report has %d subjects, want none", len(rep.Subjects))
+	}
+}
+
+// A manifest whose every declaration is a git or path dependency evaluates nothing
+// and says so for each of them, which is the monorepo case: nothing is guessed at.
+func TestCheckManifestOfNothingButExoticDependencies(t *testing.T) {
+	useFakeLoader(t)
+	name := writeManifest(t, "package.json", `{
+	  "dependencies": {
+	    "local": "file:./vendor/local",
+	    "forked": "git+https://example.test/forked.git",
+	    "member": "workspace:*"
+	  }
+	}`)
+	code, stdout, _ := run(t, "check", name)
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want 0:\n%s", code, stdout)
+	}
+	for _, want := range []string{
+		"evaluating 0 direct dependencies",
+		"3 declarations were not resolved",
+		"a git repository",
+		"a path on this machine",
+		"the workspace protocol",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, stdout)
+		}
+	}
+}
+
+// A manifest that cannot be read is a usage error, and it must cost nothing: the
+// loader is never built, so a typo does not begin a run over the registries.
+func TestCheckManifestThatCannotBeRead(t *testing.T) {
+	useFakeLoader(t)
+	var loaders int
+	inner := loaderFactory
+	loaderFactory = func(a *App) (checks.Loader, error) { loaders++; return inner(a) }
+	t.Cleanup(func() { loaderFactory = inner })
+
+	tests := []struct {
+		name string
+		body string
+		file string
+		want string
+	}{
+		{name: "not JSON at all", file: "package.json", body: `{"dependencies":{`, want: "not a package.json this reader can parse"},
+		{name: "not TOML at all", file: "Cargo.toml", body: "[dependencies\n", want: "not a Cargo.toml this reader can parse"},
+		{name: "a directory", file: "", want: "not a regular file"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			loaders = 0
+			var name string
+			if tt.file == "" {
+				// A directory called package.json is not a manifest, and the
+				// message has to say so rather than reporting an unreadable file.
+				dir, err := os.Getwd()
+				if err != nil {
+					t.Fatal(err)
+				}
+				name = "adirectory/package.json"
+				if err := os.MkdirAll(filepath.Join(dir, filepath.FromSlash(name)), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				name = writeManifest(t, tt.file, tt.body)
+			}
+			code, stdout, stderr := run(t, "check", name)
+			if code != ExitUsage || !strings.Contains(stderr, tt.want) {
+				t.Fatalf("exit = %d, stderr = %q, want a usage error saying %q", code, stderr, tt.want)
+			}
+			if !strings.Contains(stderr, filepath.ToSlash(name)) {
+				t.Errorf("the message must name the file, got %q", stderr)
+			}
+			if stdout != "" {
+				t.Errorf("stdout = %q, want empty: stdout is reserved for reports", stdout)
+			}
+			if loaders != 0 {
+				t.Errorf("the loader was built %d times for a manifest that could not be read, want 0", loaders)
+			}
+		})
+	}
+}
+
+// A declaration left unresolved because a registry could not be consulted is the
+// same kind of partial answer as a lockfile no parser got through, and follows
+// on_data_unavailable in the same way. A git dependency is not: no run will ever
+// resolve it, so it must never turn the exit code into 3.
+func TestCheckManifestExit3WhenPolicySaysFail(t *testing.T) {
+	useFakeLoader(t)
+	writePolicy(t, "version: 1\non_data_unavailable: fail\n")
+	name := writeManifest(t, "package.json", `{"dependencies":{"down":"^1.0.0"}}`)
+	code, stdout, stderr := run(t, "--format", "json", "check", name)
+	if code != ExitUnavailable {
+		t.Fatalf("exit = %d, want 3 (stderr %q)\n%s", code, stderr, stdout)
+	}
+	if !strings.Contains(stderr, "connection refused") {
+		t.Errorf("stderr lacks the reason the declaration was not resolved:\n%s", stderr)
+	}
+	rep := decodeReport(t, stdout)
+	if rep.Summary.ExitCode != ExitUnavailable {
+		t.Fatalf("summary = %+v, want exit code 3", rep.Summary)
+	}
+
+	// A dependency with nothing to resolve is an answer, not an outage.
+	writeManifest(t, "package.json", `{"dependencies":{"local":"file:../local"}}`)
+	if code, _, _ = run(t, "check", name); code != ExitOK {
+		t.Fatalf("exit for a path dependency under fail = %d, want 0", code)
+	}
+	removePolicy(t)
+}
+
+// Refs and manifests can be named in one command line, and a package both of them
+// reach is one subject.
+func TestCheckMixesRefsAndManifests(t *testing.T) {
+	useFakeLoader(t)
+	name := writeManifest(t, "package.json", `{"dependencies":{"trustdiff-fixture-lib":"^1.0.0"}}`)
+	code, stdout, stderr := run(t, "--format", "json", "--fail-on", "never", "check",
+		"npm:trustdiff-fixture-lib@2.0.0", name, "npm:trustdiff-fixture-lib@1.0.0")
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want 0 (stderr %q)", code, stderr)
+	}
+	rep := decodeReport(t, stdout)
+	if len(rep.Subjects) != 2 {
+		t.Fatalf("report has %d subjects, want 2: the ref and the manifest reach 1.0.0 once", len(rep.Subjects))
+	}
+	if rep.Subjects[0].Ref.Version != "2.0.0" || rep.Subjects[1].Ref.Version != "1.0.0" {
+		t.Fatalf("subjects are %v and %v, want the command line's order kept", rep.Subjects[0].Ref, rep.Subjects[1].Ref)
+	}
+	// The manifest reached 1.0.0 as a direct dependency, so the subject the ref
+	// named first is marked direct too.
+	if !rep.Subjects[1].Direct {
+		t.Error("the package the manifest declares must be marked direct")
 	}
 }
 

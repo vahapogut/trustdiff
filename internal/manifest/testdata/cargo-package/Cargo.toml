@@ -1,0 +1,19 @@
+[package]
+name = "trustdiff-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = "1.0"
+rand = { version = "0.8.5", features = ["small_rng"] }
+renamed = { package = "serde_json", version = "1" }
+localdep = { path = "../localdep" }
+gitdep = { git = "https://example.test/gitdep.git", version = "0.1" }
+private = { version = "1", registry = "internal" }
+featureless = { features = ["a"] }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[build-dependencies]
+cc = "^1.0"

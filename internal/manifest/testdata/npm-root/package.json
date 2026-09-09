@@ -1,0 +1,28 @@
+{
+  "name": "trustdiff-fixture-app",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "dependencies": {
+    "express": "^4.17.1",
+    "@scope/ui": "~1.2.3",
+    "d3v3": "npm:d3@^3",
+    "left-pad": "file:../left-pad",
+    "tarball": "https://example.test/tarball-1.0.0.tgz",
+    "forked": "git+https://example.test/forked.git#v1.2.3",
+    "shorthand": "example-user/example-repo",
+    "member": "workspace:*",
+    "tagged": "latest"
+  },
+  "devDependencies": {
+    "typescript": ">=5 <6"
+  },
+  "optionalDependencies": {
+    "fsevents": "2.x"
+  },
+  "peerDependencies": {
+    "react": "^18"
+  }
+}

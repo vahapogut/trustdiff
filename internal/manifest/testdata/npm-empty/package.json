@@ -1,0 +1,5 @@
+{
+  "name": "trustdiff-fixture-empty",
+  "version": "0.1.0",
+  "description": "a manifest that declares no dependencies at all"
+}

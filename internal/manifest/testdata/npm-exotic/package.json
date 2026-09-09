@@ -1,0 +1,10 @@
+{
+  "name": "trustdiff-fixture-exotic",
+  "version": "0.1.0",
+  "dependencies": {
+    "local": "file:./vendor/local",
+    "forked": "git+ssh://git@example.test/forked.git",
+    "member": "workspace:^",
+    "numeric": 3
+  }
+}

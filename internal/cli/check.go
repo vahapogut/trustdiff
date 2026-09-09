@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
-	"strings"
+	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -13,6 +15,7 @@ import (
 	"github.com/vahapogut/trustdiff/internal/advisory/osvindex"
 	"github.com/vahapogut/trustdiff/internal/checks"
 	"github.com/vahapogut/trustdiff/internal/httpcache"
+	"github.com/vahapogut/trustdiff/internal/manifest"
 	"github.com/vahapogut/trustdiff/internal/model"
 	"github.com/vahapogut/trustdiff/internal/policy"
 	"github.com/vahapogut/trustdiff/internal/registry"
@@ -37,11 +40,17 @@ const nowEnv = "TRUSTDIFF_NOW"
 
 func (a *App) newCheckCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "check <ref>...",
-		Short: "Evaluate one or more package versions",
+		Use:   "check <ref|manifest>...",
+		Short: "Evaluate one or more package versions, or a manifest's direct dependencies",
 		Long: `Evaluate package versions given as <ecosystem>:<name>[@<version>], for example
 npm:express@4.19.2, pypi:requests or cargo:serde. Without a version the latest
 non-prerelease version is evaluated and the report says so.
+
+An argument that names a package.json, a pyproject.toml or a Cargo.toml evaluates
+that file's direct dependencies at the versions their ranges resolve to today, so
+it answers what an install run now would bring in. A declaration with no published
+version behind it, a git URL or a path or a range trustdiff cannot read, is named
+beside the report rather than guessed at.
 
 The policy comes from --policy, else from the .trustdiff.yaml found upward from the
 working directory, else from the user-level policy, else from the built-in defaults.`,
@@ -51,16 +60,9 @@ working directory, else from the user-level policy, else from the built-in defau
 }
 
 func (a *App) runCheck(cmd *cobra.Command, args []string) error {
-	inputs := make([]checks.Input, 0, len(args))
-	for _, arg := range args {
-		ref, err := model.ParseRef(arg)
-		if err != nil {
-			if looksLikeManifest(arg) {
-				return Usagef("%s: evaluating a manifest file arrives in a later release; pass <ecosystem>:<name>[@<version>] refs", arg)
-			}
-			return Usagef("%v", err)
-		}
-		inputs = append(inputs, checks.Input{Ref: ref})
+	targets, err := readCheckArgs(args)
+	if err != nil {
+		return err
 	}
 
 	pol, policyPath, err := a.loadPolicyOrDefault()
@@ -90,6 +92,14 @@ func (a *App) runCheck(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return Usagef("%v", err)
 	}
+
+	// A manifest's declarations are resolved through the run's own loader, so the
+	// packument a range was resolved against is the one the checks then read.
+	inputs, notes, incomplete := a.checkInputs(cmd.Context(), loader, targets)
+	if err := a.writeNotes(notes); err != nil {
+		return err
+	}
+
 	runner := &checks.Runner{
 		Loader:  loader,
 		Policy:  pol,
@@ -108,7 +118,7 @@ func (a *App) runCheck(cmd *cobra.Command, args []string) error {
 	// Exit code 1 says there is something to act on now, 3 that the answer is
 	// incomplete. When both apply the findings win: a script that retries on 3
 	// must not retry past a block.
-	if rep.Summary.ExitCode == ExitOK && dataUnavailableFails(pol, outcomes) {
+	if rep.Summary.ExitCode == ExitOK && (dataUnavailableFails(pol, outcomes) || unreadFails(pol, incomplete)) {
 		rep.SetExitCode(ExitUnavailable)
 	}
 
@@ -121,16 +131,140 @@ func (a *App) runCheck(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// looksLikeManifest recognizes the manifest paths the brief allows as refs, so the
-// error can say the feature is planned instead of calling the path an invalid ref.
-func looksLikeManifest(arg string) bool {
-	base := strings.ToLower(arg)
-	for _, name := range []string{"package.json", "pyproject.toml", "cargo.toml"} {
-		if strings.HasSuffix(base, name) {
-			return true
+// checkTarget is one argument of the command: either a package ref to evaluate as
+// it stands, or a manifest whose direct dependencies are resolved once the loader
+// exists.
+type checkTarget struct {
+	ref model.PackageRef
+	// manifest is the parsed file, nil when the argument was a ref.
+	manifest *manifest.Manifest
+}
+
+// readCheckArgs reads the command line. A ref stays a ref; a path naming one of the
+// manifests trustdiff reads is read from disk here, before the loader is built,
+// because a file that cannot be read is a usage error and a usage error must not
+// cost a run over the registries. Anything else keeps the invalid-ref error it has
+// always had.
+func readCheckArgs(args []string) ([]checkTarget, error) {
+	targets := make([]checkTarget, 0, len(args))
+	for _, arg := range args {
+		ref, err := model.ParseRef(arg)
+		if err == nil {
+			targets = append(targets, checkTarget{ref: ref})
+			continue
 		}
+		if _, ok := manifest.For(arg); !ok {
+			return nil, Usagef("%v", err)
+		}
+		m, readErr := readManifest(arg)
+		if readErr != nil {
+			return nil, Usagef("%v", readErr)
+		}
+		targets = append(targets, checkTarget{manifest: m})
 	}
-	return false
+	return targets, nil
+}
+
+// readManifest reads one manifest named on the command line, and only if it is a
+// plain file.
+//
+// A path in a repository is text somebody chose, and git records a symbolic link as
+// a blob holding the link text, so a manifest committed as a link to any path on the
+// machine would otherwise put that file into the report and into the registry
+// lookups. openLockfile refuses one for the same reason; this is that rule for a
+// file that is not a lockfile, which is the whole of the difference between them.
+func readManifest(path string) (*manifest.Manifest, error) {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case fi.Mode()&os.ModeSymlink != 0:
+		return nil, fmt.Errorf("%s: a symbolic link, not a manifest: trustdiff does not follow links out of the tree it evaluates", path)
+	case !fi.Mode().IsRegular():
+		return nil, fmt.Errorf("%s: not a regular file, so not a manifest trustdiff reads", path)
+	}
+	f, err := os.Open(path) // #nosec G304 -- the path is a manifest the user named, and Lstat above has refused everything that is not a plain file
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	// The report names the file the way the user typed it, with forward slashes so
+	// that a location reads the same on every platform.
+	return manifest.Read(filepath.ToSlash(path), f)
+}
+
+// checkInputs turns the arguments into the subjects to evaluate. Every manifest
+// declaration is resolved against its registry through the run's own loader, whose
+// memo then serves the checks for free, and the notes that come back are what the
+// run could not resolve.
+//
+// incomplete says that a declaration was left unresolved because a registry could
+// not be consulted, which is the same kind of partial answer as a lockfile no parser
+// got through and follows on_data_unavailable in the same way. A git or path
+// dependency is not that: it is a definite answer that no run will ever improve on.
+func (a *App) checkInputs(ctx context.Context, src manifest.Source, targets []checkTarget) (inputs []checks.Input, notes []string, incomplete bool) {
+	at := make(map[model.PackageRef]int, len(targets))
+	add := func(in checks.Input) {
+		// One package asked for twice, by two manifests or by two tables of one,
+		// is one subject to evaluate, and it counts as direct if any of the
+		// declarations that reached it was.
+		if i, seen := at[in.Ref]; seen {
+			if in.Direct {
+				inputs[i].Direct = true
+			}
+			return
+		}
+		at[in.Ref] = len(inputs)
+		inputs = append(inputs, in)
+	}
+	for _, target := range targets {
+		if target.manifest == nil {
+			add(checks.Input{Ref: target.ref})
+			continue
+		}
+		m := target.manifest
+		resolved, unresolved := manifest.Resolve(ctx, src, m.Dependencies, a.Opts.Jobs)
+		for i := range resolved {
+			add(checks.Input{
+				Ref:      resolved[i].Ref,
+				Location: &model.Location{Path: m.Path},
+				Direct:   true,
+			})
+		}
+		skipped := slices.Concat(m.Skipped, unresolved)
+		for _, s := range skipped {
+			if s.Unavailable {
+				incomplete = true
+			}
+		}
+		notes = append(notes, manifestNotes(m, len(resolved), skipped)...)
+	}
+	return inputs, notes, incomplete
+}
+
+// manifestNotes words what one manifest contributed to the run: how much is being
+// evaluated, so a person knows to wait, and then one capped line for the
+// declarations nothing was resolved for. It is the voice scan and diff use for what
+// they could not read, because it is the same thing: a report that covers less than
+// the file asked for has to say so.
+func manifestNotes(m *manifest.Manifest, resolved int, skipped []manifest.Skipped) []string {
+	// The count line, and at most one more for everything that was not resolved.
+	notes := make([]string, 0, 2)
+	notes = append(notes, fmt.Sprintf("%s: evaluating %s at the versions they resolve to today",
+		m.Path, countOf(resolved, "direct dependency", "direct dependencies")))
+	if len(skipped) == 0 {
+		return notes
+	}
+	listed := make([]string, 0, len(skipped))
+	for _, s := range skipped {
+		listed = append(listed, s.String())
+	}
+	counted := "declarations were"
+	if len(skipped) == 1 {
+		counted = "declaration was"
+	}
+	return append(notes, fmt.Sprintf("%s: %d %s not resolved (%s)", m.Path, len(skipped), counted, listSome(listed)))
 }
 
 // loadPolicyOrDefault returns the loaded policy and its path, or a nil policy

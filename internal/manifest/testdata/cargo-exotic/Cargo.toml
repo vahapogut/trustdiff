@@ -1,0 +1,7 @@
+[package]
+name = "trustdiff-fixture-exotic"
+version = "0.1.0"
+
+[dependencies]
+localdep = { path = "../localdep" }
+gitdep = { git = "https://example.test/gitdep.git" }

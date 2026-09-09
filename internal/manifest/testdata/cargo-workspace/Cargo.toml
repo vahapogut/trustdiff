@@ -1,0 +1,15 @@
+[package]
+name = "trustdiff-fixture-root"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+members = ["crates/ui"]
+
+[workspace.dependencies]
+serde = { version = "1.0.203", features = ["derive"] }
+tokio = "1.38"
+
+[dependencies]
+serde = { workspace = true }
+anyhow = { workspace = true }
