@@ -8,7 +8,7 @@ A check never passes for lack of data. When a registry, OSV, deps.dev or the dow
 
 Evidence keys are part of the JSON report (`schema/report.v1.json`, schema `trustdiff.report/1`). Within a schema version keys are added, never renamed or removed. The example under each check is the human report as `trustdiff check` prints it, captured against the live registries on 2026-09-09 unless the section says otherwise.
 
-Ecosystems in 0.1.0: npm, PyPI and crates.io. `deno` and `jsr` refs arrive in 0.4.0.
+Ecosystems: npm, PyPI and crates.io from 0.1.0, JSR from 0.4.0. A `jsr:` ref runs the checks JSR carries the data for and reports the rest as skipped with the reason; the applicability table lives in the package comment of `internal/registry/jsr`.
 
 ## TD000 expired-allow
 

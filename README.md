@@ -2,7 +2,7 @@
 
 trustdiff is a single-binary command line tool that finds trust regressions in a project's dependency tree before they land. A trust regression is not a change in a package's code but a change in the signals that made the package trustworthy: a version published by an account that never published one before, a release that lost the provenance every earlier release had, a version that adds an install script or a dependency the previous one did not have, a name one keystroke away from a popular package, a version with a known malicious or vulnerable advisory. Each of these preceded a real incident (event-stream in 2018, ua-parser-js in 2021, Shai-Hulud in 2025, axios in 2026), and each is visible in registry metadata before anyone has looked at the code. Cooldowns buy time and malware feeds catch what is already known; trustdiff tells you, across npm (npm, pnpm, yarn, bun), PyPI (pip, uv, poetry) and crates.io, in one binary with no account and no telemetry, that a dependency's trust signals regressed relative to its own history.
 
-Version 0.3.0 ships `check` for single packages, `diff` for pull requests with the GitHub Action, the pre-commit hook and SARIF output, and `doctor` for the hardening settings your package managers already support. Deno and JSR support, the remaining lockfiles and the offline advisory mirror follow in 0.4.0; see the [roadmap](#roadmap).
+Version 0.4.0 ships `check` for single packages, `diff` for pull requests with the GitHub Action, the pre-commit hook and SARIF output, `doctor` for the hardening settings your package managers already support, `baseline` for the registries that only answer about now, and an offline advisory mirror. It reads nine lockfile formats and evaluates npm, PyPI, crates.io and JSR; see the [roadmap](#roadmap).
 
 ## Demo
 
@@ -64,7 +64,7 @@ With a Go toolchain (1.26 or newer):
 go install github.com/vahapogut/trustdiff/cmd/trustdiff@latest
 ```
 
-Homebrew and Scoop are configured in the release pipeline but not published yet. The tap and the bucket do not exist, so the lines below do nothing today; they start working with the first release that writes to them, which is 0.4.0.
+Homebrew and Scoop are built on every release and uploaded only once the tap repositories and their token exist, which is a step the repository owner takes by hand ([docs/releasing.md](docs/releasing.md)). Until then the two lines below do nothing.
 
 ```sh
 # macOS, once the tap exists
@@ -295,8 +295,8 @@ Every check has a stable id, a name used in the policy file, a default level and
 | Id | Name | Signal | Default | Ecosystems |
 |---|---|---|---|---|
 | [TD001](docs/checks.md#td001-young-version) | `young-version` | published less than `cooldown` ago | warn | all |
-| [TD002](docs/checks.md#td002-publisher-changed) | `publisher-changed` | publishing account not among the previous 5 versions' publishers | block | npm, cargo; pypi in 0.4.0 |
-| [TD003](docs/checks.md#td003-maintainers-changed) | `maintainers-changed` | maintainer set differs from the previous version | warn | npm; pypi and cargo in 0.4.0 |
+| [TD002](docs/checks.md#td002-publisher-changed) | `publisher-changed` | publishing account not among the previous 5 versions' publishers | block | npm, cargo; pypi through the baseline |
+| [TD003](docs/checks.md#td003-maintainers-changed) | `maintainers-changed` | maintainer set differs from the previous version | warn | npm; pypi and cargo through the baseline |
 | [TD004](docs/checks.md#td004-trust-downgrade) | `trust-downgrade` | provenance weaker than the previous version's | block | npm, pypi, cargo |
 | [TD005](docs/checks.md#td005-install-script-introduced) | `install-script-introduced` | install script where the previous version had none | block | npm |
 | [TD006](docs/checks.md#td006-install-script-present) | `install-script-present` | runs code at install time (npm scripts, `build.rs`, proc-macro, sdist-only release) | warn | all |
@@ -354,7 +354,7 @@ Nobody should choose a supply-chain tool from a table written by one of the proj
 
 | Project | Open source | Single binary | Ecosystems | History-relative checks | Lockfile diff | SARIF | Offline | Telemetry |
 |---|---|---|---|---|---|---|---|---|
-| trustdiff | Apache-2.0 | yes (Go, static) | npm, PyPI, crates.io; Deno and JSR in 0.4.0 | yes: publisher, maintainers, provenance, install script and dependencies, each against the package's own history | 0.2.0 | 0.2.0 | cache only; OSV mirror in 0.4.0 | none |
+| trustdiff | Apache-2.0 | yes (Go, static) | npm, PyPI, crates.io, JSR | yes: publisher, maintainers, provenance, install script and dependencies, each against the package's own history | yes | yes | yes: the cache, and the advisories from a local OSV mirror | none |
 | [Socket Firewall Free](https://docs.socket.dev/docs/socket-firewall-free) | no: binary under the PolyForm Shield license | yes, as a wrapper (`sfw npm install`) | npm, yarn, pnpm, pip, uv, cargo | no: Socket's feed | no | no | no, needs Socket's API | always on, not configurable |
 | [Aikido Safe Chain](https://github.com/AikidoSec/safe-chain) | AGPL-3.0 or commercial | no: Node.js proxy behind shell aliases | npm, yarn, pnpm, bun, pip, uv, poetry, pipx, pdm | no: Aikido's feed and a 48 h minimum age | no | no | no | none stated ("no build data shared") |
 | [SafeDep pmg](https://github.com/safedep/pmg) | Apache-2.0 | yes, as a wrapper (Go) | npm, pnpm, yarn, bun, pip, pipx, poetry, uv | no: SafeDep's feed, a cooldown and an opt-in sandbox | no | no | no | anonymous usage data, opt-out |
@@ -387,7 +387,7 @@ Native cooldowns: npm [`min-release-age`](https://docs.npmjs.com/cli/v11/using-n
 
 - 0.2.0: `diff --base <git-ref>` and `scan` over `package-lock.json`, `pnpm-lock.yaml`, `uv.lock` and `Cargo.lock`, findings on lockfile lines, TD013 and TD014, SARIF and markdown output, a composite GitHub Action, a pre-commit hook and `hook install`.
 - 0.3.0: `doctor` with a scorecard of every package manager's native hardening settings, version-aware keys and units, `--fix` with a diff preview and backups, `--ci`, and a lint for unpinned GitHub Actions.
-- 0.4.0: `yarn.lock`, `bun.lock`, `deno.lock`, `poetry.lock` and hash-pinned `requirements.txt`, the Deno and JSR registries, `trustdiff baseline` for PyPI and crates.io maintainer diffs, offline advisories from the OSV mirror, a Bun security scanner adapter, Homebrew and Scoop.
+- 0.4.0: `yarn.lock`, `bun.lock`, `deno.lock`, `poetry.lock` and hash-pinned `requirements` files, the JSR registry, `trustdiff baseline` for the PyPI and crates.io maintainer checks, offline advisories from a local OSV mirror, a Bun security scanner, and a Homebrew cask and Scoop manifest built on every release.
 
 The detailed plan with estimates is [docs/PLAN.md](docs/PLAN.md).
 
