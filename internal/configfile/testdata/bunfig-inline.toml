@@ -1,0 +1,2 @@
+telemetry = false
+install = { minimumReleaseAge = 4320, exact = true }

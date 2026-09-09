@@ -1,0 +1,10 @@
+packages:
+  - packages/*
+  - apps/*
+
+# hold new versions back for three days
+minimumReleaseAge: 4320
+
+onlyBuiltDependencies:
+  - esbuild
+  - sharp

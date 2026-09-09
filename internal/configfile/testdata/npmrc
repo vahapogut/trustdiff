@@ -1,0 +1,10 @@
+; the registry this project publishes to
+registry=https://registry.npmjs.org/
+
+# hold new versions back for three days
+minimumReleaseAge=4320
+ignore-scripts=true
+//registry.npmjs.org/:_authToken=${NPM_TOKEN}
+
+minimumReleaseAgeExclude[]=@acme/ui
+minimumReleaseAgeExclude[]=@acme/tokens

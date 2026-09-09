@@ -1,0 +1,3 @@
+# every install setting written as a dotted key
+install.minimumReleaseAge = 4320
+install.exact = true

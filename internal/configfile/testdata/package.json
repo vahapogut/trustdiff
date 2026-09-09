@@ -1,0 +1,11 @@
+{
+  "name": "acme-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "react": "19.0.0"
+  }
+}

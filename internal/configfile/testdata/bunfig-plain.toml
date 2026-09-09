@@ -1,0 +1,3 @@
+# bun configuration with nothing configured for installs yet
+telemetry = false
+smol = true

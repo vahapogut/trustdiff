@@ -1,0 +1,10 @@
+[install]
+note = """
+this table is generated
+"""
+peers = [
+  "react",
+  "vue",
+]
+scopes = { acme = { url = "https://npm.acme.dev" },
+  other = { url = "https://npm.other.dev" } }

@@ -1,0 +1,12 @@
+version: 2
+
+registries:
+  npm-acme:
+    type: npm-registry
+    url: https://npm.acme.dev
+
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"

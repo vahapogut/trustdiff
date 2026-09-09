@@ -1,0 +1,13 @@
+defaults: &defaults
+  npmAlwaysAuth: true
+
+npmScopes:
+  acme:
+    <<: *defaults
+    npmRegistryServer: "https://npm.acme.dev"
+
+enableScripts: false
+
+notice: |
+  this file is generated
+  do not edit by hand

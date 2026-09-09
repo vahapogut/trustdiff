@@ -1,0 +1,11 @@
+# bun configuration
+telemetry = false
+
+[install]
+# hold new versions back for three days
+minimumReleaseAge = 4320
+exact = true # keep the resolutions pinned
+registry = "https://registry.npmjs.org"
+
+[install.cache]
+disable = false

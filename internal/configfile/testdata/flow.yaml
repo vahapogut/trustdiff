@@ -1,0 +1,11 @@
+tags: ["a",
+  "b"]
+inline: { a: 1,
+  b: 2 }
+oneline: [x, y]
+count: 3 # how many of them there are
+folded: >
+  some text that the parser
+  folds into one line
+label: "a b"
+single: {a: 1}

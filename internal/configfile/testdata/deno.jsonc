@@ -1,0 +1,10 @@
+{
+  /* deno configuration for this project,
+     kept small on purpose */
+  "lock": true,
+  "imports": {
+    "@std/assert": "jsr:@std/assert@1", // pinned on purpose
+  },
+  // how node modules are laid out
+  "nodeModulesDir": "auto",
+}
