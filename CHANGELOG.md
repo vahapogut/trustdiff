@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `diff --base-file <file> <file>` no longer asks for a git repository. Two files named on the command line are compared wherever they are, which is what a release archive tried out in a download directory and a build comparing two files it fetched both need.
+
 ## [0.2.0] - 2026-09-09
 
 The pull request gate. `diff` evaluates what a lockfile change adds or modifies and puts every finding on the lockfile line it belongs to, as SARIF for code scanning, as a markdown table for a comment, or as a card on a terminal.

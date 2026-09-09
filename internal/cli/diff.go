@@ -79,12 +79,19 @@ func (a *App) runDiff(cmd *cobra.Command, args []string) error {
 
 	ctx := cmd.Context()
 	// Every path this command reports is relative to the repository root, so the
-	// repository is found first whichever base was named.
-	repo, err := gitdiff.Open(ctx, "")
-	if err != nil {
-		return Usagef("%v", err)
+	// repository is found first. Two files named on the command line are the one
+	// case that needs none: --base-file with a path compares what the user pointed
+	// at, and the git history is neither read nor named in the report. That is how
+	// a release archive is tried out and how a build compares two files it
+	// downloaded, so refusing it outside a repository would be a rule with nothing
+	// behind it.
+	var repo *gitdiff.Repo
+	if baseFile == "" || len(args) == 0 {
+		if repo, err = gitdiff.Open(ctx, ""); err != nil {
+			return Usagef("%v", err)
+		}
+		repo.Log = a.Opts.Log
 	}
-	repo.Log = a.Opts.Log
 
 	var comparisons []*comparison
 	var extra []string
@@ -296,7 +303,8 @@ func (a *App) compareWithFile(ctx context.Context, repo *gitdiff.Repo, baseFile 
 // Two files of the same name is the monorepo case and the user has to say which.
 // It returns the path to open, which is the one the user typed and is resolved
 // against the working directory, and the path the report names, which is relative
-// to the repository root.
+// to the repository root. repo is nil when the command line named both files,
+// which is the one call that reads no history and needs no repository.
 func (a *App) headFor(ctx context.Context, repo *gitdiff.Repo, baseFile string, args []string) (openPath, headPath string, err error) {
 	if len(args) == 1 {
 		return args[0], repoRelative(repo, args[0]), nil
@@ -401,6 +409,11 @@ func reason(name string, err error) string {
 // root with forward slashes when the file is inside it, and as given, cleaned,
 // when it is not.
 func repoRelative(repo *gitdiff.Repo, path string) string {
+	if repo == nil {
+		// Two files named on the command line, with no repository behind them: the
+		// path the user typed is the one they will recognize in the report.
+		return filepath.ToSlash(filepath.Clean(path))
+	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return filepath.ToSlash(filepath.Clean(path))

@@ -492,6 +492,35 @@ func TestDiffBaseFile(t *testing.T) {
 	}
 }
 
+// Two files named on the command line are compared wherever they are. A release
+// archive is tried out in a download directory, and a build compares two files it
+// fetched, so a repository is not something either can be asked for.
+func TestDiffBaseFileNeedsNoRepository(t *testing.T) {
+	useFakeLoader(t)
+	dir := t.TempDir()
+	// Keep git from finding a repository above the temporary directory, so the
+	// test fails the way it would in a download directory rather than picking up
+	// whatever repository the tests run inside.
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(dir))
+	writeFile(t, dir, "base/package-lock.json", baseLock)
+	writeFile(t, dir, "head/package-lock.json", headLock)
+	chdir(t, dir)
+
+	code, stdout, stderr := run(t, "--format", "json", "diff",
+		"--base-file", "base/package-lock.json", "head/package-lock.json")
+	if code != ExitFindings {
+		t.Fatalf("exit = %d, want 1 (stderr %q)\n%s", code, stderr, stdout)
+	}
+	rep := decodeReport(t, stdout)
+	if len(rep.Subjects) != 2 {
+		t.Fatalf("subjects = %v, want the added and the changed entry", refsOf(&rep))
+	}
+	changed := subjectFor(t, &rep, "npm:trustdiff-fixture-lib@2.0.0")
+	if changed.Location == nil || changed.Location.Path != "head/package-lock.json" {
+		t.Fatalf("location = %+v, want the head file as it was named", changed.Location)
+	}
+}
+
 // The lockfile entry reaches the checks that judge it: an entry resolved from a
 // git remote without a hash is what TD013 and TD014 exist to report, on the line
 // the entry sits on.
