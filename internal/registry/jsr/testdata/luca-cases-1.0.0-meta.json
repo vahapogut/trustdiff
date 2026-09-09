@@ -1,0 +1,30 @@
+{
+  "manifest": {
+    "/deno.json": {
+      "size": 135,
+      "checksum": "sha256-7252d6e9181c3a77a5f00495272c0699549ff2f18b8c7dc09c8e0badca5247f4"
+    },
+    "/README.md": {
+      "size": 210,
+      "checksum": "sha256-928caf802ae5cfe71871435d5ab83ac9793d05daaa285282712e084708a5b00f"
+    },
+    "/LICENSE": {
+      "size": 1070,
+      "checksum": "sha256-fa28dab48fc17dde91b80d94361a031e34a648cc65e443ad8bc605c74bde213c"
+    },
+    "/mod.ts": {
+      "size": 6251,
+      "checksum": "sha256-0bdd66a72445f07b92cd95089cfc45d22345afc92ec0ff42554f31d5e533114d"
+    },
+    "/test.ts": {
+      "size": 2752,
+      "checksum": "sha256-11caec0c94554d4a90e9b8dac3e4e75485d1c33f293cde0e9aa6d370aa4612f4"
+    }
+  },
+  "moduleGraph1": {
+    "/mod.ts": {}
+  },
+  "exports": {
+    ".": "./mod.ts"
+  }
+}

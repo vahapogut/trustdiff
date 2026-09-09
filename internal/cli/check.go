@@ -16,6 +16,7 @@ import (
 	"github.com/vahapogut/trustdiff/internal/policy"
 	"github.com/vahapogut/trustdiff/internal/registry"
 	"github.com/vahapogut/trustdiff/internal/registry/crates"
+	"github.com/vahapogut/trustdiff/internal/registry/jsr"
 	"github.com/vahapogut/trustdiff/internal/registry/npm"
 	"github.com/vahapogut/trustdiff/internal/registry/pypi"
 	"github.com/vahapogut/trustdiff/internal/report"
@@ -236,6 +237,7 @@ func (a *App) defaultLoader() (checks.Loader, error) {
 		model.NPM:   npm.New(hc, npm.WithLogger(log)),
 		model.PyPI:  pypi.New(hc, pypi.WithLogger(log)),
 		model.Cargo: crates.New(hc, crates.WithLogger(log)),
+		model.JSR:   jsr.New(hc, jsr.WithLogger(log)),
 	}
 	return checks.NewLoader(reg, osv.New(hc), depsdev.New(hc), log), nil
 }
