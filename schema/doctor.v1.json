@@ -1,0 +1,283 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/vahapogut/trustdiff/main/schema/doctor.v1.json",
+  "title": "trustdiff doctor scorecard, schema version 1",
+  "description": "The document written by trustdiff doctor --format json. It is its own document rather than a subject inside schema/report.v1.json because a configuration file is not a package in a registry and a doctor rule is not a check that read one (ADR 0003). The tool, policy and exit code fields are the ones the report document uses, so a script that reads one already knows how to read the other. Within schema version 1 fields are added, never renamed or removed; a breaking change bumps the version in the schema field and in this file's name.",
+  "type": "object",
+  "required": ["schema", "tool", "policy", "root", "managers", "results", "notes", "summary"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "description": "Identifies the document format. Always trustdiff.doctor/1 for documents that match this schema.",
+      "const": "trustdiff.doctor/1"
+    },
+    "tool": {
+      "$ref": "#/definitions/tool"
+    },
+    "policy": {
+      "$ref": "#/definitions/policy"
+    },
+    "root": {
+      "description": "The directory the run was pointed at, as it was given. A run that named no directory reports a single dot, and every path in the document is relative to this one.",
+      "type": "string"
+    },
+    "managers": {
+      "description": "One entry per package manager found, in the order detection returned them. Empty when the run found no package manager at all, which is itself the answer.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/manager"
+      }
+    },
+    "results": {
+      "description": "One entry per rule evaluated against one manager, problems first: wrong, then missing, then unreadable, then what is already set, then what does not apply. Inside a group the order is the scorecard's own, by manager and then by rule id.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/result"
+      }
+    },
+    "notes": {
+      "description": "The things the run could not read, one line each. A note is not a finding: it says the scorecard covers less than it was asked to. Empty when everything the run looked at could be read.",
+      "type": "array",
+      "items": {
+        "description": "One thing the run could not read, naming the file and the reason.",
+        "type": "string"
+      }
+    },
+    "summary": {
+      "$ref": "#/definitions/summary"
+    }
+  },
+  "definitions": {
+    "tool": {
+      "description": "Build identity of the trustdiff binary that wrote the document.",
+      "type": "object",
+      "required": ["name", "version", "commit", "date", "go_version"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Always trustdiff.",
+          "const": "trustdiff"
+        },
+        "version": {
+          "description": "Release tag such as v0.1.0, or dev for a build without link-time version information.",
+          "type": "string"
+        },
+        "commit": {
+          "description": "Short git commit the binary was built from, or none.",
+          "type": "string"
+        },
+        "date": {
+          "description": "Commit or build timestamp in RFC 3339, or unknown.",
+          "type": "string"
+        },
+        "go_version": {
+          "description": "Go toolchain the binary was compiled with, for example go1.26.8.",
+          "type": "string"
+        }
+      }
+    },
+    "policy": {
+      "description": "The settings that shaped the run after the command line flags and the policy file were reconciled. It is the shape schema/report.v1.json uses, field for field.",
+      "type": "object",
+      "required": ["path", "cooldown", "fail_on"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "Policy file that was loaded, as given or discovered. Empty when the built-in defaults were used.",
+          "type": "string"
+        },
+        "cooldown": {
+          "description": "Threshold of the young-version check in the spelling the policy accepts, for example 3d, 12h, 1w or P3D. It is also what doctor asks each manager to wait, written into each rule in that manager's own unit, so that a project which decided three days for its own gate is not told to configure seven.",
+          "type": "string"
+        },
+        "fail_on": {
+          "description": "Lowest rule level that makes the exit code 1. never means the exit code is 0 whatever the scorecard says; exit codes 2 and 3 are unaffected.",
+          "type": "string",
+          "enum": ["block", "warn", "never"]
+        }
+      }
+    },
+    "manager_id": {
+      "description": "Which package manager a manager or a result belongs to. The two dependency bots and the workflow files are named here too, because what they hold is a setting of the same kind and is judged by the same rules.",
+      "type": "string",
+      "enum": [
+        "npm",
+        "pnpm",
+        "yarn",
+        "bun",
+        "deno",
+        "uv",
+        "pip",
+        "poetry",
+        "cargo",
+        "dependabot",
+        "renovate",
+        "actions"
+      ]
+    },
+    "manager": {
+      "description": "One package manager found in the repository. A monorepo with a Node front end and a Python service has one entry per directory, so the same id appears more than once with different roots.",
+      "type": "object",
+      "required": ["id", "root"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/manager_id"
+        },
+        "version": {
+          "description": "The version the repository pins or the machine has. Absent when nothing said, and every rule that names a version it needs then reports not applicable rather than guessing.",
+          "type": "string"
+        },
+        "version_source": {
+          "description": "Where the version came from, in the words the scorecard prints, for example the packageManager field, pnpm-lock.yaml or pnpm --version. Absent when no version was found.",
+          "type": "string"
+        },
+        "root": {
+          "description": "The directory this manager manages, relative to the document root, with forward slashes. A single dot for the repository itself.",
+          "type": "string"
+        },
+        "evidence": {
+          "description": "What made this manager count as present, one line each: a lockfile, a manifest field, a configuration file. Absent when detection recorded none.",
+          "type": "array",
+          "items": {
+            "description": "One thing that showed this manager is used here.",
+            "type": "string"
+          }
+        },
+        "files": {
+          "description": "The configuration files found for this manager, relative to the document root, with forward slashes. Absent when the manager has no configuration file yet, which is the usual reason a setting is missing.",
+          "type": "array",
+          "items": {
+            "description": "One configuration file, relative to the document root.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "result": {
+      "description": "One rule evaluated against one manager. A rule that reads a repository its own way rather than one key in one file, such as the workflow scanner, reports one entry per thing it judged.",
+      "type": "object",
+      "required": ["rule", "name", "manager", "status", "level"],
+      "additionalProperties": false,
+      "properties": {
+        "rule": {
+          "description": "Stable rule identifier, for example DR001. The rules are documented one row each in docs/doctor.md.",
+          "type": "string",
+          "pattern": "^[A-Z]+[0-9]{3}$"
+        },
+        "name": {
+          "description": "The rule's policy name, for example npm-min-release-age, which is how a policy file lowers or turns off the rule.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "manager": {
+          "$ref": "#/definitions/manager_id"
+        },
+        "status": {
+          "description": "What the rule concluded. set means the file holds a value that does what the rule asks; wrong means the key is there and its value is not, the wrong unit or a threshold too permissive to mean anything; missing means the file does not state the key at all; unreadable means the file exists and could not be read, or the value sits in a construct the reader will not interpret; not applicable means the manager is older than the setting or a newer key replaced it. The first and the last are not problems; the middle three are.",
+          "type": "string",
+          "enum": ["set", "wrong", "missing", "unreadable", "not applicable"]
+        },
+        "level": {
+          "description": "Effective level after the policy was applied, which is what decides whether this result can make the exit code 1. A rule set to off is not evaluated and produces no result at all.",
+          "type": "string",
+          "enum": ["block", "warn", "info"]
+        },
+        "file": {
+          "description": "The file that was read, or the one a fix would write, relative to the document root and with forward slashes. Absent when none of the rule's files exists and none of them may be created, and for a rule that judges no file at all.",
+          "type": "string"
+        },
+        "line": {
+          "description": "One-based line of the value inside file. Absent when there is no line to point at, which is every setting that is missing and every file that could not be opened.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "current": {
+          "description": "The value as the file writes it, before any fix, with the surrounding whitespace removed. Absent when the file does not state the key.",
+          "type": "string"
+        },
+        "want": {
+          "description": "What the rule asks for, as it would be written into that file, for example 3 for a day count and 4320 for the same three days in minutes. Absent for a rule that has no value to write, such as one that only recommends an upgrade.",
+          "type": "string"
+        },
+        "detail": {
+          "description": "The sentence the scorecard prints after the status, in the tool's own voice, for example that 7 minutes is 7 days in the unit npm counts in. Absent when the status and the values say everything there is to say.",
+          "type": "string"
+        },
+        "fixed": {
+          "description": "True when --fix wrote this setting in this run, which is why a status of set can describe a file that was wrong when the run started. Absent means false.",
+          "type": "boolean"
+        },
+        "docs": {
+          "description": "The documentation page the rule was verified against. Absent when the rule cites none.",
+          "type": "string"
+        },
+        "verified": {
+          "description": "The date the documentation was last read, as YYYY-MM-DD. Every one of these settings is younger than a year and their units have already changed once, so a rule without a date is one nobody should trust. Absent when the rule carries no date.",
+          "type": "string",
+          "format": "date"
+        }
+      }
+    },
+    "summary": {
+      "description": "Counts over every result and the process exit code, so a script needs nothing else.",
+      "type": "object",
+      "required": ["managers", "results", "statuses", "exit_code", "exit_meaning"],
+      "additionalProperties": false,
+      "properties": {
+        "managers": {
+          "description": "Number of entries in managers.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "results": {
+          "description": "Number of entries in results.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "statuses": {
+          "description": "Number of results per status. Every key is present even when its count is zero, and the keys are the status values themselves, so a reader can count with the status field of a result.",
+          "type": "object",
+          "required": ["set", "wrong", "missing", "unreadable", "not applicable"],
+          "additionalProperties": false,
+          "properties": {
+            "set": {
+              "description": "Settings that already do what their rule asks, the ones written by --fix in this run included.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "wrong": {
+              "description": "Settings that are present and do not do what their rule asks.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "missing": {
+              "description": "Settings the file does not state at all.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "unreadable": {
+              "description": "Settings whose file could not be read or whose value sits where the reader will not interpret it.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "not applicable": {
+              "description": "Rules that do not apply to this manager at this version.",
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "exit_code": {
+          "description": "The process exit code: 0 no problem at or above fail_on, 1 at least one problem at or above fail_on, 3 a file could not be read and the policy says on_data_unavailable: fail. Exit code 2 (usage or configuration error) is never accompanied by a document.",
+          "type": "integer",
+          "enum": [0, 1, 3]
+        },
+        "exit_meaning": {
+          "description": "The exit code spelled out: no problems at or above the threshold, problems at or above the threshold, or a file could not be read.",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

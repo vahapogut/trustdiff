@@ -1,0 +1,150 @@
+{
+  "schema": "trustdiff.doctor/1",
+  "tool": {
+    "name": "trustdiff",
+    "version": "v0.0.1",
+    "commit": "abc1234",
+    "date": "2026-09-09T00:00:00Z",
+    "go_version": "go1.26.8"
+  },
+  "policy": {
+    "path": ".trustdiff.yaml",
+    "cooldown": "3d",
+    "fail_on": "block"
+  },
+  "root": ".",
+  "managers": [
+    {
+      "id": "npm",
+      "version": "11.16.0",
+      "version_source": "the packageManager field",
+      "root": ".",
+      "evidence": [
+        "package-lock.json",
+        "the packageManager field of package.json"
+      ],
+      "files": [
+        ".npmrc",
+        "package.json"
+      ]
+    },
+    {
+      "id": "pnpm",
+      "version": "10.16.1",
+      "version_source": "apps/web/pnpm-lock.yaml",
+      "root": "apps/web",
+      "evidence": [
+        "apps/web/pnpm-lock.yaml"
+      ],
+      "files": [
+        "apps/web/pnpm-workspace.yaml"
+      ]
+    }
+  ],
+  "results": [
+    {
+      "rule": "DR001",
+      "name": "npm-min-release-age",
+      "manager": "npm",
+      "status": "wrong",
+      "level": "warn",
+      "file": ".npmrc",
+      "line": 3,
+      "current": "1",
+      "want": "3, which is 3 days in days",
+      "detail": "1 is 1 day, and the policy asks for 3 days (3 here)",
+      "docs": "https://example.test/docs/npm-min-release-age",
+      "verified": "2026-09-09"
+    },
+    {
+      "rule": "DR010",
+      "name": "pnpm-minimum-release-age",
+      "manager": "pnpm",
+      "status": "wrong",
+      "level": "block",
+      "file": "apps/web/pnpm-workspace.yaml",
+      "line": 4,
+      "current": "7",
+      "want": "4320, which is 3 days in minutes",
+      "detail": "7 is 7 minutes, and the policy asks for 3 days (4320 here). 7 is 7 days in days, the unit npm and Poetry count in",
+      "docs": "https://example.test/docs/pnpm-minimum-release-age",
+      "verified": "2026-09-09"
+    },
+    {
+      "rule": "DR003",
+      "name": "npm-allow-git",
+      "manager": "npm",
+      "status": "missing",
+      "level": "info",
+      "file": ".npmrc",
+      "want": "false",
+      "docs": "https://example.test/docs/npm-allow-git",
+      "verified": "2026-09-09"
+    },
+    {
+      "rule": "DR011",
+      "name": "pnpm-strict-dep-builds",
+      "manager": "pnpm",
+      "status": "unreadable",
+      "level": "warn",
+      "file": "apps/web/pnpm-workspace.yaml",
+      "line": 9,
+      "detail": "could not be read: the value of strictDepBuilds is a YAML alias, which this reader will not interpret",
+      "docs": "https://example.test/docs/pnpm-strict-dep-builds",
+      "verified": "2026-09-09"
+    },
+    {
+      "rule": "DR002",
+      "name": "npm-strict-allow-scripts",
+      "manager": "npm",
+      "status": "set",
+      "level": "warn",
+      "file": ".npmrc",
+      "line": 6,
+      "want": "true",
+      "detail": "the previous file is kept as .npmrc.trustdiff-backup-20260909T120000Z",
+      "fixed": true,
+      "docs": "https://example.test/docs/npm-strict-allow-scripts",
+      "verified": "2026-09-09"
+    },
+    {
+      "rule": "DR004",
+      "name": "npm-allow-remote",
+      "manager": "npm",
+      "status": "set",
+      "level": "info",
+      "file": ".npmrc",
+      "line": 4,
+      "current": "false",
+      "want": "false",
+      "docs": "https://example.test/docs/npm-allow-remote",
+      "verified": "2026-09-09"
+    },
+    {
+      "rule": "DR015",
+      "name": "pnpm-trust-policy",
+      "manager": "pnpm",
+      "status": "not applicable",
+      "level": "warn",
+      "detail": "pnpm 10.16.1 is older than 11.0.0, which added this setting",
+      "docs": "https://example.test/docs/pnpm-trust-policy",
+      "verified": "2026-09-09"
+    }
+  ],
+  "notes": [
+    "apps/web/pnpm-workspace.yaml: the value of strictDepBuilds is a YAML alias, which this reader will not interpret"
+  ],
+  "summary": {
+    "managers": 2,
+    "results": 7,
+    "statuses": {
+      "missing": 1,
+      "not applicable": 1,
+      "set": 2,
+      "unreadable": 1,
+      "wrong": 2
+    },
+    "exit_code": 1,
+    "exit_meaning": "problems at or above the threshold"
+  }
+}

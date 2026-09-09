@@ -1,0 +1,13 @@
+## trustdiff doctor: 2 set, 2 wrong, 1 missing, 1 unreadable, 1 not applicable
+
+| Manager | Rule | Status | Setting | Location |
+| --- | --- | --- | --- | --- |
+| npm 11.16.0 | DR001 npm-min-release-age | wrong | 1, want 3, which is 3 days in days | .npmrc:3 |
+| pnpm 10.16.1 (apps/web) | DR010 pnpm-minimum-release-age | wrong | 7, want 4320, which is 3 days in minutes | apps/web/pnpm-workspace.yaml:4 |
+| npm 11.16.0 | DR003 npm-allow-git | missing | want false | .npmrc |
+| pnpm 10.16.1 (apps/web) | DR011 pnpm-strict-dep-builds | unreadable |  | apps/web/pnpm-workspace.yaml:9 |
+| npm 11.16.0 | DR002 npm-strict-allow-scripts | set | true | .npmrc:6 |
+| npm 11.16.0 | DR004 npm-allow-remote | set | false | .npmrc:4 |
+| pnpm 10.16.1 (apps/web) | DR015 pnpm-trust-policy | not applicable |  |  |
+
+Exit code 1 (problems at or above the threshold).

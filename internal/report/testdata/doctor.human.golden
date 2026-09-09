@@ -1,0 +1,28 @@
+apps/web/pnpm-workspace.yaml: the value of strictDepBuilds is a YAML alias, which this reader will not interpret
+
+npm 11.16.0  (version from the packageManager field)
+  wrong           DR001 npm-min-release-age  .npmrc:3
+      1 is 1 day, and the policy asks for 3 days (3 here)
+  missing         DR003 npm-allow-git  .npmrc
+      want false
+  set             DR002 npm-strict-allow-scripts  .npmrc:6  fixed
+      the previous file is kept as .npmrc.trustdiff-backup-20260909T120000Z
+      --- .npmrc
+      +++ .npmrc
+      @@ -3,3 +3,4 @@
+       min-release-age=1
+       allow-remote=false
+      +strict-allow-scripts=true
+  set             DR004 npm-allow-remote  .npmrc:4
+
+pnpm 10.16.1  (version from apps/web/pnpm-lock.yaml, apps/web)
+  wrong           DR010 pnpm-minimum-release-age  apps/web/pnpm-workspace.yaml:4
+      7 is 7 minutes, and the policy asks for 3 days (4320 here). 7 is 7 days in
+      days, the unit npm and Poetry count in
+  unreadable      DR011 pnpm-strict-dep-builds  apps/web/pnpm-workspace.yaml:9
+      could not be read: the value of strictDepBuilds is a YAML alias, which
+      this reader will not interpret
+  not applicable  DR015 pnpm-trust-policy
+      pnpm 10.16.1 is older than 11.0.0, which added this setting
+
+2 set, 2 wrong, 1 missing, 1 unreadable, 1 not applicable. Exit code 1 (problems at or above the threshold).
