@@ -7,6 +7,10 @@
 // the scanner at it with TRUSTDIFF_BIN. What is under test is this adapter: the command
 // line it builds, the documents it accepts, the levels it maps and what it does when the
 // binary is absent or misbehaves.
+//
+// A stub can also be given one behaviour per run, because a large install is split across
+// several trustdiff runs and what the adapter does when the fourth one fails is only
+// visible if the first three can succeed.
 
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, chmodSync } from "node:fs";
 import { join, normalize } from "node:path";
@@ -24,6 +28,8 @@ export interface StubBehaviour {
   stderr?: string;
   /** Exit code the stub returns. Defaults to 0. */
   exitCode?: number;
+  /** Seconds to wait before writing anything, which is how the timeout is tested. */
+  sleepSeconds?: number;
 }
 
 /**
@@ -34,10 +40,12 @@ export interface StubBehaviour {
 export interface Stub {
   /** Path to give to TRUSTDIFF_BIN. */
   path: string;
-  /** The arguments of the last run, as one line, or the empty string if it never ran. */
+  /** The arguments of every run so far, one line each, or the empty string if it never ran. */
   args(): string;
   /** Whether the stub was run at all, which is how the empty-package-list test is proved. */
   ran(): boolean;
+  /** How many times it was run, which is how the batching test tells one run from several. */
+  runs(): number;
   /** Deletes the temporary directory. Call it from afterEach. */
   cleanup(): void;
 }
@@ -46,41 +54,131 @@ export interface Stub {
  * writeStub creates a fake trustdiff binary in a fresh temporary directory. It is a
  * batch file on Windows and a shell script everywhere else, because those are what the
  * two platforms can spawn directly, and the payloads live in separate files so no test
- * has to escape JSON for cmd.exe or for sh.
+ * has to escape JSON for cmd.exe or for sh. Given a list of behaviours, the first run
+ * takes the first, the second the second, and every run past the end repeats the last.
  */
-export function writeStub(behaviour: StubBehaviour = {}): Stub {
+export function writeStub(behaviour: StubBehaviour | StubBehaviour[] = {}): Stub {
+  const runs = Array.isArray(behaviour) && behaviour.length > 0 ? behaviour : [behaviour].flat();
   const dir = mkdtempSync(join(tmpdir(), "trustdiff-bun-scanner-"));
   const windows = process.platform === "win32";
-  const outFile = normalize(join(dir, "stdout.txt"));
-  const errFile = normalize(join(dir, "stderr.txt"));
   const argsFile = normalize(join(dir, "args.txt"));
+  const countFile = normalize(join(dir, "runs.txt"));
   const path = normalize(join(dir, windows ? "trustdiff.cmd" : "trustdiff"));
-  const code = behaviour.exitCode ?? 0;
+  const last = runs.length;
 
-  writeFileSync(outFile, behaviour.stdout ?? "");
-  writeFileSync(errFile, behaviour.stderr ?? "");
+  runs.forEach((run, index) => {
+    const n = index + 1;
+    writeFileSync(normalize(join(dir, `stdout-${n}.txt`)), run.stdout ?? "");
+    writeFileSync(normalize(join(dir, `stderr-${n}.txt`)), run.stderr ?? "");
+    writeFileSync(normalize(join(dir, `code-${n}.txt`)), String(run.exitCode ?? 0));
+    writeFileSync(normalize(join(dir, `sleep-${n}.txt`)), String(run.sleepSeconds ?? 0));
+  });
 
   if (windows) {
-    const lines = ["@echo off", `>"${argsFile}" echo %*`, `type "${outFile}"`];
-    if ((behaviour.stderr ?? "") !== "") lines.push(`type "${errFile}" 1>&2`);
-    lines.push(`exit /b ${code}`);
+    // The run counter is clamped at the last behaviour, so a fifth run of a two-behaviour
+    // stub answers like the second one. ping is the sleep that cmd.exe does not have, and
+    // it waits one second less than the count it is given.
+    const file = (kind: string) => `${normalize(join(dir, kind))}-%n%.txt`;
+    const lines = [
+      "@echo off",
+      "set n=0",
+      `if exist "${countFile}" set /p n=<"${countFile}"`,
+      "set /a n=n+1",
+      `if %n% GTR ${last} set n=${last}`,
+      `>"${countFile}" echo %n%`,
+      `>>"${argsFile}" echo %*`,
+      "set s=0",
+      `set /p s=<"${file("sleep")}"`,
+      "set /a p=s+1",
+      `if not "%s%"=="0" ping -n %p% 127.0.0.1 >nul`,
+      `type "${file("stdout")}"`,
+      `type "${file("stderr")}" 1>&2`,
+      "set code=0",
+      `set /p code=<"${file("code")}"`,
+      "exit /b %code%",
+    ];
     writeFileSync(path, `${lines.join("\r\n")}\r\n`);
   } else {
     // Single quotes around the paths, because a temporary directory name is not something
     // this helper gets to inspect and sh would expand $ and backticks inside double ones.
-    const lines = ["#!/bin/sh", `printf '%s\\n' "$*" > '${argsFile}'`, `cat '${outFile}'`];
-    if ((behaviour.stderr ?? "") !== "") lines.push(`cat '${errFile}' >&2`);
-    lines.push(`exit ${code}`);
+    const file = (kind: string) => `'${normalize(join(dir, kind))}-'"$n"'.txt'`;
+    const lines = [
+      "#!/bin/sh",
+      "n=0",
+      `if [ -f '${countFile}' ]; then n=$(cat '${countFile}'); fi`,
+      "n=$((n + 1))",
+      `if [ "$n" -gt ${last} ]; then n=${last}; fi`,
+      `echo "$n" > '${countFile}'`,
+      `printf '%s\\n' "$*" >> '${argsFile}'`,
+      `s=$(cat ${file("sleep")})`,
+      'if [ "$s" != "0" ]; then sleep "$s"; fi',
+      `cat ${file("stdout")}`,
+      `cat ${file("stderr")} >&2`,
+      `exit $(cat ${file("code")})`,
+    ];
     writeFileSync(path, `${lines.join("\n")}\n`);
     chmodSync(path, 0o755);
   }
 
+  const read = () => (existsSync(argsFile) ? readFileSync(argsFile, "utf8") : "");
   return {
     path,
-    args: () => (existsSync(argsFile) ? readFileSync(argsFile, "utf8").trim() : ""),
+    args: () => read().trim(),
     ran: () => existsSync(argsFile),
+    runs: () =>
+      read()
+        .split("\n")
+        .filter((line) => line.trim() !== "").length,
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
   };
+}
+
+/**
+ * subject builds one entry of the subjects array with the fields this adapter reads. It
+ * exists because three of them, findings, skipped and verdict, together decide whether a
+ * package counts as checked, and a test about one of them should not have to restate the
+ * other two.
+ */
+export function subject(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    ref: { ecosystem: "npm", name: "express", version: "4.19.2" },
+    evaluated: ["TD001", "TD002"],
+    skipped: [],
+    findings: [],
+    verdict: "ok",
+    ...overrides,
+  };
+}
+
+/**
+ * skip builds one entry of a subject's skipped array, which is how the report says a check
+ * did not run and why.
+ */
+export function skip(check: string, reason: string): Record<string, unknown> {
+  return { check, reason };
+}
+
+/**
+ * documentOf builds a whole report around the subjects a test cares about. It exists so a
+ * test can write the one subject it is about and leave the envelope, which this adapter
+ * mostly does not read, to this helper.
+ */
+export function documentOf(subjects: unknown[], summary: Record<string, unknown> = {}): string {
+  const document = {
+    schema: "trustdiff.report/1",
+    tool: { name: "trustdiff", version: "dev", commit: "none", date: "unknown", go_version: "go1.26.8" },
+    policy: { path: "", cooldown: "3d", fail_on: "block" },
+    subjects,
+    summary: {
+      subjects: subjects.length,
+      findings: { block: 0, warn: 0, info: 0 },
+      skipped: 0,
+      exit_code: 0,
+      exit_meaning: "no blocking findings",
+      ...summary,
+    },
+  };
+  return `${JSON.stringify(document, null, 2)}\n`;
 }
 
 /**
@@ -90,25 +188,7 @@ export function writeStub(behaviour: StubBehaviour = {}): Stub {
  */
 export function report(findings: unknown[], overrides: Record<string, unknown> = {}): string {
   const document = {
-    schema: "trustdiff.report/1",
-    tool: { name: "trustdiff", version: "dev", commit: "none", date: "unknown", go_version: "go1.26.8" },
-    policy: { path: "", cooldown: "3d", fail_on: "block" },
-    subjects: [
-      {
-        ref: { ecosystem: "npm", name: "express", version: "4.19.2" },
-        evaluated: ["TD001", "TD002"],
-        skipped: [],
-        findings,
-        verdict: findings.length === 0 ? "ok" : "block",
-      },
-    ],
-    summary: {
-      subjects: 1,
-      findings: { block: 0, warn: 0, info: 0 },
-      skipped: 0,
-      exit_code: 0,
-      exit_meaning: "no blocking findings",
-    },
+    ...JSON.parse(documentOf([subject({ findings, verdict: findings.length === 0 ? "ok" : "block" })])),
     ...overrides,
   };
   return `${JSON.stringify(document, null, 2)}\n`;

@@ -2,7 +2,7 @@
 
 A Bun security scanner that runs [trustdiff](https://github.com/vahapogut/trustdiff) over the packages `bun install` is about to fetch, and stops the install when one of them shows a trust regression.
 
-Bun 1.3 added a [Security Scanner API](https://bun.com/docs/pm/security-scanner-api): the scanner named in `bunfig.toml` is handed every package Bun proposes to install, including transitive dependencies, before anything is written to disk. This package is such a scanner. For each package it runs `trustdiff check --format json` and turns the findings into advisories Bun understands: a blocking finding cancels the install, a warning asks on a terminal and cancels in CI.
+Bun 1.3 added a [Security Scanner API](https://bun.com/docs/pm/security-scanner-api): the scanner named in `bunfig.toml` is handed every package Bun proposes to install, including transitive dependencies, before anything is written to disk. This package is such a scanner. For each package it runs `trustdiff check --format json` and turns the findings into advisories Bun understands: a blocking finding cancels the install, a warning asks on a terminal and cancels in CI. A package it could not check is reported too, because an install where nothing could be checked should not look like an install where nothing was wrong.
 
 ## What it needs
 
@@ -56,6 +56,7 @@ trustdiff gives every finding a level, which the policy file can change per chec
 | `block` | `fatal` | Cancels the install at once with a non-zero exit code |
 | `warn` | `warn` | Prompts on an interactive terminal, cancels everywhere else, CI included |
 | `info` | not reported | Nothing |
+| nothing could be checked | `warn` by default | Same as any warning, and `TRUSTDIFF_BUN_UNCHECKED` changes it |
 
 Informational findings are dropped rather than reported as warnings, because a warning cancels installs in CI and an informational note is not something trustdiff itself considers actionable. To act on one, raise it to `warn` or `block` in your policy file and it will be reported.
 
@@ -63,9 +64,14 @@ The advisory names the check by id and by policy name, repeats trustdiff's own e
 
 ## When the scan cannot be done
 
+Bun has no advisory level that means "nobody knows about this one", so every gap has to be turned into one of the two levels it does have. These are the gaps and what each becomes.
+
 - **The binary is missing.** The scanner writes one line to stderr saying that nothing was scanned, and returns no advisories, so a machine that has not installed trustdiff yet is not blocked from installing anything. Set `TRUSTDIFF_BUN_REQUIRE_BINARY=1` in a repository that has decided every install must be scanned, and a missing binary stops the install instead.
-- **The binary fails, times out, or prints something that is not a trustdiff report.** The scanner throws, and Bun cancels the install. This is deliberate. A scan that did not happen must never look like a clean bill of health, so the failure is loud and the message carries the exit code and the binary's own error output.
-- **trustdiff exits 1.** That is the normal outcome for a package worth blocking, not an error, and the report is read as usual. Exit code 3 (a required data source was unavailable and the policy says to fail) also comes with a report and is read the same way.
+- **The binary fails, times out, or prints something that is not a trustdiff report.** The scanner throws, and Bun cancels the install. This is deliberate. A scan that did not happen must never look like a clean bill of health, so the failure is loud and the message carries the exit code and the binary's own error output. A large tree takes several trustdiff runs, and when a later run fails the scanner prints what the earlier ones found before it throws, so those findings are not lost with the exception.
+- **Bun resolved no exact version for a package.** trustdiff would have to answer about whichever version is published as latest, which is not the one Bun is about to write to disk, so the package is not checked at all. It is reported as an unchecked package rather than passed over.
+- **Every check on a package was skipped.** The report then carries no finding for it, which reads exactly like a package that passed everything. It is reported as an unchecked package instead. A package where only some checks were skipped keeps its findings and gets a count on stderr, because a check that does not cover an ecosystem is skipped on every package of that ecosystem and stopping an install over that would help nobody.
+- **trustdiff exits 1.** That is the normal outcome for a package worth blocking, not an error, and the report is read as usual.
+- **trustdiff exits 3.** A required data source was unavailable and your policy said that fails the run. The report is still read for its findings, and every package the run could not finish checking becomes a `fatal` advisory. That is not this scanner's judgment to soften: `TRUSTDIFF_BUN_UNCHECKED` does not apply, because your own policy file already decided. Set `on_data_unavailable: warn` there if you want the run to carry on instead.
 
 ## Configuration
 
@@ -76,8 +82,11 @@ Everything is configured through the environment, so a project can set it in CI 
 | `TRUSTDIFF_BIN` | `trustdiff` | The binary to run. A bare name is looked up on PATH; a value containing a path separator is used as given, for a binary vendored into the repository or installed by a CI step somewhere private. |
 | `TRUSTDIFF_BUN_REQUIRE_BINARY` | `0` | When true, a missing binary stops the install instead of skipping the scan. Accepts `1`, `true`, `yes`, `on` and their negatives. |
 | `TRUSTDIFF_BUN_TIMEOUT_MS` | `120000` | How long one trustdiff run may take before it is killed and the install stops. Raise it for very large dependency trees on a cold cache. |
+| `TRUSTDIFF_BUN_UNCHECKED` | `warn` | What a package trustdiff could not check counts as. `fatal` stops the install, `warn` asks on a terminal and cancels in CI, `ignore` reports nothing. Exit code 3 is fatal whatever this says. |
 
-A value that is neither true nor false, or a timeout that is not a positive whole number, is an error rather than a silent fallback: a typo in a variable that decides whether installs are scanned should be visible.
+A value that is neither true nor false, a timeout that is not a positive whole number, or an unchecked policy that is none of the three words, is an error rather than a silent fallback: a typo in a variable that decides whether installs are scanned should be visible.
+
+`ignore` is there for the project that installs from a mirror where some data source is genuinely never reachable and has accepted what that means. It is not a way to quieten a noisy install: everything it hides is a package nobody checked.
 
 trustdiff's own settings are unchanged and are read from the same places as always: `--policy` has no equivalent here, so the policy comes from the `.trustdiff.yaml` found upward from the directory the install runs in, then the user-level policy, then the built-in defaults. That is where you set cooldowns, per-check levels, allow-lists and `--offline` behaviour.
 
@@ -88,7 +97,7 @@ cd integrations/bun-scanner
 bun test
 ```
 
-The tests run against a stub binary written into a temporary directory, never against the real trustdiff, so they need no network, no Go toolchain and no released binary. They cover a clean scan, a blocking finding, a warning, a missing binary in both its modes, a binary that fails, a malformed document and an empty package list. `.github/workflows/bun-scanner.yml` runs the same command on Linux and on Windows with the proxy variables pointed at a closed port, so an accidental network call fails the build.
+The tests run against a stub binary written into a temporary directory, never against the real trustdiff, so they need no network, no Go toolchain and no released binary. They cover a clean scan, a blocking finding, a warning, a missing binary in both its modes, a binary that fails, a run that is killed for taking too long, a malformed document, an empty package list, each of the three ways a package can end up unchecked, a run that could not reach a data source, and a failure part way through a tree large enough to take two runs. A stub can be given one behaviour per run, which is how that last one is written. `.github/workflows/bun-scanner.yml` runs the same command on Linux and on Windows with the proxy variables pointed at a closed port, so an accidental network call fails the build.
 
 The package has no dependencies of any kind, `@types/bun` included, which is why `src/index.ts` carries its own copy of the Bun scanner interfaces rather than importing them. The copies are annotated with the date they were checked against Bun's `packages/bun-types/security.d.ts`; re-check them when Bun changes the API version.
 

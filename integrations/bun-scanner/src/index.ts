@@ -33,6 +33,12 @@
 //   * If scan throws, Bun cancels the install as a defensive measure. This module uses
 //     that on purpose: a scan that could not be completed must never look like a pass.
 //
+// Bun has no level for "I do not know", so that same rule has to be applied by hand to
+// everything trustdiff could not answer: a package Bun resolved no version for, a package
+// every check was skipped on, and a run whose exit code says a required data source was
+// unavailable. Each of those becomes an advisory of its own rather than an absence,
+// because an absence in the returned list is indistinguishable from a clean report.
+//
 // The package has no dependencies, not even @types/bun, so that installing it pulls in
 // nothing and its tests run with no network. That is why the Bun types below are copied
 // out of security.d.ts instead of imported.
@@ -118,6 +124,47 @@ export interface TrustdiffFinding {
 }
 
 /**
+ * TrustdiffSkip is one check that could not run for one package version. It exists
+ * because a skip is the whole difference between "checked and clean" and "not checked",
+ * and this adapter has to tell the two apart before it decides what to tell Bun.
+ */
+export interface TrustdiffSkip {
+  /** Id of the check that did not run, for example TD012. */
+  check: string;
+  /** Why it did not run: an unavailable data source, offline mode, or an ecosystem it does not cover. */
+  reason: string;
+}
+
+/**
+ * TrustdiffSubject is one evaluated package version with everything the checks said about
+ * it. It exists as a named type because this adapter reads three of its fields and used to
+ * read only findings, which is how a package nothing could be checked on came out looking
+ * exactly like a package everything passed on.
+ */
+export interface TrustdiffSubject {
+  /** Which package version the entry is about. */
+  ref?: { ecosystem?: string; name?: string; version?: string };
+  /** Checks that could not run for this subject, sorted by check id. */
+  skipped?: TrustdiffSkip[];
+  /** Findings sorted by level, most severe first. */
+  findings?: TrustdiffFinding[];
+  /** The highest finding level, ok when every check that ran found nothing, skipped when none ran. */
+  verdict?: string;
+}
+
+/**
+ * TrustdiffSummary is the tail of the document: the counts and the exit code. This adapter
+ * reads the exit code out of the document rather than only off the process, because one
+ * install can take several runs and each of them has to be judged by what it said.
+ */
+export interface TrustdiffSummary {
+  /** Number of skipped checks over all subjects. */
+  skipped?: number;
+  /** 0 nothing at or above fail_on, 1 something was, 3 a required data source was unavailable. */
+  exit_code?: number;
+}
+
+/**
  * TrustdiffReport is the document "trustdiff check --format json" writes on stdout, as
  * schema/report.v1.json defines it. It exists so that parsing can assert the shape it
  * depends on and refuse anything else, rather than reading fields off whatever happened
@@ -126,8 +173,10 @@ export interface TrustdiffFinding {
 export interface TrustdiffReport {
   /** Always REPORT_SCHEMA for a document this scanner will read. */
   schema: string;
-  /** One entry per evaluated package version, each carrying its own findings. */
-  subjects: Array<{ findings?: TrustdiffFinding[] }>;
+  /** One entry per evaluated package version, each carrying its own findings and skips. */
+  subjects: TrustdiffSubject[];
+  /** The counts and the exit code of the run that wrote the document. */
+  summary?: TrustdiffSummary;
 }
 
 /**
@@ -142,7 +191,19 @@ export interface ScannerConfig {
   requireBinary: boolean;
   /** How long one trustdiff run may take before it is killed and the install stops. */
   timeoutMs: number;
+  /** What a package trustdiff could not check at all counts as. */
+  unchecked: UncheckedPolicy;
 }
+
+/**
+ * UncheckedPolicy says what this scanner does about a package trustdiff could not check at
+ * all. It exists because Bun has two levels and neither of them means "unknown", so every
+ * project has to decide which one an unknown counts as: fatal for a repository that has
+ * decided every install is checked in full, warn for everybody else, and ignore for the
+ * rare project that installs on a machine where some data source is never reachable and
+ * has accepted what that means.
+ */
+export type UncheckedPolicy = "fatal" | "warn" | "ignore";
 
 /**
  * ENV_BINARY names the variable that points at the trustdiff binary. It exists so a
@@ -165,6 +226,21 @@ export const ENV_REQUIRE_BINARY = "TRUSTDIFF_BUN_REQUIRE_BINARY";
  * way out short of killing the terminal.
  */
 export const ENV_TIMEOUT_MS = "TRUSTDIFF_BUN_TIMEOUT_MS";
+
+/**
+ * ENV_UNCHECKED names the variable that sets what an unchecked package counts as. It
+ * exists because the honest answer, "nobody knows about this one", lands differently in a
+ * repository that installs from a private mirror than on a laptop behind a hotel network,
+ * and the scanner is in no position to decide which of those it is running on.
+ */
+export const ENV_UNCHECKED = "TRUSTDIFF_BUN_UNCHECKED";
+
+/**
+ * DEFAULT_UNCHECKED reports an unchecked package as a warning. Bun asks about a warning on
+ * a terminal and cancels everywhere else, which is the right shape for something nobody
+ * knows: a person gets to look at it, and CI does not go ahead on an unchecked package.
+ */
+export const DEFAULT_UNCHECKED: UncheckedPolicy = "warn";
 
 /**
  * DEFAULT_BINARY is what this scanner runs when nothing points it elsewhere. It exists
@@ -194,6 +270,15 @@ export const REPORT_SCHEMA = "trustdiff.report/1";
  * 2 is a usage or configuration error and is never accompanied by a document.
  */
 export const REPORT_EXIT_CODES: readonly number[] = [0, 1, 3];
+
+/**
+ * EXIT_DATA_UNAVAILABLE is the exit code that says a required data source was unavailable
+ * and the policy trustdiff ran under asked for that to fail the run. It exists as its own
+ * constant because it is the one report-bearing exit code that must never be read as a
+ * normal outcome: the project already decided, in its own policy file, that a run it could
+ * not complete is a failure, and this scanner only has to carry that decision through.
+ */
+export const EXIT_DATA_UNAVAILABLE = 3;
 
 /**
  * CHECKS_DOC is where every trustdiff check is written up, one section per check. It
@@ -253,30 +338,72 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     binary,
     requireBinary: readBoolean(env[ENV_REQUIRE_BINARY], ENV_REQUIRE_BINARY, false),
     timeoutMs: readPositiveInteger(env[ENV_TIMEOUT_MS], ENV_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
+    unchecked: readUncheckedPolicy(env[ENV_UNCHECKED]),
   };
 }
 
 /**
- * refsFor turns the packages Bun proposes into the refs "trustdiff check" takes, in the
- * form npm:name@version. It exists because Bun can list the same package version more
- * than once in a tree and because an entry without an exact version has to be dropped:
- * trustdiff would otherwise evaluate the latest published version, which is not the one
- * Bun is about to write to disk, and a finding about the wrong version is worse than no
- * finding at all.
+ * UncheckedPackage is one package Bun proposed that never reached trustdiff. It exists so
+ * the reason travels with the name: the scanner has to be able to say which package it
+ * failed to ask about and why, and an empty result is not an answer to that.
  */
-export function refsFor(packages: readonly BunPackage[] | undefined | null): string[] {
+export interface UncheckedPackage {
+  /** The package name as Bun spelled it, or the empty string when even that was missing. */
+  name: string;
+  /** Why no ref could be built for it, as one sentence for the terminal. */
+  reason: string;
+}
+
+/**
+ * RefPlan is the result of reading Bun's package list: the refs to ask trustdiff about,
+ * and the packages that could not be turned into one.
+ */
+export interface RefPlan {
+  /** Refs in the form npm:name@version, deduplicated, in the order Bun listed them. */
+  refs: string[];
+  /** Packages no ref could be built for, each with the reason. */
+  unchecked: UncheckedPackage[];
+}
+
+/**
+ * planRefs turns the packages Bun proposes into the refs "trustdiff check" takes and,
+ * separately, into the list of packages it could not name. It exists because an entry
+ * without an exact version cannot be checked at all: trustdiff would evaluate whatever is
+ * published as latest, which is not what Bun is about to write to disk, and a finding
+ * about the wrong version is worse than no finding. Dropping such an entry is right;
+ * dropping it silently is not, which is why it comes back instead of vanishing.
+ */
+export function planRefs(packages: readonly BunPackage[] | undefined | null): RefPlan {
   const seen = new Set<string>();
   const refs: string[] = [];
+  const unchecked: UncheckedPackage[] = [];
   for (const pkg of packages ?? []) {
     const name = typeof pkg?.name === "string" ? pkg.name.trim() : "";
     const version = typeof pkg?.version === "string" ? pkg.version.trim() : "";
-    if (name === "" || version === "") continue;
+    if (name === "" || version === "") {
+      unchecked.push({
+        name,
+        reason:
+          name === ""
+            ? "bun listed it with no name, so there was nothing to ask trustdiff about"
+            : "bun resolved no exact version for it, and asking about whichever version is latest would answer about different code",
+      });
+      continue;
+    }
     const ref = `npm:${name}@${version}`;
     if (seen.has(ref)) continue;
     seen.add(ref);
     refs.push(ref);
   }
-  return refs;
+  return { refs, unchecked };
+}
+
+/**
+ * refsFor is planRefs when only the refs are wanted, which is what building the command
+ * line and splitting it into batches care about.
+ */
+export function refsFor(packages: readonly BunPackage[] | undefined | null): string[] {
+  return planRefs(packages).refs;
 }
 
 /**
@@ -329,20 +456,55 @@ export function advisoryFor(finding: TrustdiffFinding): BunAdvisory | null {
 }
 
 /**
- * advisoriesFrom collects the advisories from every report of a run. It exists because
- * one install can take several trustdiff runs (see batchRefs) and Bun wants one flat
- * list, and it is exported so the mapping can be tested against a document without
- * starting a process.
+ * advisoriesFrom collects the advisories from every report of a run: one per finding Bun
+ * has a level for, and one per package the run could not answer about. It exists because
+ * one install can take several trustdiff runs (see batchRefs) and Bun wants one flat list,
+ * and it is exported so the mapping can be tested against a document without starting a
+ * process.
  */
-export function advisoriesFrom(reports: readonly TrustdiffReport[]): BunAdvisory[] {
+export function advisoriesFrom(
+  reports: readonly TrustdiffReport[],
+  unchecked: UncheckedPolicy = DEFAULT_UNCHECKED,
+): BunAdvisory[] {
   const advisories: BunAdvisory[] = [];
   for (const report of reports) {
+    // Exit code 3 is the run saying that a required data source was unavailable and that
+    // the policy in force asked for that to fail. That decision was made by the project in
+    // its own policy file, so it is carried through whatever this scanner is set to.
+    const dataUnavailable = report?.summary?.exit_code === EXIT_DATA_UNAVAILABLE;
     for (const subject of report.subjects ?? []) {
       for (const finding of subject?.findings ?? []) {
         const advisory = advisoryFor(finding);
         if (advisory !== null) advisories.push(advisory);
       }
+      const note = uncheckedAdvisory(subject, dataUnavailable, unchecked);
+      if (note !== null) advisories.push(note);
     }
+  }
+  return advisories;
+}
+
+/**
+ * advisoriesForUnchecked turns the packages that never reached trustdiff into advisories,
+ * so a package Bun could not name is reported in the same place, and read by the same
+ * pair of eyes, as a package that was checked and failed.
+ */
+export function advisoriesForUnchecked(
+  packages: readonly UncheckedPackage[],
+  policy: UncheckedPolicy = DEFAULT_UNCHECKED,
+): BunAdvisory[] {
+  if (policy === "ignore") return [];
+  const advisories: BunAdvisory[] = [];
+  for (const pkg of packages) {
+    // An advisory reaches the user through a package name, so one that has no name has
+    // nowhere to go in the returned list and is written to stderr by the caller instead.
+    if (pkg.name === "") continue;
+    advisories.push({
+      level: policy,
+      package: pkg.name,
+      url: CHECKS_DOC,
+      description: `trustdiff did not check ${pkg.name}: ${pkg.reason}.`,
+    });
   }
   return advisories;
 }
@@ -392,27 +554,38 @@ export const scanner: BunScanner = {
 // scanPackages is the body of scanner.scan, kept separate only so the export above reads
 // as the small declaration it is.
 async function scanPackages({ packages }: { packages: BunPackage[] }): Promise<BunAdvisory[]> {
-  const refs = refsFor(packages);
+  const config = readConfig();
+  const plan = planRefs(packages);
+  reportNameless(plan.unchecked);
+  const advisories = advisoriesForUnchecked(plan.unchecked, config.unchecked);
   // An install that resolves to nothing new still calls the scanner. Starting a process
   // to ask about no packages would slow every no-op install down for nothing.
-  if (refs.length === 0) return [];
+  if (plan.refs.length === 0) return advisories;
 
-  const config = readConfig();
   const reports: TrustdiffReport[] = [];
   try {
-    for (const batch of batchRefs(refs)) {
+    for (const batch of batchRefs(plan.refs)) {
       reports.push(await runCheck(batch, config));
     }
   } catch (error) {
     if (error instanceof BinaryNotFoundError && !config.requireBinary) {
       // Skipped, and said out loud. Bun shows the scanner's stderr, so the person running
-      // the install learns that nothing was checked instead of assuming it was clean.
+      // the install learns that nothing was checked instead of assuming it was clean. The
+      // advisories built above are dropped with it: naming the one package that had no
+      // version, on a run where no package was checked at all, would be a strange thing
+      // to single out.
       console.error(error.message);
       return [];
     }
+    // Throwing cancels the install, which is the right outcome, but Bun shows an exception
+    // and not a returned list, so everything the runs that did finish found would go with
+    // it. A blocking finding from the second batch of five is worth reading even when the
+    // third batch is the reason the install stopped.
+    reportUnread(advisoriesFrom(reports, config.unchecked));
     throw error;
   }
-  return advisoriesFrom(reports);
+  reportPartialSkips(reports);
+  return [...advisories, ...advisoriesFrom(reports, config.unchecked)];
 }
 
 // runCheck runs the binary once over one batch of refs and returns the report it wrote.
@@ -422,6 +595,7 @@ async function runCheck(refs: readonly string[], config: ScannerConfig): Promise
   const binary = resolveBinary(config.binary);
   if (binary === null) throw new BinaryNotFoundError(config.binary);
 
+  const startedAt = Date.now();
   let child: ReturnType<typeof Bun.spawn>;
   try {
     child = Bun.spawn([binary, "check", "--format", "json", "--", ...refs], {
@@ -443,22 +617,147 @@ async function runCheck(refs: readonly string[], config: ScannerConfig): Promise
   const code = await child.exited;
 
   // A process that ran out of time is killed with the signal above, so it ends with a
-  // signal and no exit code of its own. Verified on Bun 1.3.14 on 2026-09-10: killed is
-  // true for any finished child, including one that exited normally, so it cannot be the
-  // test here.
-  if (child.signalCode !== null || child.exitCode === null) {
-    throw new Error(
-      `trustdiff bun scanner: ${JSON.stringify(binary)} did not finish within ${config.timeoutMs} ms and was killed. ` +
-        `Raise ${ENV_TIMEOUT_MS} if this tree is simply large.`,
-    );
-  }
+  // signal and no exit code of its own. Verified on Bun 1.4.2 on 2026-09-10 on Windows,
+  // which has no real signals: the killed child still comes back with signalCode SIGKILL
+  // and a null exitCode, so one test covers every platform. The elapsed time is a second
+  // opinion for the cases the signal cannot describe, a child killed by something else or
+  // one that lost the race and exited on its own, and it is read only when the run failed
+  // another test too, so a run that finished correctly on the last millisecond of its
+  // budget is still read as the success it was. The same run showed that killed is true
+  // for any finished child, including one that exited normally, so it cannot be the test.
+  const outOfTime = Date.now() - startedAt >= config.timeoutMs;
+  if (child.signalCode !== null || child.exitCode === null) throw timedOut(binary, config);
   if (!REPORT_EXIT_CODES.includes(code)) {
+    if (outOfTime) throw timedOut(binary, config);
     throw new Error(
       `trustdiff bun scanner: ${JSON.stringify(binary)} check exited with code ${code}. ` +
         `Its error output was ${JSON.stringify(excerpt(stderr))}.`,
     );
   }
-  return parseReport(stdout);
+
+  let report: TrustdiffReport;
+  try {
+    report = parseReport(stdout);
+  } catch (error) {
+    // A child killed in the middle of writing leaves a truncated document behind, and
+    // "the report is not JSON" would send the reader looking for a bug that is not there.
+    if (outOfTime) throw timedOut(binary, config);
+    throw error;
+  }
+  // Everything downstream reads the exit code out of the summary, which is where trustdiff
+  // repeats it. If the document and the process ever disagree, the more severe of the two
+  // readings is the safe one: a run whose data source was unavailable must not be able to
+  // read as a clean one because a field was missing.
+  if (code === EXIT_DATA_UNAVAILABLE) {
+    report.summary = { ...report.summary, exit_code: EXIT_DATA_UNAVAILABLE };
+  }
+  return report;
+}
+
+// timedOut is the error a run killed for taking too long produces, in one place because
+// three different signs of it lead here.
+function timedOut(binary: string, config: ScannerConfig): Error {
+  return new Error(
+    `trustdiff bun scanner: ${JSON.stringify(binary)} did not finish within ${config.timeoutMs} ms and was killed. ` +
+      `Raise ${ENV_TIMEOUT_MS} if this tree is simply large.`,
+  );
+}
+
+// uncheckedAdvisory reports a subject the run could not answer about. Two shapes count: a
+// subject whose verdict is skipped, where not one check ran, and any subject with a skip
+// in a run whose exit code says a required data source was unavailable. A subject that
+// merely lost one check to an ecosystem that check does not cover is neither of them: the
+// checks that did run did run, and stopping an install over every skip of that kind would
+// make the scanner useless rather than careful.
+function uncheckedAdvisory(
+  subject: TrustdiffSubject | undefined,
+  dataUnavailable: boolean,
+  policy: UncheckedPolicy,
+): BunAdvisory | null {
+  const reported = subject?.skipped;
+  const skipped = Array.isArray(reported) ? reported : [];
+  const nothingRan = subject?.verdict === "skipped";
+  if (!nothingRan && !(dataUnavailable && skipped.length > 0)) return null;
+  const level: AdvisoryLevel | null = dataUnavailable ? "fatal" : policy === "ignore" ? null : policy;
+  if (level === null) return null;
+  const name = typeof subject?.ref?.name === "string" ? subject.ref.name.trim() : "";
+  if (name === "") return null;
+  const version = typeof subject?.ref?.version === "string" ? subject.ref.version.trim() : "";
+  const target = version === "" ? name : `${name}@${version}`;
+  const head = nothingRan
+    ? `trustdiff could not check ${target}: not one check was able to run`
+    : `trustdiff could not finish checking ${target}: a required data source was unavailable`;
+  const reasons = skipped
+    .map((skip) => describeSkip(skip))
+    .filter((part) => part !== "")
+    .join("; ");
+  return {
+    level,
+    package: name,
+    url: CHECKS_DOC,
+    description: reasons === "" ? `${head}.` : `${head}. ${reasons}.`,
+  };
+}
+
+// describeSkip writes one skipped check the way the terminal should read it, for example
+// "TD012 the download counts were not available".
+function describeSkip(skip: TrustdiffSkip | undefined): string {
+  const check = typeof skip?.check === "string" ? skip.check.trim() : "";
+  const reason = typeof skip?.reason === "string" ? skip.reason.trim().replace(/\.+$/, "").trim() : "";
+  return [check, reason].filter((part) => part !== "").join(" ");
+}
+
+// reportNameless writes the packages that could not even be named to stderr, because an
+// advisory reaches the user through a package name and these have none to give.
+function reportNameless(packages: readonly UncheckedPackage[]): void {
+  const count = packages.filter((pkg) => pkg.name === "").length;
+  if (count === 0) return;
+  console.error(
+    `trustdiff bun scanner: bun listed ${plural(count, "package")} with no name, and none of them was checked.`,
+  );
+}
+
+// reportPartialSkips says on stderr how much of the tree was checked only in part. These
+// are not advisories: the checks that ran did run, and a check that does not cover an
+// ecosystem is skipped on every package of that ecosystem, so an advisory each would bury
+// the findings that matter. The count is still worth printing, because it is the whole
+// difference between "everything was checked" and "most things were".
+function reportPartialSkips(reports: readonly TrustdiffReport[]): void {
+  let skips = 0;
+  let affected = 0;
+  let total = 0;
+  for (const report of reports) {
+    for (const subject of report.subjects ?? []) {
+      total += 1;
+      const reported = subject?.skipped;
+      const skipped = Array.isArray(reported) ? reported.length : 0;
+      if (skipped === 0 || subject?.verdict === "skipped") continue;
+      skips += skipped;
+      affected += 1;
+    }
+  }
+  if (skips === 0) return;
+  console.error(
+    `trustdiff bun scanner: ${plural(skips, "check")} could not run, over ${affected} of ${plural(total, "package")}. ` +
+      `Those packages were checked only in part. Run "trustdiff check" on them to read why.`,
+  );
+}
+
+// reportUnread prints what the runs that finished found when the scan as a whole is about
+// to throw, since Bun shows an exception and never the list that was being built.
+function reportUnread(advisories: readonly BunAdvisory[]): void {
+  if (advisories.length === 0) return;
+  const count = advisories.length === 1 ? "1 advisory" : `${advisories.length} advisories`;
+  const lines = advisories.map((advisory) => `  ${advisory.level}: ${advisory.description ?? advisory.package}`);
+  console.error(
+    `trustdiff bun scanner: the runs that finished before this failure found ${count}, which the install never saw:\n` +
+      lines.join("\n"),
+  );
+}
+
+// plural keeps these messages readable without reaching for a dependency.
+function plural(count: number, noun: string): string {
+  return count === 1 ? `1 ${noun}` : `${count} ${noun}s`;
 }
 
 // resolveBinary turns the configured binary into something spawnable, or null when there
@@ -522,6 +821,18 @@ function readBoolean(raw: string | undefined, variable: string, fallback: boolea
   throw new Error(
     `trustdiff bun scanner: ${variable} is ${JSON.stringify(raw)}, which is neither true nor false. ` +
       "Use 1, true, yes, on, 0, false, no or off.",
+  );
+}
+
+// readUncheckedPolicy reads the one setting with three values, and refuses the rest for
+// the same reason readBoolean does: a typo in the variable that decides whether an
+// unchecked package can stop an install must never be read as "ignore".
+function readUncheckedPolicy(raw: string | undefined): UncheckedPolicy {
+  const value = (raw ?? "").trim().toLowerCase();
+  if (value === "") return DEFAULT_UNCHECKED;
+  if (value === "fatal" || value === "warn" || value === "ignore") return value;
+  throw new Error(
+    `trustdiff bun scanner: ${ENV_UNCHECKED} is ${JSON.stringify(raw)}, which is none of fatal, warn or ignore.`,
   );
 }
 

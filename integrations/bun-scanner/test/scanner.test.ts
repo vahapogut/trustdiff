@@ -10,21 +10,25 @@ import {
   advisoryFor,
   batchRefs,
   BinaryNotFoundError,
+  CHECKS_DOC,
   DEFAULT_TIMEOUT_MS,
+  DEFAULT_UNCHECKED,
   ENV_BINARY,
   ENV_REQUIRE_BINARY,
   ENV_TIMEOUT_MS,
+  ENV_UNCHECKED,
   parseReport,
+  planRefs,
   readConfig,
   refsFor,
   scanner,
   type BunPackage,
 } from "../src/index.ts";
-import { finding, report, writeStub, type Stub } from "./stub.ts";
+import { documentOf, finding, report, skip, subject, writeStub, type Stub } from "./stub.ts";
 
-// The three variables the scanner reads. Each test starts with all of them cleared so no
+// The four variables the scanner reads. Each test starts with all of them cleared so no
 // test can pass because of something another one left behind.
-const VARIABLES = [ENV_BINARY, ENV_REQUIRE_BINARY, ENV_TIMEOUT_MS];
+const VARIABLES = [ENV_BINARY, ENV_REQUIRE_BINARY, ENV_TIMEOUT_MS, ENV_UNCHECKED];
 
 const saved = new Map<string, string | undefined>();
 let stub: Stub | null = null;
@@ -199,18 +203,151 @@ describe("the package list is empty", () => {
     expect(stub.ran()).toBe(false);
   });
 
-  test("also skips the run when every entry lacks a resolved version", async () => {
-    // Without an exact version trustdiff would evaluate whatever is latest, which is not
-    // what Bun is about to install, so those entries are dropped and nothing is left.
+  test("still starts no process when no entry has a resolved version, and says which ones", async () => {
+    // Without an exact version trustdiff would evaluate whatever is published as latest,
+    // which is not what Bun is about to install, so the entry cannot be checked. It is
+    // reported rather than dropped, because a package nobody checked is not a clean one.
     stub = writeStub({ stdout: report([]) });
     process.env[ENV_BINARY] = stub.path;
     const packages = [{ ...pkg("express", "4.19.2"), version: "" }];
-    expect(await scanner.scan({ packages })).toEqual([]);
+    const advisories = await scanner.scan({ packages });
+    expect(advisories).toHaveLength(1);
+    expect(advisories[0]!.level).toBe("warn");
+    expect(advisories[0]!.package).toBe("express");
+    expect(advisories[0]!.description).toContain("trustdiff did not check express");
     expect(stub.ran()).toBe(false);
   });
 });
 
+describe("a package trustdiff could not check", () => {
+  test("is a warning by default, because bun has no level that means unknown", async () => {
+    const advisories = await scanWith({ stdout: report([]) }, [{ ...pkg("express", "4.19.2"), version: "" }]);
+    expect(advisories.map((advisory) => advisory.level)).toEqual(["warn"]);
+    expect(advisories[0]!.url).toBe(CHECKS_DOC);
+  });
+
+  test("stops the install when the project has decided every install is checked in full", async () => {
+    process.env[ENV_UNCHECKED] = "fatal";
+    const advisories = await scanWith({ stdout: report([]) }, [{ ...pkg("express", "4.19.2"), version: "" }]);
+    expect(advisories.map((advisory) => advisory.level)).toEqual(["fatal"]);
+  });
+
+  test("is dropped when the project has said it accepts unchecked packages", async () => {
+    process.env[ENV_UNCHECKED] = "ignore";
+    expect(await scanWith({ stdout: report([]) }, [{ ...pkg("express", "4.19.2"), version: "" }])).toEqual([]);
+  });
+
+  test("is reported when every check on it was skipped, which used to read as a clean pass", async () => {
+    // This is the case the whole setting exists for: the report carries no finding, and
+    // reading only the findings would make a package nothing could be checked on
+    // byte-identical to a package that passed everything.
+    const document = documentOf([
+      subject({
+        evaluated: [],
+        skipped: [skip("TD002", "the registry did not answer"), skip("TD009", "the advisory database was unreachable")],
+        verdict: "skipped",
+      }),
+    ]);
+    const advisories = await scanWith({ stdout: document }, [pkg("express", "4.19.2")]);
+    expect(advisories).toHaveLength(1);
+    expect(advisories[0]!.level).toBe("warn");
+    expect(advisories[0]!.package).toBe("express");
+    expect(advisories[0]!.description).toContain("not one check was able to run");
+    expect(advisories[0]!.description).toContain("TD002 the registry did not answer");
+  });
+
+  test("has its findings reported too when only some checks were skipped, with a note on stderr", async () => {
+    // A check that does not cover an ecosystem is skipped on every package of it, so a
+    // partial skip is normal and must not stop an install. The count still gets printed.
+    const errors = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const document = documentOf([
+        subject({ findings: [finding("block")], skipped: [skip("TD012", "no download counts")], verdict: "block" }),
+      ]);
+      const advisories = await scanWith({ stdout: document, exitCode: 1 }, [pkg("express", "4.19.2")]);
+      expect(advisories.map((advisory) => advisory.level)).toEqual(["fatal"]);
+      expect(String(errors.mock.calls[0]![0])).toContain("1 check could not run");
+    } finally {
+      errors.mockRestore();
+    }
+  });
+});
+
+describe("a run that could not reach a data source", () => {
+  test("is fatal even where the scanner was told to ignore unchecked packages", async () => {
+    // Exit code 3 only happens when the project's own trustdiff policy says an unavailable
+    // source fails the run. That decision belongs to the policy, not to this adapter.
+    process.env[ENV_UNCHECKED] = "ignore";
+    const errors = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const document = documentOf(
+        [subject({ skipped: [skip("TD009", "the advisory database was unreachable")], verdict: "ok" })],
+        { exit_code: 3, exit_meaning: "a required data source was unavailable" },
+      );
+      const advisories = await scanWith({ stdout: document, exitCode: 3 }, [pkg("express", "4.19.2")]);
+      expect(advisories).toHaveLength(1);
+      expect(advisories[0]!.level).toBe("fatal");
+      expect(advisories[0]!.description).toContain("a required data source was unavailable");
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  test("is fatal when the process said so and the document did not, which is the safe reading", async () => {
+    const errors = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const document = documentOf([subject({ skipped: [skip("TD009", "offline")], verdict: "ok" })]);
+      const advisories = await scanWith({ stdout: document, exitCode: 3 }, [pkg("express", "4.19.2")]);
+      expect(advisories.map((advisory) => advisory.level)).toEqual(["fatal"]);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+});
+
+describe("a run that takes too long", () => {
+  test("is reported as the timeout it is, on a platform with signals and on one without", async () => {
+    // Windows has no signals, so a killed child comes back with an ordinary exit code and
+    // the elapsed time is the only thing that tells a timeout from a broken binary.
+    process.env[ENV_TIMEOUT_MS] = "300";
+    const promise = scanWith({ stdout: report([]), sleepSeconds: 3 }, [pkg("express", "4.19.2")]);
+    await expect(promise).rejects.toThrow(/did not finish within 300 ms and was killed/);
+  }, 20000);
+});
+
+describe("a failure after some runs finished", () => {
+  test("prints what those runs found before it throws, so the findings do not go with the exception", async () => {
+    const errors = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      // Two batches: the first finds something worth blocking, the second cannot run at all.
+      const packages = Array.from({ length: 150 }, (_, i) => pkg(`package-${i}`, "1.0.0"));
+      const promise = scanWith(
+        [
+          { stdout: report([finding("block")]), exitCode: 1 },
+          { stderr: "trustdiff: unknown flag --format\n", exitCode: 2 },
+        ],
+        packages,
+      );
+      await expect(promise).rejects.toThrow(/exited with code 2/);
+      expect(stub!.runs()).toBe(2);
+      const printed = errors.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(printed).toContain("the runs that finished before this failure found 1 advisory");
+      expect(printed).toContain("TD002 publisher-changed on express@4.19.2");
+    } finally {
+      errors.mockRestore();
+    }
+  }, 20000);
+});
+
 describe("building refs and batches", () => {
+  test("keeps every package it could not name, with the reason it could not", () => {
+    const plan = planRefs([pkg("express", "4.19.2"), { ...pkg("lodash", "4.17.21"), version: "" }, pkg("", "1.0.0")]);
+    expect(plan.refs).toEqual(["npm:express@4.19.2"]);
+    expect(plan.unchecked.map((entry) => entry.name)).toEqual(["lodash", ""]);
+    expect(plan.unchecked[0]!.reason).toContain("no exact version");
+    expect(plan.unchecked[1]!.reason).toContain("no name");
+  });
+
   test("drops duplicates and keeps the order Bun gave", () => {
     const packages = [pkg("express", "4.19.2"), pkg("express", "4.19.2"), pkg("lodash", "4.17.21")];
     expect(refsFor(packages)).toEqual(["npm:express@4.19.2", "npm:lodash@4.17.21"]);
@@ -264,5 +401,12 @@ describe("configuration", () => {
     expect(() => readConfig({ [ENV_REQUIRE_BINARY]: "treu" })).toThrow(/neither true nor false/);
     expect(() => readConfig({ [ENV_TIMEOUT_MS]: "two minutes" })).toThrow(/not a whole number/);
     expect(() => readConfig({ [ENV_TIMEOUT_MS]: "0" })).toThrow(/above zero/);
+    expect(() => readConfig({ [ENV_UNCHECKED]: "block" })).toThrow(/none of fatal, warn or ignore/);
+  });
+
+  test("warns about an unchecked package unless the project says otherwise", () => {
+    expect(readConfig({}).unchecked).toBe(DEFAULT_UNCHECKED);
+    expect(readConfig({ [ENV_UNCHECKED]: "FATAL" }).unchecked).toBe("fatal");
+    expect(readConfig({ [ENV_UNCHECKED]: " ignore " }).unchecked).toBe("ignore");
   });
 });
