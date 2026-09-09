@@ -27,8 +27,11 @@ import (
 // 2.0.0 declares a dependency whose version list never arrives before the
 // caller's context ends, the way a hung registry looks to TD007.
 type fakeLoader struct {
-	now  time.Time
+	now time.Time
+	// slow makes the introduced dependency's lookups hang past the deadline.
 	slow bool
+	// malicious makes the advisory source answer a MAL- advisory for maliciousRef.
+	malicious bool
 }
 
 var errRegistryDown = errors.New("connection refused")
@@ -91,7 +94,20 @@ func (f *fakeLoader) Downloads(context.Context, model.Ecosystem, string) (int64,
 	return 100000, nil
 }
 
-func (f *fakeLoader) Advisories(context.Context, model.PackageRef) ([]advisory.Advisory, error) {
+// maliciousRef is the ref the fake loader answers a malicious-package advisory
+// for, the way OSV answers for a release a registry has taken down.
+var maliciousRef = model.MustParseRef("npm:trustdiff-fixture-lib@2.0.0")
+
+func (f *fakeLoader) Advisories(_ context.Context, ref model.PackageRef) ([]advisory.Advisory, error) {
+	if f.malicious && ref == maliciousRef {
+		return []advisory.Advisory{{
+			ID:        "MAL-2026-9001",
+			Summary:   "Malicious code in trustdiff-fixture-lib (npm)",
+			Severity:  advisory.SeverityCritical,
+			Malicious: true,
+			URL:       "https://osv.dev/vulnerability/MAL-2026-9001",
+		}}, nil
+	}
 	return nil, nil
 }
 
@@ -201,6 +217,32 @@ func TestCheckReportsFindingsAndExitCodes(t *testing.T) {
 	code, stdout, _ = run(t, "--cooldown", "1h", "--fail-on", "warn", "check", "npm:trustdiff-fixture-lib@2.0.0")
 	if code != ExitFindings || strings.Contains(stdout, "TD001") {
 		t.Fatalf("--cooldown 1h exit = %d, output should not carry TD001:\n%s", code, stdout)
+	}
+}
+
+// The acceptance criterion of the release: a malicious-package advisory blocks,
+// whatever else the card says, and the exit code tells a script to stop.
+func TestCheckMaliciousAdvisoryBlocks(t *testing.T) {
+	now := fixtureClock(t)
+	old := loaderFactory
+	loaderFactory = func(*App) (checks.Loader, error) { return &fakeLoader{now: now, malicious: true}, nil }
+	t.Cleanup(func() { loaderFactory = old })
+
+	code, stdout, stderr := run(t, "check", maliciousRef.String())
+	if code != ExitFindings {
+		t.Fatalf("exit = %d, want 1 for a malicious-package advisory (stderr %q)\n%s", code, stderr, stdout)
+	}
+	for _, want := range []string{"BLOCK", "TD009", "malicious-advisory", "MAL-2026-9001"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, stdout)
+		}
+	}
+
+	// Turning the check off is the user's decision, and then it no longer blocks.
+	writePolicy(t, "version: 1\nchecks:\n  malicious-advisory: off\n  publisher-changed: warn\n")
+	code, stdout, _ = run(t, "check", maliciousRef.String())
+	if code != ExitOK || strings.Contains(stdout, "TD009") {
+		t.Fatalf("with malicious-advisory off: exit = %d, stdout:\n%s", code, stdout)
 	}
 }
 
