@@ -60,6 +60,11 @@ const (
 	// FacetScripts is Scripts; crates.io leaves it unknown when the .crate
 	// archive was not inspected (too large, offline, checksum mismatch, missing).
 	FacetScripts = "scripts"
+	// FacetDeprecated is the deprecation or archival state, which is a fact about
+	// the package rather than one version, and which a registry can fail to
+	// answer for on its own: JSR keeps it on a different host from the version
+	// list. It is the one facet that belongs to registry.VersionList as well.
+	FacetDeprecated = "deprecated"
 	// FacetProvenance is Provenance; PyPI leaves it unknown when the integrity
 	// API failed with anything but a 404.
 	FacetProvenance = "provenance"

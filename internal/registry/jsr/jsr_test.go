@@ -754,6 +754,9 @@ func TestOwners(t *testing.T) {
 func TestDownloads(t *testing.T) {
 	t.Run("weekly total", func(t *testing.T) {
 		client, _ := fixtureClient(t)
+		// The window ends at the run's clock, so the test pins it to the day the
+		// fixture was recorded.
+		client.now = func() time.Time { return time.Date(2026, 9, 9, 23, 0, 0, 0, time.UTC) }
 		got, err := client.Downloads(context.Background(), "@std/fs")
 		if err != nil {
 			t.Fatalf("Downloads: %v", err)
@@ -764,6 +767,22 @@ func TestDownloads(t *testing.T) {
 		const want = 99921
 		if got != want {
 			t.Errorf("weekly downloads = %d, want %d", got, want)
+		}
+	})
+
+	// The buckets are sparse, and a package nobody has installed for two months has
+	// its newest bucket two months back. Summing the week around that bucket would
+	// report an old week's total as this week's, which is exactly the reading the
+	// low-usage check must not be given.
+	t.Run("stale buckets do not count as this week", func(t *testing.T) {
+		client, _ := fixtureClient(t)
+		client.now = func() time.Time { return time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC) }
+		got, err := client.Downloads(context.Background(), "@std/fs")
+		if err != nil {
+			t.Fatalf("Downloads: %v", err)
+		}
+		if got != 0 {
+			t.Errorf("weekly downloads = %d two months after the last bucket, want 0", got)
 		}
 	})
 

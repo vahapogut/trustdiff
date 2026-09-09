@@ -89,6 +89,9 @@ type Client struct {
 	registry string
 	api      string
 	log      *slog.Logger
+	// now is the clock the download window is measured against. It is a field so
+	// that a test can pin it; nothing but a test replaces it.
+	now func() time.Time
 }
 
 // New returns a client using the shared HTTP cache.
@@ -97,6 +100,7 @@ func New(h *httpcache.Client, opts ...Option) *Client {
 		http:     h,
 		registry: defaultRegistryBase,
 		api:      defaultAPIBase,
+		now:      time.Now,
 		log:      slog.New(slog.DiscardHandler),
 	}
 	for _, opt := range opts {
@@ -170,8 +174,9 @@ type apiVersion struct {
 	// been deleted, which the OpenAPI document says explicitly; @luca/flag's two
 	// versions were null on 2026-09-09 and @std/fs's 69 were not.
 	User *apiUser `json:"user"`
-	// Yanked repeats meta.json's flag. meta.json is preferred as the
-	// documentation directs, so this is read only as a fallback.
+	// Yanked repeats meta.json's flag, which is the one this client reads: the
+	// documentation directs a tool to meta.json for it, and it is the file that is
+	// regenerated when a version is yanked. This field is observed and not used.
 	Yanked bool `json:"yanked"`
 	// UsesNpm reports that the version declares npm dependencies. It is observed
 	// and not mapped: the model has no field for it, and the npm dependencies it
@@ -241,8 +246,12 @@ type snapshot struct {
 	// request failed. detailReason then says why, in the words a check shows.
 	detail       map[string]*apiVersion
 	detailReason string
-	// pkg is the management API's package record, nil when that request failed.
-	pkg *apiPackage
+	// pkg is the management API's package record, nil when that request failed,
+	// and pkgReason then says why. The archived flag lives only there, so a
+	// missing record is reported as an unknown facet rather than as "not
+	// archived".
+	pkg       *apiPackage
+	pkgReason string
 }
 
 // Versions implements registry.Source. The version set, the yank state and the
@@ -280,6 +289,8 @@ func (c *Client) Versions(ctx context.Context, name string) (*registry.VersionLi
 		if snap.pkg.IsArchived {
 			list.Deprecated = archivedMessage
 		}
+	} else if snap.pkgReason != "" {
+		list.SetUnknown(model.FacetDeprecated, snap.pkgReason)
 	}
 	// Maintainers stays empty: the scope members cost a request of their own and
 	// Owners is the method for them, the same split the crates.io client makes.
@@ -352,15 +363,23 @@ func (c *Client) Owners(ctx context.Context, name string) ([]model.Publisher, er
 
 // Downloads implements registry.Source. JSR reports one count per day per kind
 // for the last 90 days rather than a weekly total, so the weekly figure is the
-// sum of every bucket in the seven days ending at the newest bucket the answer
-// holds. Both kinds are counted, because jsr_meta and npm_tarball are two
-// transports for the same install rather than two counts of one.
+// sum of every bucket in the seven days before now. Both kinds are counted,
+// because jsr_meta and npm_tarball are two transports for the same install
+// rather than two counts of one.
 //
-// The newest bucket is the day the request is made and is therefore partial,
-// which makes the figure a slight underestimate of a full week. A package whose
-// answer holds no bucket at all reports registry.ErrUnsupported: no count exists
-// to compare with a threshold, and reporting zero would read as a package nobody
-// installs.
+// The window ends at the run's own clock and not at the newest bucket the answer
+// holds, which is the difference between "how many installs last week" and "how
+// many in the last week this package had any". The buckets are sparse: a package
+// nobody has installed for two months has its newest bucket two months back, and
+// summing the week around it would report that old week's total as if it were
+// current, which is exactly the reading the low-usage check must not be given.
+//
+// The last bucket is the day of the request and is therefore partial, which makes
+// the figure a slight underestimate of a full week. A package whose answer holds
+// no bucket at all reports registry.ErrUnsupported: no count exists to compare
+// with a threshold, and reporting zero would read as a package nobody installs. A
+// package whose buckets are all older than the window reports zero, because that
+// is what happened: nobody installed it this week.
 func (c *Client) Downloads(ctx context.Context, name string) (int64, error) {
 	scope, pkg, err := splitName(name)
 	if err != nil {
@@ -374,13 +393,7 @@ func (c *Client) Downloads(ctx context.Context, name string) (int64, error) {
 	if len(doc.Total) == 0 {
 		return 0, fmt.Errorf("jsr: %s has no download counts: %w", name, registry.ErrUnsupported)
 	}
-	var newest time.Time
-	for _, p := range doc.Total {
-		if p.TimeBucket.After(newest) {
-			newest = p.TimeBucket
-		}
-	}
-	from := newest.Add(-downloadsWindow)
+	from := c.now().Add(-downloadsWindow)
 	var total int64
 	for _, p := range doc.Total {
 		if p.Count > 0 && p.TimeBucket.After(from) {
@@ -417,7 +430,12 @@ func (c *Client) snapshot(ctx context.Context, name string) (*snapshot, error) {
 
 	record, err := c.apiPackage(ctx, scope, pkg, snap.name)
 	if err != nil {
+		// The record is the only place the archived flag lives, and it comes from
+		// the other host, so an outage there must not read as "not archived": that
+		// is the deprecation check answering from nothing. The version list is
+		// still worth returning, with the facet marked unknown.
 		c.log.Warn("jsr package record not fetched", "package", snap.name, "error", err)
+		snap.pkgReason = err.Error()
 	} else {
 		snap.pkg = record
 	}
@@ -518,6 +536,14 @@ func (c *Client) dependencies(ctx context.Context, name, ver string) (map[string
 			"package", name, "version", ver, "count", npmCount)
 	}
 	if len(out) == 0 {
+		if npmCount > 0 {
+			// The version has dependencies and every one of them is an npm package,
+			// which this map has no way to carry: a Dependencies map is one key
+			// space and a check resolves every key in the subject's own ecosystem.
+			// Reporting no dependencies would tell the new-dependency check that a
+			// package with twelve of them has none.
+			return nil, fmt.Errorf("jsr: %s@%s: every dependency is an npm package, which a jsr dependency map cannot name", name, ver)
+		}
 		return nil, nil
 	}
 	return out, nil
@@ -557,9 +583,16 @@ func (s *snapshot) versionInfo(ver string) model.VersionInfo {
 	// ecosystem rather than something this client failed to gather.
 	detail := s.detail[ver]
 	if detail == nil {
-		if s.detailReason != "" {
-			info.SetUnknown(model.FacetProvenance, s.detailReason)
+		// Either the management API could not be asked, or it answered without this
+		// version. Both mean the same thing here: nobody said what published it or
+		// whether it carries an attestation. Reporting "no provenance" as a fact
+		// would tell the trust-downgrade check that a signed release lost its
+		// signature.
+		reason := s.detailReason
+		if reason == "" {
+			reason = "the jsr management api did not list " + ver
 		}
+		info.SetUnknown(model.FacetProvenance, reason)
 		return info
 	}
 	if info.PublishedAt.IsZero() {

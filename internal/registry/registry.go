@@ -46,6 +46,21 @@ type VersionList struct {
 	Maintainers []model.Publisher
 	// Versions lists every published version, in the order the registry returned them.
 	Versions []model.VersionInfo
+	// Unknown records the package-level facts a client could not gather, keyed by
+	// the model's facet constants with the reason as the value, the way
+	// model.VersionInfo.Unknown records a version's. A registry that serves the
+	// version list and the package record from different hosts can answer one and
+	// not the other, and a check that read the zero value would report "not
+	// deprecated" as a fact about a package nobody could ask about.
+	Unknown map[string]string
+}
+
+// SetUnknown records a package-level fact that could not be gathered.
+func (l *VersionList) SetUnknown(facet, reason string) {
+	if l.Unknown == nil {
+		l.Unknown = map[string]string{}
+	}
+	l.Unknown[facet] = reason
 }
 
 // Source is one registry. Implementations go through internal/httpcache, return

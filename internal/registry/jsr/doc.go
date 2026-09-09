@@ -22,9 +22,10 @@
 // none of which the model has a place for; it deliberately omits the yanked flag,
 // which the documentation says to read from meta.json instead, because the
 // per-version document is immutable. The single-version record repeats what the
-// versions list already gave and adds only an SPDX license string, which the model
-// has no field for; unlike the versions list it does not carry the publishing user,
-// so it cannot replace that request either.
+// versions list already gave and adds an SPDX license string, a newerVersionsCount
+// and a symbolCount, none of which the model has a field for; unlike the versions
+// list it does not carry the publishing user, so it cannot replace that request
+// either.
 //
 // # Which host answers what
 //
@@ -60,7 +61,10 @@
 //	                entry of the SLSA statement JSR writes for a version published
 //	                from GitHub Actions
 //	dependencies    the kind "jsr" entries of the dependencies endpoint
-//	downloads       the daily buckets of the downloads endpoint, reduced to a week
+//	downloads       the daily buckets of the downloads endpoint, summed over the
+//	                seven days before now. They reach a caller through Downloads
+//	                and never through VersionInfo, which JSR gives no per-version
+//	                figure for
 //
 // Not carried, and therefore never guessed:
 //
@@ -93,9 +97,10 @@
 // The versions list is paginated and wrapped: it answers {"items": [...], "total": N}
 // with at most 100 items, takes page and limit query parameters (limit above 100 is
 // capped at 100), and orders items newest first; the spec declares a bare array with
-// no parameters. And the version records the spec marks required, newerVersionsCount
-// and lifetimeDownloadCount, were absent from every live response, so nothing here
-// depends on them.
+// no parameters. And of the two fields the spec marks required on a version record,
+// lifetimeDownloadCount was absent from every live response and newerVersionsCount
+// is present on the single-version record and absent from the list, so nothing here
+// depends on either.
 //
 // # Applicability of the checks to a jsr: ref
 //

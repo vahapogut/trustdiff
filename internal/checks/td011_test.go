@@ -223,3 +223,22 @@ func TestDeprecatedOrYanked(t *testing.T) {
 		})
 	}
 }
+
+// A registry that serves the package record from another host can answer the
+// version list and not the deprecation state. Reading that as "not deprecated"
+// would be a pass built on an outage, which is the one thing this tool never
+// reports.
+func TestTD011SkipsWhenTheDeprecationStateCouldNotBeRead(t *testing.T) {
+	s := subjectA(model.NPM, "lib", "1.0.0")
+	s.Package = listA(model.NPM, "lib", *s.Version)
+	s.Package.SetUnknown(model.FacetDeprecated, "the package record could not be read")
+	runA(t, "TD011", s, outcomeA{skip: "could not be read"})
+
+	// A signal that did fire is still reported, with the gap named beside it.
+	yanked := subjectA(model.NPM, "lib", "1.0.0")
+	yanked.Version.Yanked = true
+	yanked.Package = listA(model.NPM, "lib", *yanked.Version)
+	yanked.Package.SetUnknown(model.FacetDeprecated, "the package record could not be read")
+	f := runA(t, "TD011", yanked, outcomeA{findings: 1}).Findings[0]
+	wantTextA(t, "explanation", f.Explanation, "whether the package as a whole is deprecated could not be read")
+}

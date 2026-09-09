@@ -89,6 +89,13 @@ func (c deprecatedOrYanked) Run(_ context.Context, s *Subject) Result {
 			parts = append(parts, fmt.Sprintf("the registry deprecated version %s: %q", s.Ref.Version, msg))
 		}
 	}
+	// A registry that serves the package record from another host can answer the
+	// version list and not the deprecation state. That is not "not deprecated",
+	// and a check that read it as such would be answering from an outage.
+	archivedUnknown := ""
+	if s.Package != nil {
+		archivedUnknown = s.Package.Unknown[model.FacetDeprecated]
+	}
 	packageDeprecated := false
 	if haveRegistry && s.Package != nil {
 		if msg := strings.TrimSpace(s.Package.Deprecated); msg != "" {
@@ -112,6 +119,12 @@ func (c deprecatedOrYanked) Run(_ context.Context, s *Subject) Result {
 		}
 	}
 	if len(signals) == 0 {
+		if archivedUnknown != "" && !haveDepsDev {
+			// Nothing fired, and the one source that could have said the package is
+			// deprecated was not reachable. Reporting a pass here is the one thing
+			// this tool never does.
+			return Skip(c.ID(), archivedUnknown)
+		}
 		return Result{}
 	}
 	evidence["signals"] = signals
@@ -125,6 +138,9 @@ func (c deprecatedOrYanked) Run(_ context.Context, s *Subject) Result {
 	case !haveDepsDev && depsDevDown:
 		evidence["unavailable"] = SourceDepsDev
 		parts = append(parts, "deps.dev could not be consulted ("+depsDevReason+")")
+	case archivedUnknown != "":
+		evidence["unavailable"] = SourceRegistry
+		parts = append(parts, "whether the package as a whole is deprecated could not be read ("+archivedUnknown+")")
 	}
 
 	var title string
