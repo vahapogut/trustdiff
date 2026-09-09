@@ -12,9 +12,13 @@
 //
 // "packages" is one entry per resolved package, keyed by where it is installed:
 // "chalk" at the top level, "boxen/chalk" for a copy nested under boxen, and a
-// scoped name keeps its own slash, "@lezer/cpp". The value is an array whose
-// shape depends on what the package resolved to, and the resolution in its first
-// element is what says which shape it is:
+// scoped name keeps its own slash, "@lezer/cpp". An aliased dependency is keyed by
+// the alias and nothing else, "widgets-v1": ["@acme/widgets@1.4.2", ...], because
+// bun writes the key from the name the manifest asked under and the resolution from
+// the package's own name; the "npm:" an alias carries in package.json is never part
+// of a resolution here. The value is an array whose shape depends on what the
+// package resolved to, and the resolution in its first element is what says which
+// shape it is:
 //
 //	npm         [ "name@1.2.3", "<registry url or empty>", { info }, "<integrity>" ]
 //	tarball     [ "name@https://host/pkg.tgz", { info }, "<integrity>" ]  integrity optional
@@ -57,6 +61,13 @@
 //     installs in isolated mode, is a project and not a package it installs, so it
 //     is not recorded. That is the same reading the npm parser gives the "" entry
 //     of package-lock.json.
+//   - The protocols in the table are the whole set, and Bun's own reader refuses a
+//     resolution outside it rather than installing something, so an entry whose
+//     locator carries any other protocol is dropped with a reason naming it.
+//
+// A key written twice is a file Bun did not write, and the two objects are merged
+// rather than one overwriting the other, which is what the deno and yarn parsers do
+// with their own duplicates. Parse says why at the key it merges.
 //
 // Direct is true for a top level entry, one whose install path is the package name
 // alone, that a workspace declares. Dev and Optional come from which map of which
@@ -76,9 +87,13 @@
 // its own document, codec and edit types, and a lockfile reader that imported it
 // would take all of that on to borrow one function.
 //
-// Format verified against Bun's own text lockfile writer and reader,
-// src/install/lockfile/bun.lock.rs, and the recorded fixtures on 2026-09-09. Both
-// fixtures declare lockfileVersion 1.
+// Format verified against Bun's own text lockfile writer and reader, which live in
+// one file, src/install/lockfile/bun.lock.rs, and against the recorded fixtures, on
+// 2026-09-09. That file was read again on 2026-09-10 at
+// https://github.com/oven-sh/bun/blob/main/src/install/lockfile/bun.lock.rs: its
+// Stringifier writes the table above and parse_into_binary_lockfile reads it back.
+// It is Rust and not the Zig a reader may expect, which is why the path is worth
+// naming exactly. Both fixtures declare lockfileVersion 1.
 package bun
 
 import (
@@ -184,13 +199,28 @@ func (parser) Parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 			}
 			hasVersion = true
 		case "workspaces":
-			if workspaces, err = decodeWorkspaces(dec, lines, lf); err != nil {
+			// A repeated key is merged rather than allowed to overwrite what the
+			// first one held. Bun writes each of these keys once, so a file with two
+			// of them was not written by bun, and JSON leaves which one wins to the
+			// reader: bun's own parser takes the first (it looks the key up in the
+			// parsed object), a JavaScript reader takes the last. Neither is a safe
+			// reading for a tool that has to say what a file could install, and an
+			// object's worth of entries that vanished with no entry and no reason
+			// would be the one failure nobody sees. The union is a superset of
+			// whatever the installer picks, so no pinned version escapes the checks.
+			// The deno and yarn parsers keep duplicates for the same reason.
+			more, err := decodeWorkspaces(dec, lines, lf)
+			if err != nil {
 				return nil, err
 			}
+			workspaces = append(workspaces, more...)
 		case "packages":
-			if locks, err = decodePackages(dec, lines, lf); err != nil {
+			// Merged like the workspaces above, and for the same reason.
+			more, err := decodePackages(dec, lines, lf)
+			if err != nil {
 				return nil, err
 			}
+			locks = append(locks, more...)
 		default:
 			// "configVersion", "overrides", "patchedDependencies",
 			// "trustedDependencies", "catalog" and "catalogs", none of which
@@ -312,6 +342,20 @@ func shape(lf *lockfile.Lockfile, key string, line int, items []json.RawMessage)
 	l.name, l.locator = splitLocator(resolution)
 	if l.name == "" || l.locator == "" {
 		lf.Drop("%q on line %d resolves to %q, which names no package version", key, line, resolution)
+		return locked{}, false
+	}
+	if proto := foreignProtocol(l.locator); proto != "" {
+		// The shape table is the whole set bun writes, and bun's own reader refuses
+		// a resolution outside it rather than installing something, so a locator
+		// with any other protocol names no version this parser could stand behind.
+		// It is dropped rather than recorded, because recording it would put the
+		// protocol string where a version belongs and file the entry under a name
+		// that is not the installed package.
+		reason := fmt.Sprintf("%q on line %d resolves to %q, and %q is not a protocol bun writes in a resolution, so nothing here says which package version is installed", key, line, resolution, proto)
+		if proto == "npm:" {
+			reason += `; bun keeps an alias in the key alone, "widgets-v1": ["@acme/widgets@1.4.2", ...], so a resolution carrying "npm:" is a yarn descriptor rather than a bun one`
+		}
+		lf.Drop("%s", reason)
 		return locked{}, false
 	}
 
@@ -452,7 +496,8 @@ func countRegistryHosts(locks []locked) *lockfile.RegistryHosts {
 // splitLocator reads a resolution into the package name and what follows it. Bun's
 // own rule is used: an optional "@scope/" prefix, then a name that holds neither
 // "/" nor "@", then "@" and everything after it. Splitting at the last "@" instead
-// would read the alias "widgets@npm:@acme/widgets@1.4.2" as a different package.
+// would cut a locator that carries one of its own, "dep@git+ssh://git@host/o/r.git#<sha>",
+// into a name nobody published and a path with no scheme.
 func splitLocator(resolution string) (name, locator string) {
 	from := 0
 	if strings.HasPrefix(resolution, "@") {
@@ -475,6 +520,18 @@ func splitLocator(resolution string) (name, locator string) {
 // what says that the array carries a registry element before its info object.
 func bareVersion(locator string) bool {
 	return !strings.Contains(locator, ":")
+}
+
+// foreignProtocol returns the protocol of a locator bun writes no resolution for,
+// with its colon, and "" for every shape the table above lists. sourceOf answers it
+// already: a bare version is the registry and every protocol bun writes has a source
+// of its own, so what is left over is what bun would not have written.
+func foreignProtocol(locator string) string {
+	if sourceOf(locator, "", nil) != lockfile.SourceUnknown {
+		return ""
+	}
+	proto, _, _ := strings.Cut(locator, ":")
+	return proto + ":"
 }
 
 // carriesIntegrity reports whether the element after the info object is a hash.

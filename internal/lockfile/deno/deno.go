@@ -32,6 +32,14 @@
 //     and the file gives it no version, so it contributes requirements and no entry
 //     of its own.
 //
+// One badly typed member of "specifiers" or of "workspace" is dropped with a reason
+// and the rest of the file is still read. Neither map pins a version: both only
+// decide which entry a requirement selected and therefore which entry is direct, so
+// a value of the wrong type in either costs one entry its Direct flag. Failing the
+// file over that would throw away every version the file pins in order to report a
+// flag, which is the opposite of what a partial parse is for. A section that is not
+// the object the format says it is still fails, the same way "jsr" and "npm" do.
+//
 // A "remote" entry is dropped rather than turned into an entry. It maps the URL of
 // one module file to the hash of that file's bytes, so a single URL dependency
 // contributes one entry per file it and its imports reach, hundreds for a middling
@@ -100,9 +108,11 @@ func (Parser) Name() string { return Format }
 // name before asking, so the comparison is against the lowercase spelling.
 func (Parser) Detect(base string) bool { return base == Format }
 
-// Parse reads a deno.lock. It fails when the file is not JSON and when the format
-// version is one whose maps this parser cannot find; an entry it cannot make sense
-// of is dropped with a reason and the rest is kept.
+// Parse reads a deno.lock. It fails when the file is not JSON, when a section is
+// not the object the format says it is, and when the format version is one whose
+// maps this parser cannot find; anything smaller it cannot make sense of, an entry
+// or one member of "specifiers" or "workspace", is dropped with a reason and the
+// rest is kept.
 func (Parser) Parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 	lf, err := parse(path, r)
 	if err != nil {
@@ -144,8 +154,8 @@ func parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 				return nil, fmt.Errorf("%q: %w", key, err)
 			}
 		case "specifiers":
-			if err := dec.Decode(&specifiers); err != nil {
-				return nil, fmt.Errorf("%q: %w", key, err)
+			if specifiers, err = decodeSpecifiers(dec, lf); err != nil {
+				return nil, err
 			}
 		case "jsr", "npm":
 			section, err := decodeSection(dec, lines, lf, key)
@@ -158,9 +168,11 @@ func parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 				return nil, err
 			}
 		case "workspace":
-			if err := dec.Decode(&ws); err != nil {
+			var written map[string]json.RawMessage
+			if err := dec.Decode(&written); err != nil {
 				return nil, fmt.Errorf("%q: %w", key, err)
 			}
+			ws = readWorkspace(written, lf)
 		default:
 			// "redirects", "patches" and anything a later Deno adds: none of it
 			// pins a package version, so it is walked past without being built.
@@ -205,26 +217,147 @@ type locked struct {
 }
 
 // workspace is the "workspace" block: every list of requirements the project makes
-// of the resolver, whether it wrote them in a deno.json or in a package.json.
+// of the resolver, whether it wrote them in a deno.json or in a package.json. It is
+// built by readWorkspace rather than decoded, which is why it carries no field tags.
 type workspace struct {
 	memberConfig
-	Members map[string]memberConfig `json:"members"`
+	// Members is one entry per workspace member, by the path the file keys it on. A
+	// member the file wrote as something other than an object is not in here; it was
+	// dropped with a reason instead.
+	Members map[string]memberConfig
 }
 
 // memberConfig is what one project in the workspace asks for. The root of the
 // workspace has the same shape as a member.
 type memberConfig struct {
-	Dependencies []string `json:"dependencies"`
-	// PackageJSON holds the requirements that came from a package.json rather than
-	// from the deno.json, which a project mixing the two writes here.
-	PackageJSON struct {
-		Dependencies []string `json:"dependencies"`
-	} `json:"packageJson"`
+	// Dependencies are the requirements written in the deno.json.
+	Dependencies []string
+	// PackageJSONDependencies are the requirements that came from a package.json
+	// rather than from the deno.json, which a project mixing the two writes under
+	// "packageJson".
+	PackageJSONDependencies []string
 }
 
 // requirements returns every requirement this project states, in one list.
 func (m *memberConfig) requirements() []string {
-	return append(append([]string{}, m.Dependencies...), m.PackageJSON.Dependencies...)
+	return append(append([]string{}, m.Dependencies...), m.PackageJSONDependencies...)
+}
+
+// decodeSpecifiers reads the "specifiers" map, in file order so that the reasons
+// stay in file order too. A specifier whose value is not a version string is
+// dropped rather than failing the file: it resolves one requirement of the
+// workspace, so losing it costs one entry its Direct flag and leaves every version
+// the file pins readable.
+func decodeSpecifiers(dec *json.Decoder, lf *lockfile.Lockfile) (map[string]string, error) {
+	if err := openObject(dec, `"specifiers"`); err != nil {
+		return nil, err
+	}
+	specifiers := make(map[string]string)
+	for dec.More() {
+		req, err := objectKey(dec)
+		if err != nil {
+			return nil, err
+		}
+		var version string
+		if err := dec.Decode(&version); err != nil {
+			var typeErr *json.UnmarshalTypeError
+			if errors.As(err, &typeErr) {
+				lf.Drop("specifiers: %s is %s, not a version string, so no entry is marked direct for it", req, typeErr.Value)
+				continue
+			}
+			return nil, fmt.Errorf("%q: %w", req, err)
+		}
+		specifiers[req] = version
+	}
+	return specifiers, closeObject(dec, `"specifiers"`)
+}
+
+// readWorkspace turns the "workspace" block as written into the requirement lists
+// this parser reads. Every list and every member is checked on its own, so that one
+// badly typed value costs the requirements it holds and nothing around it: a
+// workspace is a pile of independent projects, and one of them written wrongly says
+// nothing about the others.
+func readWorkspace(written map[string]json.RawMessage, lf *lockfile.Lockfile) workspace {
+	ws := workspace{memberConfig: readMember(written, lf, "workspace")}
+	members, stated := written["members"]
+	if !stated {
+		return ws
+	}
+	var byPath map[string]json.RawMessage
+	if err := json.Unmarshal(members, &byPath); err != nil {
+		lf.Drop(`workspace "members": the value is %s, not a map of workspace members, so nothing they name is marked direct`, jsonKind(err))
+		return ws
+	}
+	// The members arrive in a map, so they are walked in path order rather than in
+	// map order: a dropped reason must land in the same place every run.
+	paths := make([]string, 0, len(byPath))
+	for path := range byPath {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	ws.Members = make(map[string]memberConfig, len(byPath))
+	for _, path := range paths {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(byPath[path], &fields); err != nil {
+			lf.Drop("workspace member %q: the value is %s, not an object, so nothing it names is marked direct", path, jsonKind(err))
+			continue
+		}
+		ws.Members[path] = readMember(fields, lf, fmt.Sprintf("workspace member %q", path))
+	}
+	return ws
+}
+
+// readMember reads what one project of the workspace asks for. where names that
+// project in a drop reason, so a reader learns which of them was written wrongly.
+func readMember(fields map[string]json.RawMessage, lf *lockfile.Lockfile, where string) memberConfig {
+	m := memberConfig{Dependencies: readRequirements(fields["dependencies"], lf, where+` "dependencies"`)}
+	packageJSON, stated := fields["packageJson"]
+	if !stated {
+		return m
+	}
+	var nested map[string]json.RawMessage
+	if err := json.Unmarshal(packageJSON, &nested); err != nil {
+		lf.Drop(`%s "packageJson": the value is %s, not an object, so nothing it names is marked direct`, where, jsonKind(err))
+		return m
+	}
+	m.PackageJSONDependencies = readRequirements(nested["dependencies"], lf, where+` "packageJson" "dependencies"`)
+	return m
+}
+
+// readRequirements reads one list of requirement strings. A value that is not a
+// list, and one entry of a list that is not a string, are dropped one at a time,
+// because every requirement resolves on its own and the ones beside it are still
+// worth resolving. A list the file does not state at all is not a failure.
+func readRequirements(written json.RawMessage, lf *lockfile.Lockfile, where string) []string {
+	if len(written) == 0 {
+		return nil
+	}
+	var elements []json.RawMessage
+	if err := json.Unmarshal(written, &elements); err != nil {
+		lf.Drop("%s: the value is %s, not a list of requirements, so nothing it names is marked direct", where, jsonKind(err))
+		return nil
+	}
+	reqs := make([]string, 0, len(elements))
+	for _, element := range elements {
+		var req string
+		if err := json.Unmarshal(element, &req); err != nil {
+			lf.Drop("%s: an entry is %s, not a requirement string, so no entry is marked direct for it", where, jsonKind(err))
+			continue
+		}
+		reqs = append(reqs, req)
+	}
+	return reqs
+}
+
+// jsonKind names the kind of value a failed unmarshal found, for a drop reason.
+// Every failure these readers meet is a value of the wrong kind, because the bytes
+// parsed as JSON once already; anything else is reported as it came.
+func jsonKind(err error) string {
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) {
+		return typeErr.Value
+	}
+	return err.Error()
 }
 
 // decodeSection reads the "jsr" or "npm" map, in file order, recording the entries

@@ -43,6 +43,10 @@
 //     tree, is kept like any other install: it is code the project unpacked, and
 //     the flag changes none of the fields the checks read.
 //
+// A "packages" key written twice is a file npm did not write, and the two objects
+// are merged rather than one overwriting the other, which is what the deno and yarn
+// parsers do with their own duplicates. Parse says why at the key it merges.
+//
 // Line numbers come from encoding/json: the decoder reports the byte offset it
 // has reached, and lockfile.LineIndex turns that into the line the package key
 // sits on, which is where a SARIF finding points.
@@ -143,8 +147,10 @@ func (parser) Parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 		return nil, err
 	}
 	var (
-		version     int
-		root        jsonRoot
+		version int
+		// roots is one project entry per "packages" object, which is one entry in
+		// every file npm writes.
+		roots       []jsonRoot
 		locks       []locked
 		hasPackages bool
 	)
@@ -160,9 +166,22 @@ func (parser) Parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 			}
 		case "packages":
 			hasPackages = true
-			if locks, root, err = decodePackages(dec, lines, lf); err != nil {
+			// A repeated key is merged rather than allowed to overwrite what the
+			// first one held. npm writes "packages" once, so a file with two of them
+			// was not written by npm, and JSON leaves which one wins to the reader:
+			// JavaScript's own parser, which npm uses, keeps the last, a Go decoder
+			// that read into a map would too, and neither is a safe reading for a
+			// tool that has to say what a file could install. An object's worth of
+			// installs that vanished with no entry and no reason would be the one
+			// failure nobody sees; the union is a superset of whatever npm picks, so
+			// no pinned version escapes the checks. The deno and yarn parsers keep
+			// duplicates for the same reason.
+			more, root, err := decodePackages(dec, lines, lf)
+			if err != nil {
 				return nil, err
 			}
+			locks = append(locks, more...)
+			roots = append(roots, root)
 		default:
 			// Everything else, the lockfileVersion 1 "dependencies" tree included.
 			if err := skipValue(dec); err != nil {
@@ -180,7 +199,7 @@ func (parser) Parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 		return nil, noPackagesError(version)
 	}
 
-	direct := directNames(root, locks)
+	direct := directNames(roots, locks)
 	hosts := countRegistryHosts(locks)
 	for i := range locks {
 		addEntry(lf, &locks[i], direct, hosts)
@@ -312,11 +331,12 @@ func topLevel(key string) bool {
 	return strings.HasPrefix(key, nodeModules) && strings.Count(key, nodeModules) == 1
 }
 
-// directNames collects the names the project asks for: the root entry's own
-// dependency maps and those of every workspace member, keyed the way the manifests
-// spell them, which for an aliased dependency is the alias.
-func directNames(root jsonRoot, locks []locked) map[string]bool {
-	names := make(map[string]bool, len(root.Dependencies)+len(root.DevDependencies)+len(root.OptionalDependencies))
+// directNames collects the names the project asks for: the project entry of every
+// "packages" object, of which a file npm wrote has one, and the dependency maps of
+// every workspace member, keyed the way the manifests spell them, which for an
+// aliased dependency is the alias.
+func directNames(roots []jsonRoot, locks []locked) map[string]bool {
+	names := make(map[string]bool)
 	add := func(r jsonRoot) {
 		for _, m := range []map[string]json.RawMessage{r.Dependencies, r.DevDependencies, r.OptionalDependencies} {
 			for name := range m {
@@ -324,7 +344,9 @@ func directNames(root jsonRoot, locks []locked) map[string]bool {
 			}
 		}
 	}
-	add(root)
+	for _, root := range roots {
+		add(root)
+	}
 	for i := range locks {
 		add(locks[i].asks)
 	}

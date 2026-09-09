@@ -34,19 +34,24 @@
 //     Anything else, "exec:" and the protocols a Yarn plugin adds among them, is
 //     unknown rather than guessed at.
 //   - A "patch:" entry is the package it patches with a patch file applied, so its
-//     source is read from the locator inside the patch and it is marked bundled:
-//     nothing of its own is fetched for it, and where it carries no checksum that
-//     is not a hash the file is missing but a hash it never had. It stays in the
-//     entries because a builtin patch can be the only entry a package has, which is
-//     what Yarn writes for fsevents.
+//     source is read from the locator inside the patch. A patch of a registry
+//     package is marked bundled: it is built out of a tarball and a patch file of
+//     the repository, so nothing of its own is fetched, and where it carries no
+//     checksum that is not a hash the file is missing but a hash it never had. A
+//     patch of anything else fetches the remote or the directory the locator names
+//     and is not bundled, so that source is still reported. A patch entry stays in
+//     the entries either way, because a builtin patch can be the only entry a
+//     package has, which is what Yarn writes for fsevents.
 //
 // Direct is true for a package a workspace asks for. Yarn does not record the root
 // project's dependencies anywhere else: the root is itself a workspace, written
 // with the resolution "<name>@workspace:.", and its entry carries the dependency
 // map. So the descriptors every workspace entry declares are collected first and an
-// entry is direct when one of the descriptors on its key is among them. The root's
-// own entry is the project rather than a package and is not recorded; a member's
-// entry is, with SourcePath, the way the other parsers here keep a workspace member.
+// entry is direct when one of the descriptors on its key is among them, a key
+// descriptor Yarn wrapped in a patch counting as the descriptor it wraps. The
+// root's own entry is the project rather than a package and is not recorded; a
+// member's entry is, with SourcePath, the way the other parsers here keep a
+// workspace member.
 //
 // Two things the format does not hold, which the entries therefore do not carry:
 //
@@ -247,26 +252,45 @@ func add(lf *lockfile.Lockfile, l *locked, direct map[string]*asked) {
 		Source:    source,
 		Resolved:  resolvedOf(l.rang),
 		Integrity: l.checksum,
-		// A patched package is built from the entry it patches rather than fetched,
-		// so the artifact and the hash that guards it belong to that entry, which is
-		// what Bundled says about an entry npm unpacks out of its parent's tarball.
-		Bundled: strings.HasPrefix(l.rang, "patch:"),
-		Line:    l.line,
+		Bundled:   bundled(l.rang),
+		Line:      l.line,
 	}
+	// Every descriptor the key lists is asked about, and not only the first one a
+	// workspace happens to name: one key carries the descriptors of every workspace
+	// that resolved to this version, and which of them Yarn sorted first says
+	// nothing about the package. A package a workspace requires at runtime is not
+	// optional however another workspace lists it, so what decides Optional is
+	// whether every declaration marks it so, and the same reading decides Dev for
+	// the day Yarn writes a devDependencies map of its own.
+	var all asked
 	for _, d := range l.descriptors {
-		ref := lookup(direct, d)
-		if ref == nil {
-			continue
+		if ref := lookup(direct, d); ref != nil {
+			all.sections += ref.sections
+			all.dev += ref.dev
+			all.optional += ref.optional
 		}
+	}
+	if all.sections > 0 {
 		entry.Direct = true
-		// A package a workspace requires at runtime is not optional however another
-		// workspace lists it, and the same reading decides Dev for the day Yarn
-		// writes a devDependencies map of its own.
-		entry.Dev = entry.Dev || ref.sections == ref.dev
-		entry.Optional = entry.Optional || ref.sections == ref.optional
-		break
+		entry.Dev = all.sections == all.dev
+		entry.Optional = all.sections == all.optional
 	}
 	lf.Add(entry)
+}
+
+// bundled reports whether nothing of the entry's own is fetched for it, which of
+// everything a yarn.lock holds is true of a patch of a registry package alone.
+// Such an entry is built out of a tarball the registry serves and a patch file
+// committed to the repository, so it has no artifact and no remote to report, and
+// the builtin patch Yarn writes for fsevents carries no checksum because it never
+// had one rather than because the file lost it.
+//
+// A patch of a git remote, of a URL or of a directory fetches what it patches and
+// records the checksum of what it fetched. Calling those bundled would hide the
+// source and the hash from the checks that read them, because a bundled entry is
+// one they say nothing about.
+func bundled(rang string) bool {
+	return strings.HasPrefix(rang, "patch:") && sourceOf(rang, 0) == lockfile.SourceRegistry
 }
 
 // asked is how the workspaces name one descriptor: how many maps name it at all,
@@ -307,13 +331,30 @@ func requested(locks []locked) map[string]*asked {
 // lookup finds what the workspaces said about a descriptor, under either spelling
 // of it. A version 6 file mixes the two within one key, "resolve@^1.10.1,
 // resolve@npm:^1.10.1", so neither side can be normalized alone.
+//
+// A descriptor Yarn patched is unwrapped to the descriptor inside it, as far down
+// as sourceOf follows a patch. What a workspace writes is the descriptor it asked
+// for, "typescript@npm:5.2.2", and where a builtin patch applies Yarn keys the
+// entry by that descriptor wrapped in a patch instead. The two meet only once the
+// wrapping is undone, and a patched direct dependency would otherwise be reported
+// as one the project does not name.
 func lookup(direct map[string]*asked, descriptor string) *asked {
-	for _, spelling := range spellings(descriptor) {
-		if ref := direct[spelling]; ref != nil {
-			return ref
+	for depth := 0; ; depth++ {
+		for _, spelling := range spellings(descriptor) {
+			if ref := direct[spelling]; ref != nil {
+				return ref
+			}
 		}
+		name, rang := splitDescriptor(descriptor)
+		rest, ok := strings.CutPrefix(rang, "patch:")
+		if !ok || name == "" || depth >= maxPatchDepth {
+			return nil
+		}
+		// The locator inside a patch carries the ident of the package the patch is
+		// of, which is the name the descriptor already spells, so the range read out
+		// of it is all that changes.
+		descriptor = name + "@" + patched(rest)
 	}
-	return nil
 }
 
 // spellings returns the ways the file may write one descriptor: as it stands, and

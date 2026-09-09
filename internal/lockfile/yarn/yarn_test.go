@@ -112,8 +112,12 @@ func TestParseEveryShapeOfEntry(t *testing.T) {
 		// the optionalDependencies it folded into the dependency map.
 		{Ref: ref("native-only", "2.1.0"), Source: lockfile.SourceRegistry, Integrity: nativeOnlySum, Direct: true, Optional: true, Line: 103},
 		// A patch of a git dependency: the source is read out of the locator inside
-		// the patch, and the entry is bundled because nothing of its own is fetched.
-		{Ref: ref("patched-git", "1.1.0"), Source: lockfile.SourceGit, Resolved: patchOfGit, Integrity: patchedGitSum, Direct: true, Bundled: true, Line: 111},
+		// the patch, and the entry is not bundled, because the repository the patch
+		// names is fetched and carries a checksum of its own. Calling it bundled
+		// would hide the remote from the check that reports an exotic source.
+		{Ref: ref("patched-git", "1.1.0"), Source: lockfile.SourceGit, Resolved: patchOfGit, Integrity: patchedGitSum, Direct: true, Line: 111},
+		// A patch of a registry package, which is bundled: what the patch is built
+		// from is the registry tarball this same entry pins.
 		{Ref: ref("patched-tool", "4.0.1"), Source: lockfile.SourceRegistry, Resolved: patchOfRegistry, Integrity: patchedToolSum, Direct: true, Bundled: true, Line: 118},
 		// A registry entry that carries no checksum, which is what TD014 reports,
 		// and which the workspace member asks for rather than the root.
@@ -159,13 +163,15 @@ func TestRealLockfiles(t *testing.T) {
 		last     int
 	}{
 		{
-			file:     "slate-v8.yarn.lock",
-			version:  "8",
-			entries:  339,
-			direct:   19,
+			file:    "slate-v8.yarn.lock",
+			version: "8",
+			entries: 339,
+			// The root asks for typescript, whose entry is keyed by the builtin patch
+			// of it, so the twentieth is only direct once a patch key is unwrapped.
+			direct:   20,
 			dev:      0, // a yarn.lock states nothing about which dependency is a development one
 			optional: 0,
-			bundled:  5, // the builtin patches of fsevents, resolve and typescript
+			bundled:  5, // the builtin patches of fsevents, resolve and typescript, each of a registry package
 			sources: map[lockfile.Source]int{
 				lockfile.SourceRegistry: 334,
 				lockfile.SourcePath:     5, // the five workspace members, the root aside
@@ -177,7 +183,7 @@ func TestRealLockfiles(t *testing.T) {
 			file:     "babel-v6.yarn.lock",
 			version:  "6",
 			entries:  279,
-			direct:   33,
+			direct:   34, // the builtin patch of typescript among them, as in Slate's file
 			dev:      0,
 			optional: 2, // the two the root's dependenciesMeta marks so
 			bundled:  4,
@@ -264,6 +270,18 @@ func TestEntriesOfTheRealLockfiles(t *testing.T) {
 					Bundled:  true,
 					Line:     1679,
 				},
+				// The root declares typescript at "npm:5.2.2" and Yarn keyed its
+				// entry by the builtin patch of that descriptor, so the entry is
+				// direct only once the patch is unwrapped to what it patches.
+				{
+					Ref:       ref("typescript", "5.2.2"),
+					Source:    lockfile.SourceRegistry,
+					Resolved:  "patch:typescript@npm%3A5.2.2#optional!builtin<compat/typescript>::version=5.2.2&hash=f3b441",
+					Integrity: "f79cc2ba802c94c2b78dbb00d767a10adb67368ae764709737dc277273ec148aa4558033a03ce901406b35fddf4eac46dabc94a1e1d12d2587e2b9cfe5707b4a",
+					Direct:    true,
+					Bundled:   true,
+					Line:      3429,
+				},
 				// An alias: the key is "react-is-18" and the ref carries react-is,
 				// which is the package that is really installed.
 				{
@@ -312,6 +330,18 @@ func TestEntriesOfTheRealLockfiles(t *testing.T) {
 					Resolved: "patch:fsevents@npm%3A1.2.13#~builtin<compat/fsevents>::version=1.2.13&hash=18f3a7",
 					Bundled:  true,
 					Line:     1539,
+				},
+				// The same builtin patch of typescript in the spelling a version 6
+				// file writes, where the descriptor inside the patch carries no
+				// "npm:" protocol either.
+				{
+					Ref:       ref("typescript", "4.9.3"),
+					Source:    lockfile.SourceRegistry,
+					Resolved:  "patch:typescript@npm%3A4.9.3#~builtin<compat/typescript>::version=4.9.3&hash=701156",
+					Integrity: "ef65c22622d864497d0a0c5db693523329b3284c15fe632e93ad9aa059e8dc38ef3bd767d6f26b1e5ecf9446f49bd0f6c4e5714a2eeaf352805dc002479843d1",
+					Direct:    true,
+					Bundled:   true,
+					Line:      2768,
 				},
 			},
 		},
@@ -364,6 +394,15 @@ func TestDirectDependenciesOfTheRealLockfiles(t *testing.T) {
 	// Yarn keeps no record of the root's dependencies other than the root's own
 	// workspace entry, so this list is what that entry and the members' entries
 	// together ask for, out of the entries the fixture still holds.
+	//
+	// It is read out of the fixture and not out of a parse, which is how the entry
+	// keyed by a patch was missing from it before: take the six blocks whose
+	// resolution range starts with "workspace:" (lines 3013, 3038, 3052, 3064, 3150
+	// and 3184), collect every descriptor their dependencies and devDependencies
+	// name, and for each one find the entry whose key lists that descriptor, under
+	// either spelling of it and through any patch wrapping it. The entry's
+	// resolution names the package and the version below, and the order is the
+	// order the fixture lists those entries in.
 	want := []string{
 		"@babel/plugin-external-helpers@7.22.5",
 		"@babel/preset-env@7.23.2",
@@ -384,6 +423,9 @@ func TestDirectDependenciesOfTheRealLockfiles(t *testing.T) {
 		"slate-react@0.0.0-use.local",
 		"slate@0.0.0-use.local",
 		"tiny-invariant@1.3.1",
+		// Declared as typescript: "npm:5.2.2" on line 3146 and keyed on line 3429 by
+		// the builtin patch of that descriptor rather than by the descriptor itself.
+		"typescript@5.2.2",
 	}
 	var got []string
 	for _, e := range parseFile(t, "slate-v8.yarn.lock").Entries {
@@ -393,6 +435,74 @@ func TestDirectDependenciesOfTheRealLockfiles(t *testing.T) {
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("direct dependencies:\n got %v\nwant %v", got, want)
+	}
+}
+
+// TestOptionalAndDevNeedEveryWorkspaceToSaySo builds what a monorepo writes when
+// one workspace marks a package optional and another simply requires it: one key
+// listing both descriptors. An install may leave out only what nothing requires,
+// so which of the two descriptors Yarn sorted first has to decide nothing.
+func TestOptionalAndDevNeedEveryWorkspaceToSaySo(t *testing.T) {
+	// The root declares fsevents at ^2.3.2 and the member at ^2.3.3, which is the
+	// pair of descriptors the shared entry is keyed by.
+	file := func(rootSection, rootMeta, memberSection string) string {
+		return "__metadata:\n  version: 8\n" +
+			"\"fsevents@npm:^2.3.2, fsevents@npm:^2.3.3\":\n" +
+			"  version: 2.3.3\n" +
+			"  resolution: \"fsevents@npm:2.3.3\"\n" +
+			"\"member@workspace:*, member@workspace:packages/member\":\n" +
+			"  version: 0.0.0-use.local\n" +
+			"  resolution: \"member@workspace:packages/member\"\n" +
+			"  " + memberSection + ":\n" +
+			"    fsevents: \"npm:^2.3.3\"\n" +
+			"\"root@workspace:.\":\n" +
+			"  version: 0.0.0-use.local\n" +
+			"  resolution: \"root@workspace:.\"\n" +
+			"  " + rootSection + ":\n" +
+			"    fsevents: \"npm:^2.3.2\"\n" +
+			"    member: \"workspace:*\"\n" +
+			rootMeta
+	}
+	const marksItOptional = "  dependenciesMeta:\n    fsevents:\n      optional: true\n"
+	tests := []struct {
+		name string
+		body string
+		want lockfile.Entry
+	}{
+		{
+			name: "the root marks it optional and the member requires it",
+			body: file("dependencies", marksItOptional, "dependencies"),
+			want: lockfile.Entry{Ref: ref("fsevents", "2.3.3"), Source: lockfile.SourceRegistry, Direct: true, Line: 3},
+		},
+		{
+			name: "every workspace that names it marks it optional",
+			body: file("dependencies", marksItOptional, "optionalDependencies"),
+			want: lockfile.Entry{Ref: ref("fsevents", "2.3.3"), Source: lockfile.SourceRegistry, Direct: true, Optional: true, Line: 3},
+		},
+		{
+			name: "the root needs it only to develop and the member at runtime",
+			body: file("devDependencies", "", "dependencies"),
+			want: lockfile.Entry{Ref: ref("fsevents", "2.3.3"), Source: lockfile.SourceRegistry, Direct: true, Line: 3},
+		},
+		{
+			name: "every workspace that names it needs it only to develop",
+			body: file("devDependencies", "", "devDependencies"),
+			want: lockfile.Entry{Ref: ref("fsevents", "2.3.3"), Source: lockfile.SourceRegistry, Direct: true, Dev: true, Line: 3},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lf, err := parser{}.Parse("yarn.lock", strings.NewReader(tt.body))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if len(lf.Entries) == 0 {
+				t.Fatalf("no entries: %v", lf.Dropped)
+			}
+			if got := lf.Entries[0]; got != tt.want {
+				t.Errorf("fsevents:\n got %+v\nwant %+v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -663,6 +773,41 @@ func TestSourceOfStopsFollowingPatches(t *testing.T) {
 	}
 	if got := sourceOf(wrap(wrap(rang)), 0); got != lockfile.SourceUnknown {
 		t.Errorf("%d patches deep = %q, want unknown", maxPatchDepth+1, got)
+	}
+}
+
+// TestBundledIsOnlyAPatchOfARegistryPackage checks the one thing Bundled says
+// about a yarn entry: that nothing of its own is fetched for it, which holds for a
+// patch of a package the registry serves and for no other patch. A patch of a
+// remote is a fetch of that remote, and an entry called bundled is one the exotic
+// source and missing checksum checks say nothing about.
+func TestBundledIsOnlyAPatchOfARegistryPackage(t *testing.T) {
+	tests := []struct {
+		rang string
+		want bool
+	}{
+		{rang: "patch:thing@npm%3A1.0.0#./p.patch", want: true},
+		// A version 6 file writes the patched descriptor without its protocol.
+		{rang: "patch:thing@1.0.0#~builtin<compat/thing>", want: true},
+		{rang: "patch:thing@patch%3Athing@npm%253A1.0.0%23./a.patch#./b.patch", want: true},
+		// A patch of a repository, of a download, of a directory and of a protocol
+		// a plugin adds: each fetches what the locator inside the patch names, and
+		// each has to keep the source that says so.
+		{rang: "patch:thing@https%3A//github.com/o/r.git%23commit%3Dabc#./p.patch"},
+		{rang: "patch:thing@https%3A//files.example.test/t.tgz#./p.patch"},
+		{rang: "patch:thing@workspace%3Apackages/ui#./p.patch"},
+		{rang: "patch:thing@exec%3A./generate.js#./p.patch"},
+		// Anything that is not a patch is fetched as itself.
+		{rang: "npm:1.2.3"},
+		{rang: "https://files.example.test/t.tgz"},
+		{rang: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.rang, func(t *testing.T) {
+			if got := bundled(tt.rang); got != tt.want {
+				t.Errorf("bundled(%q) = %v, want %v", tt.rang, got, tt.want)
+			}
+		})
 	}
 }
 

@@ -546,6 +546,44 @@ func TestParseDropsOneUnreadableEntryRatherThanTheFile(t *testing.T) {
 	}
 }
 
+// TestParseMergesARepeatedPackagesObject reads a file that states "packages"
+// twice. npm writes the key once, so such a file was not written by npm, but JSON
+// allows it and readers disagree about which of the two wins, so every entry either
+// object names has to survive the parse rather than a whole object's worth of
+// installs disappearing without an entry and without a reason. The project entry is
+// merged with it, because either object may carry one.
+func TestParseMergesARepeatedPackagesObject(t *testing.T) {
+	lf, err := parseString(t, `{
+		"lockfileVersion": 3,
+		"packages": {
+			"": {"dependencies": {"a": "^1.0.0"}},
+			"node_modules/a": {"version": "1.0.0"}
+		},
+		"packages": {
+			"": {"devDependencies": {"b": "^2.0.0"}},
+			"node_modules/b": {"version": "2.0.0", "dev": true}
+		}
+	}`)
+	if err != nil {
+		t.Fatalf("Parse = %v", err)
+	}
+	if len(lf.Entries) != 2 {
+		t.Fatalf("entries = %+v, want both a and b", lf.Entries)
+	}
+	if len(lf.Dropped) != 0 {
+		t.Errorf("dropped %v, want nothing dropped: every entry of both objects is read", lf.Dropped)
+	}
+	a, b := only(t, lf, "npm:a@1.0.0"), only(t, lf, "npm:b@2.0.0")
+	if !a.Direct || a.Dev {
+		t.Errorf("a = %+v, want a direct dependency that is not a development one", a)
+	}
+	// b is asked for by the project entry of the second object, which is what says
+	// the two project entries were merged rather than one of them read.
+	if !b.Direct || !b.Dev {
+		t.Errorf("b = %+v, want a direct development dependency", b)
+	}
+}
+
 func TestParseFindsTheProjectEntryWhereverItSits(t *testing.T) {
 	// npm writes the project first, but nothing in JSON says it has to be there.
 	lf, err := parseString(t, `{

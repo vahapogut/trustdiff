@@ -512,6 +512,94 @@ func TestParseDropsUnreadableEntriesAndKeepsTheRest(t *testing.T) {
 	}
 }
 
+// TestParseMergesARepeatedTopLevelObject reads a file that states "packages" or
+// "workspaces" twice. Bun writes each key once, so such a file was not written by
+// bun, but JSON allows it and readers disagree about which of the two wins, so
+// every entry either object names has to survive the parse: a whole object's worth
+// of packages that vanished without an entry and without a reason would be a
+// lockfile this tool reported nothing about.
+func TestParseMergesARepeatedTopLevelObject(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []lockfile.Entry
+	}{
+		{
+			name: "the packages object twice",
+			body: `{"lockfileVersion": 1,
+"packages": {"a": ["a@1.0.0", "", {}, "sha512-AAAA"]},
+"packages": {"b": ["b@2.0.0", "", {}, "sha512-BBBB"]}}`,
+			want: []lockfile.Entry{
+				{Ref: ref("a", "1.0.0"), Source: lockfile.SourceRegistry, Integrity: "sha512-AAAA", Line: 2},
+				{Ref: ref("b", "2.0.0"), Source: lockfile.SourceRegistry, Integrity: "sha512-BBBB", Line: 3},
+			},
+		},
+		{
+			// The second object decides Direct for what it asks for, which is what
+			// says the workspaces were merged rather than one of them read.
+			name: "the workspaces object twice",
+			body: `{"lockfileVersion": 1,
+"workspaces": {"": {"dependencies": {"a": "^1.0.0"}}},
+"workspaces": {"packages/member": {"name": "member", "dependencies": {"b": "^2.0.0"}}},
+"packages": {"a": ["a@1.0.0", "", {}, "sha512-AAAA"], "b": ["b@2.0.0", "", {}, "sha512-BBBB"]}}`,
+			want: []lockfile.Entry{
+				{Ref: ref("a", "1.0.0"), Source: lockfile.SourceRegistry, Integrity: "sha512-AAAA", Direct: true, Line: 4},
+				{Ref: ref("b", "2.0.0"), Source: lockfile.SourceRegistry, Integrity: "sha512-BBBB", Direct: true, Line: 4},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lf, err := parser{}.Parse("bun.lock", strings.NewReader(tt.body))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			checkEntries(t, lf, tt.want)
+			if len(lf.Dropped) != 0 {
+				t.Errorf("dropped %v, want nothing dropped: every entry of both objects is read", lf.Dropped)
+			}
+		})
+	}
+}
+
+// TestParseDropsAResolutionBunDoesNotWrite pins what happens to a resolution whose
+// protocol is none of the ones the shape table lists. Bun's own reader refuses such
+// a file ("Unexpected resolution"), so nothing here says which package version is
+// installed, and an entry that named the alias as the package and the whole
+// resolution as its version would report on a package that does not exist.
+func TestParseDropsAResolutionBunDoesNotWrite(t *testing.T) {
+	lf, err := parser{}.Parse("bun.lock", strings.NewReader(`{"lockfileVersion": 1, "packages": {
+		"widgets-v1": ["widgets-v1@npm:@acme/widgets@1.4.2", "", {}, "sha512-AAAA"],
+		"from-jsr": ["from-jsr@jsr:@std/path@1.0.0", {}],
+		"widgets": ["@acme/widgets@1.4.2", "", {}, "sha512-AAAA"]
+	}}`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	// The alias bun really writes, whose key is the alias and whose resolution names
+	// the package that is installed, is read as it always was.
+	checkEntries(t, lf, []lockfile.Entry{
+		{Ref: ref("@acme/widgets", "1.4.2"), Source: lockfile.SourceRegistry, Integrity: "sha512-AAAA", Line: 4},
+	})
+	want := []string{
+		`"widgets-v1" on line 2`,
+		`"from-jsr" on line 3`,
+	}
+	if len(lf.Dropped) != len(want) {
+		t.Fatalf("dropped %v, want %d reasons", lf.Dropped, len(want))
+	}
+	for i, w := range want {
+		if !strings.Contains(lf.Dropped[i], w) {
+			t.Errorf("dropped[%d] = %q, want one containing %q", i, lf.Dropped[i], w)
+		}
+	}
+	// The reason names the protocol, which is the whole of what a reader has to
+	// look at to see why the entry could not be read.
+	if !strings.Contains(lf.Dropped[0], `"npm:"`) || !strings.Contains(lf.Dropped[1], `"jsr:"`) {
+		t.Errorf("dropped = %q, want each reason to name the protocol it could not read", lf.Dropped)
+	}
+}
+
 // failingReader stands in for a file that cannot be read to the end.
 type failingReader struct{}
 

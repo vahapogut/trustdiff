@@ -1,6 +1,7 @@
 package deno
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -374,9 +375,105 @@ func TestParseDropsEntriesItCannotRead(t *testing.T) {
 	}
 }
 
+// TestParseDropsWrongTypedMembers is the mixed file: one member of "specifiers" and
+// three of "workspace" hold a value of the wrong type, and every one of them costs
+// only itself. Parse is documented to drop what it cannot make sense of and keep the
+// rest, so a file like this must still yield its packages rather than nothing.
+func TestParseDropsWrongTypedMembers(t *testing.T) {
+	lf := parseFixture(t, "wrong-types.deno.lock")
+
+	if lf.Version != "5" {
+		t.Errorf("Version = %q, want 5", lf.Version)
+	}
+	want := []lockfile.Entry{
+		{
+			Ref:       model.MustParseRef("jsr:@acme/direct@1.2.3"),
+			Source:    lockfile.SourceRegistry,
+			Integrity: "sha256:b5c602496a6fa3ec200351d4253576677c198da714d1f4f90a86e3854de53b7a",
+			Direct:    true,
+			Line:      11,
+		},
+		{
+			// The workspace asks for it, but the specifier that would resolve the
+			// request was dropped, so nothing marks the entry direct.
+			Ref:       model.MustParseRef("jsr:@acme/wrong-type@1.1.6"),
+			Source:    lockfile.SourceRegistry,
+			Integrity: "sha256:c672d5fc4d60cc1033c67c250301666000f53bca184a1bb25d3b267fe6fda4ba",
+			Line:      14,
+		},
+		{
+			// The member that names it is written after the one that is not an
+			// object, so a member dropped must not cost the members around it.
+			Ref:       model.MustParseRef("npm:member-only@3.0.0"),
+			Source:    lockfile.SourceRegistry,
+			Integrity: "sha512-KX6mr4TzISahFxjJcT4MwKcz88PLWGsmp4lyDhy0997yccn9OL6qXgwgdz6NIGH4AOCB9Ip542E7NbjZPN9i3A==",
+			Direct:    true,
+			Line:      19,
+		},
+	}
+	if len(lf.Entries) != len(want) {
+		t.Fatalf("read %d entries, want %d: %+v", len(lf.Entries), len(want), lf.Entries)
+	}
+	for i, w := range want {
+		if got := lf.Entries[i]; got != w {
+			t.Errorf("entry %d =\n %+v\nwant\n %+v", i, got, w)
+		}
+	}
+
+	wantDropped := []string{
+		"specifiers: jsr:@acme/wrong-type@1 is array, not a version string",
+		`workspace "dependencies": an entry is number, not a requirement string`,
+		`workspace "packageJson" "dependencies": the value is string, not a list of requirements`,
+		`workspace member "packages/broken": the value is string, not an object`,
+		`jsr:@acme/wrong-type@1: the workspace asks for it but "specifiers" gives it no version`,
+	}
+	if len(lf.Dropped) != len(wantDropped) {
+		t.Fatalf("dropped %d reasons, want %d:\n%s", len(lf.Dropped), len(wantDropped), strings.Join(lf.Dropped, "\n"))
+	}
+	for i, prefix := range wantDropped {
+		if !strings.HasPrefix(lf.Dropped[i], prefix) {
+			t.Errorf("drop %d = %q, want it to start with %q", i, lf.Dropped[i], prefix)
+		}
+	}
+}
+
+// TestParseStillRefusesWhatItCannotFind pins the other half of the decision above: a
+// member of the wrong type is dropped, but a file that is not JSON and a format
+// version whose maps are somewhere else are still whole file failures.
+func TestParseStillRefusesWhatItCannotFind(t *testing.T) {
+	tests := []struct {
+		what string
+		in   string
+	}{
+		{what: "a file that is not JSON at all", in: "this is not JSON"},
+		{what: "a version below 4", in: `{"version": "3", "packages": {}}`},
+		{what: `a "specifiers" that is not an object`, in: `{"version": "5", "specifiers": []}`},
+		{what: `a "workspace" that is not an object`, in: `{"version": "5", "workspace": "root"}`},
+	}
+	for _, tt := range tests {
+		lf, err := Parser{}.Parse("deno.lock", strings.NewReader(tt.in))
+		if err == nil {
+			t.Errorf("%s: Parse accepted it and returned %+v", tt.what, lf)
+			continue
+		}
+		if !strings.Contains(err.Error(), Format) {
+			t.Errorf("%s: error = %v, want it to name the file", tt.what, err)
+		}
+	}
+}
+
 // TestParseReadsCRLF proves the line numbers on a Windows checkout: the same file
-// with CRLF endings must give the same entries on the same lines.
+// with CRLF endings must give the same entries on the same lines. The fixture is
+// only a test of anything while it really carries them, and the repository
+// normalizes every other file to LF, so that is checked first.
 func TestParseReadsCRLF(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "crlf.deno.lock"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	if !bytes.Contains(data, []byte("\r\n")) {
+		t.Fatal("the fixture has lost its carriage returns, so it tests nothing: see testdata/.gitattributes")
+	}
 	lf := parseFixture(t, "sources.deno.lock")
 	crlf := parseFixture(t, "crlf.deno.lock")
 

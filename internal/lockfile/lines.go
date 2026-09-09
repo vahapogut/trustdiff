@@ -76,21 +76,63 @@ func At(line int) string {
 // costs at most the line number of its own entry, and never moves a finding onto
 // another package's line: a header the finder cannot confirm yields 0, which
 // Entry.Line documents as "the parser could not place it".
+//
+// A name a header cannot be found for is not a hypothetical. A decoder reads TOML
+// escapes and the finder reads the text a header was written in, so a file that
+// spells its names with an escape ("name = \"pkg\\u0030\"") confirms none of them,
+// and neither does a file whose tables the decoder reordered. Those entries carry
+// no line, and finding that out has to be cheap: the name each header declares is
+// read once, when the file is indexed, and Next is then a lookup. The work of the
+// finder over a whole file is therefore one pass over it however many names it
+// fails to place, which TestTableFinderReadsTheFileOnce holds it to.
 type TableFinder struct {
-	lines   []string
-	code    []bool
+	// headers[i] is the 1-based line of the ith header, in file order.
 	headers []int
-	next    int
+	// byName holds, for each name some table declares, the headers left to hand out
+	// for it. Next takes from the front, so a name spelled by several tables is
+	// placed on a different header each time it is asked for.
+	byName map[string][]int
+	next   int
+	// examined counts the lines the finder has looked at, so that the promise
+	// above is a thing a test can fail on rather than a thing the comment claims.
+	examined int
 }
 
 // NewTableFinder indexes the header lines of data: the lines whose trimmed text is
-// header, "[[package]]" for both formats read here.
+// header, "[[package]]" for both formats read here. The name the table under each
+// header declares is read in the same pass, because a name looked up later cannot
+// be looked for in the file again without reading the file again.
 func NewTableFinder(data []byte, header string) *TableFinder {
 	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
-	f := &TableFinder{lines: lines, code: codeLines(lines)}
+	f := &TableFinder{byName: make(map[string][]int)}
+	var basic, literal bool
+	// naming is true while the lines being read are the keys of the table under the
+	// last header, before its first sub-table, which is where its name is written.
+	naming := false
 	for i, line := range lines {
-		if f.code[i] && strings.TrimSpace(line) == header {
+		f.examined++
+		code := !basic && !literal
+		scanLine(line, &basic, &literal)
+		if !code {
+			// The line began inside a multi-line string, so it is text a package
+			// chose: a header written there is a value and not a header.
+			continue
+		}
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case trimmed == header:
 			f.headers = append(f.headers, i+1)
+			naming = true
+		case !naming:
+			continue // Whatever the line says, it says it about no header.
+		case strings.HasPrefix(trimmed, "["):
+			// A sub-table starts, so the table's own keys are behind us.
+			naming = false
+		default:
+			if name, ok := tomlKeyValue(trimmed, "name"); ok {
+				f.byName[name] = append(f.byName[name], len(f.headers)-1)
+				naming = false
+			}
 		}
 	}
 	return f
@@ -99,6 +141,10 @@ func NewTableFinder(data []byte, header string) *TableFinder {
 // Next returns the 1-based line of the header of the next table that declares
 // name, or 0 when no header left in the file does. An empty name, which is what a
 // table the decoder could not read has, takes the next header as it comes.
+//
+// A name it cannot place leaves the finder where it stands, so that the tables
+// after it keep the headers they would have had: a file the finder cannot confirm
+// one name in is still a file every other name is placed in.
 func (f *TableFinder) Next(name string) int {
 	if f == nil || f.next >= len(f.headers) {
 		return 0
@@ -108,37 +154,23 @@ func (f *TableFinder) Next(name string) int {
 		f.next++
 		return line
 	}
-	for i := f.next; i < len(f.headers); i++ {
-		if f.declares(i, name) {
-			f.next = i + 1
-			return f.headers[i]
-		}
+	left, ok := f.byName[name]
+	if !ok {
+		return 0
 	}
-	return 0
-}
-
-// declares reports whether the table under the ith header writes name = "<name>"
-// before its first sub-table. The search stops at the next header, so the work of
-// every call together is one pass over the file.
-func (f *TableFinder) declares(i int, name string) bool {
-	end := len(f.lines)
-	if i+1 < len(f.headers) {
-		end = f.headers[i+1] - 1
+	// Headers behind the cursor were handed to an earlier table, and dropping them
+	// here is what keeps a repeated miss from costing a walk over them again.
+	for len(left) > 0 && left[0] < f.next {
+		left = left[1:]
 	}
-	for j := f.headers[i]; j < end; j++ {
-		if !f.code[j] {
-			continue
-		}
-		line := strings.TrimSpace(f.lines[j])
-		if strings.HasPrefix(line, "[") {
-			// A sub-table starts, so the table's own keys are behind us.
-			return false
-		}
-		if value, ok := tomlKeyValue(line, "name"); ok {
-			return value == name
-		}
+	if len(left) == 0 {
+		delete(f.byName, name)
+		return 0
 	}
-	return false
+	i := left[0]
+	f.byName[name] = left[1:]
+	f.next = i + 1
+	return f.headers[i]
 }
 
 // tomlKeyValue reads a quoted value out of a single line "key = \"value\"", the
@@ -188,19 +220,6 @@ func quotedValue(s string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-// codeLines reports, for each line, whether it begins outside a multi-line string.
-// A line inside one is text a package chose, so a "[[package]]" written there is a
-// value and not a header.
-func codeLines(lines []string) []bool {
-	code := make([]bool, len(lines))
-	var basic, literal bool
-	for i, line := range lines {
-		code[i] = !basic && !literal
-		scanLine(line, &basic, &literal)
-	}
-	return code
 }
 
 // scanLine walks one line and leaves the multi-line string state as the line ends

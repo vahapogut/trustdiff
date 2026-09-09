@@ -30,6 +30,7 @@ not Deno output:
 | --- | --- |
 | `sources.deno.lock` | a workspace with members and a `packageJson` list, a JSR entry with no integrity, an npm key with a peer suffix, a transitive JSR package, and a `remote` URL that is dropped |
 | `broken.deno.lock` | keys that hold no version, an entry whose value is a string, and a workspace requirement that `specifiers` never resolves |
+| `wrong-types.deno.lock` | one member of `specifiers` and three of `workspace` written with a value of the wrong type, each of which must cost only itself while the three packages of the file are still read |
 | `crlf.deno.lock` | `sources.deno.lock` with CRLF line endings, so the line numbers are proved against a Windows checkout |
 | `version-3.deno.lock` | the format before version 4, which keeps its maps under `packages` and is refused with a message saying so |
 | `truncated.deno.lock` | the first 700 bytes of `deno-graph-v5.deno.lock`, cut in the middle of a string, which must be reported and must not panic |

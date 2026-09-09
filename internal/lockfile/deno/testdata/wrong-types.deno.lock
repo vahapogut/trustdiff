@@ -1,0 +1,41 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@acme/direct@1": "1.2.3",
+    "jsr:@acme/wrong-type@1": [
+      "1.1.6"
+    ],
+    "npm:member-only@^3": "3.0.0"
+  },
+  "jsr": {
+    "@acme/direct@1.2.3": {
+      "integrity": "b5c602496a6fa3ec200351d4253576677c198da714d1f4f90a86e3854de53b7a"
+    },
+    "@acme/wrong-type@1.1.6": {
+      "integrity": "c672d5fc4d60cc1033c67c250301666000f53bca184a1bb25d3b267fe6fda4ba"
+    }
+  },
+  "npm": {
+    "member-only@3.0.0": {
+      "integrity": "sha512-KX6mr4TzISahFxjJcT4MwKcz88PLWGsmp4lyDhy0997yccn9OL6qXgwgdz6NIGH4AOCB9Ip542E7NbjZPN9i3A=="
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@acme/direct@1",
+      "jsr:@acme/wrong-type@1",
+      42
+    ],
+    "packageJson": {
+      "dependencies": "npm:package-json-dep@^2"
+    },
+    "members": {
+      "packages/broken": "not an object",
+      "packages/tool": {
+        "dependencies": [
+          "npm:member-only@^3"
+        ]
+      }
+    }
+  }
+}

@@ -28,6 +28,11 @@ linters:
         - performance
     misspell:
       locale: US
+      # A file name is not prose. The pip requirements parser refuses to read a
+      # LICENCE.txt as a lockfile, and refusing it means spelling it the way the
+      # projects that write it do.
+      ignore-rules:
+        - licence
     revive:
       rules:
         - name: exported

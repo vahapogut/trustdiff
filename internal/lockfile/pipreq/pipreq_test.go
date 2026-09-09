@@ -1,6 +1,7 @@
 package pipreq
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,11 +63,38 @@ func TestDetectAcceptsTheNamesARequirementsFileIsGiven(t *testing.T) {
 		{base: "main.txt", want: false},
 		{base: "notes/main.txt", want: false},
 		{base: "requirements/README.md", want: false},
+		// The word at the other end, which only the environment words reach. A product's
+		// written requirements land on the same shape and are not a dependency set.
+		{base: "dev-requirements.txt", want: true},
+		{base: "test_requirements.txt", want: true},
+		{base: "docs.requirements.txt", want: true},
+		{base: "project/prod-requirements.txt", want: true},
 		{base: "my-requirements.txt", want: false},
+		{base: "system-requirements.txt", want: false},
+		{base: "hardware_requirements.txt", want: false},
+		{base: "requirementsdev.txt", want: false},
+		{base: "devrequirements.txt", want: false},
 		{base: "requirementsfoo.txt", want: false},
 		{base: "requirements.in", want: false},
 		{base: "poetry.lock", want: false},
 		{base: "", want: false},
+		// A requirements directory holds documentation too, and a README that shows a
+		// pinned requirement in an example would otherwise be read as a file that pins
+		// it. The words are refused however they are capitalized and whatever they are
+		// suffixed with.
+		{base: "requirements/README.txt", want: false},
+		{base: "requirements/readme.txt", want: false},
+		{base: "requirements/readme-first.txt", want: false},
+		{base: "requirements/CHANGELOG.txt", want: false},
+		{base: "requirements/changelog.old.txt", want: false},
+		{base: "requirements/LICENSE.txt", want: false},
+		{base: "requirements/NOTICE.txt", want: false},
+		{base: "requirements/AUTHORS.txt", want: false},
+		{base: `project\requirements\README.txt`, want: false},
+		// A word that only begins with one of them is still a requirements file, since
+		// the rule is about the word and not about its first letters.
+		{base: "requirements/readmes.txt", want: true},
+		{base: "requirements/licensing.txt", want: true},
 	}
 	for _, tt := range tests {
 		if got := (Parser{}).Detect(tt.base); got != tt.want {
@@ -85,6 +113,21 @@ func TestParserIsRegistered(t *testing.T) {
 	}
 	if _, ok := lockfile.For("some/project/requirements-dev.txt"); !ok {
 		t.Error("lockfile.For(requirements-dev.txt) found no parser")
+	}
+	if _, ok := lockfile.For("some/project/requirements/main.txt"); !ok {
+		t.Error("lockfile.For(requirements/main.txt) found no parser")
+	}
+	// The walker asks lockfile.For about every file it finds, so a documentation file
+	// this parser claims becomes a lockfile and the requirement an example quotes
+	// becomes a package a scan reports on.
+	for _, path := range []string{
+		"some/project/requirements/README.txt",
+		"some/project/requirements/CHANGELOG.txt",
+		"some/project/requirements/LICENSE.txt",
+	} {
+		if p, ok := lockfile.For(path); ok {
+			t.Errorf("lockfile.For(%s) chose %s, want no parser for a documentation file", path, p.Name())
+		}
 	}
 }
 
@@ -254,8 +297,16 @@ func TestParseDropsWhatItCannotEvaluate(t *testing.T) {
 
 // TestParseReadsCRLF proves the continuations and the line numbers on a Windows
 // checkout: the same file with CRLF endings must give the same entries and the same
-// reasons.
+// reasons. The fixture is only a test of anything while it really carries them, and
+// the repository normalizes every other file to LF, so that is checked first.
 func TestParseReadsCRLF(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "crlf.requirements.txt"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	if !bytes.Contains(data, []byte("\r\n")) {
+		t.Fatal("the fixture has lost its carriage returns, so it tests nothing: see testdata/.gitattributes")
+	}
 	lf := parseFixture(t, "edge-cases.requirements.txt")
 	crlf := parseFixture(t, "crlf.requirements.txt")
 

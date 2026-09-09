@@ -5,8 +5,11 @@
 // shaped like Cargo.lock: an array of [[package]] tables, then a [metadata] table
 // holding the lock version, the Python versions the lock was solved for and a hash
 // of the pyproject.toml it was solved from. The lock version is what the entry set
-// records as Lockfile.Version. Older files parse too, because every version of the
-// format has written the same name, version and source keys.
+// records as Lockfile.Version, and a file that spells it as a number rather than as
+// a string states it just as well; a metadata value nothing can be made of costs
+// that one field and a dropped reason, because the packages the file pins are worth
+// evaluating whatever its metadata says. Older files parse too, because every
+// version of the format has written the same name, version and source keys.
 //
 // What the parser reads from a [[package]] table:
 //
@@ -64,7 +67,10 @@
 // "[[package]]" header, matched in file order and confirmed against the name the
 // table declares, which is what lockfile.TableFinder does. A header spelled inside
 // a string value is neither counted nor matched, and an entry the finder cannot
-// place carries no line rather than another package's.
+// place carries no line rather than another package's. A name written with a TOML
+// escape is one the decoder reads and no header spells, so it is placed nowhere and
+// carries the same zero: a package that cannot be pointed at is still a package,
+// and it is evaluated with the rest.
 //
 // Format verified against Poetry's locker on 2026-09-09:
 // https://github.com/python-poetry/poetry/blob/main/src/poetry/packages/locker.py
@@ -74,6 +80,8 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
+	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -98,6 +106,18 @@ const runtimeGroup = "main"
 // "files" list is a source distribution.
 const wheelSuffix = ".whl"
 
+// The [metadata] table and the two keys the parser reads out of it, named here
+// because a reason a value is not read has to name the key a reader must look at.
+const (
+	metadataTable  = "metadata"
+	lockVersionKey = "lock-version"
+	filesKey       = "files"
+)
+
+// tomlTable is what the decoder calls a table when it is asked what type a key was
+// written with.
+const tomlTable = "Hash"
+
 func init() { lockfile.Register(Parser{}) }
 
 // Parser reads poetry.lock files. The zero value is ready to use.
@@ -111,7 +131,8 @@ func (Parser) Name() string { return Format }
 func (Parser) Detect(base string) bool { return base == Format }
 
 // Parse reads a poetry.lock. It fails only when the file is not TOML; a package
-// table it cannot make sense of is dropped with a reason and the rest is kept.
+// table or a metadata value it cannot make sense of is dropped with a reason and
+// the rest is kept.
 func (Parser) Parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
@@ -127,10 +148,13 @@ func (Parser) Parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 		Path:      path,
 		Format:    Format,
 		Ecosystem: model.PyPI,
-		Version:   raw.Metadata.LockVersion,
 	}
-	legacy := normalizedFiles(raw.Metadata.Files)
 	packages := decodePackages(&md, raw.Packages, data, lf)
+	// The metadata is read after the packages so that the reasons come out in file
+	// order, [metadata] being the table Poetry writes last.
+	meta := readMetadata(&md, raw.Metadata, lf)
+	lf.Version = meta.lockVersion
+	legacy := normalizedFiles(meta.files)
 	for i := range packages {
 		p := &packages[i]
 		kind, location := p.Source.kind()
@@ -147,21 +171,106 @@ func (Parser) Parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 	return lf, nil
 }
 
-// lockFile is the shape of the file the parser reads. Packages stay undecoded so
-// that one unreadable table costs one entry rather than the whole file.
+// lockFile is the shape of the file the parser reads. The package tables and the
+// metadata values stay undecoded so that one of them the parser cannot read costs
+// that one table or that one value rather than the whole file.
 type lockFile struct {
-	Packages []toml.Primitive `toml:"package"`
-	Metadata metadata         `toml:"metadata"`
+	Packages []toml.Primitive          `toml:"package"`
+	Metadata map[string]toml.Primitive `toml:"metadata"`
 }
 
-// metadata is the [metadata] table. The content hash and the Python versions say
-// what the lock was solved from and for, neither of which is a package fact, so
-// only the lock version and the first format's file lists are read.
+// metadata is what the parser reads out of the [metadata] table. The content hash
+// and the Python versions say what the lock was solved from and for, neither of
+// which is a package fact, so only the lock version and the first format's file
+// lists are read.
 type metadata struct {
-	LockVersion string `toml:"lock-version"`
-	// Files is where the first format versions kept the artifact hashes, keyed by
+	lockVersion string
+	// files is where the first format versions kept the artifact hashes, keyed by
 	// package name, before they moved onto the package table.
-	Files map[string][]file `toml:"files"`
+	files map[string][]file
+}
+
+// readMetadata reads [metadata] one key at a time. Poetry writes the table, but a
+// merge or a hand edit rewrites it, and a lock version spelled as a number instead
+// of a string is the usual way it comes back wrong: the packages that file pins are
+// worth evaluating all the same, so a value this parser cannot use costs that one
+// field and a reason rather than the file.
+func readMetadata(md *toml.MetaData, table map[string]toml.Primitive, lf *lockfile.Lockfile) metadata {
+	var meta metadata
+	if value, ok := table[lockVersionKey]; ok {
+		version, stated := lockVersion(md, value)
+		if !stated {
+			lf.Drop("[%s]: %q is %s, not a version, so the file states none", metadataTable, lockVersionKey, describeType(md, metadataTable, lockVersionKey))
+		}
+		meta.lockVersion = version
+	}
+	if value, ok := table[filesKey]; ok {
+		files, err := legacyFiles(md, value)
+		if err != nil {
+			lf.Drop("[%s]: %q is not the table of artifact lists this format writes (%v), so the hashes it holds are not read", metadataTable, filesKey, err)
+		}
+		meta.files = files
+	}
+	return meta
+}
+
+// lockVersion reads the "lock-version" value however the file spelled it. Poetry
+// writes a string; a file somebody edited spells the same version as a number,
+// which states it just as plainly, and a whole one keeps the fraction a TOML float
+// carries so that 2.0 does not come back as "2". Anything else is not a version.
+func lockVersion(md *toml.MetaData, value toml.Primitive) (string, bool) {
+	var text string
+	if err := md.PrimitiveDecode(value, &text); err == nil {
+		return text, true
+	}
+	var whole int64
+	if err := md.PrimitiveDecode(value, &whole); err == nil {
+		return strconv.FormatInt(whole, 10), true
+	}
+	var number float64
+	// A lock version that is not a finite number names no format version, and
+	// "NaN" in a report would send a reader looking for a release that never was.
+	if err := md.PrimitiveDecode(value, &number); err == nil && !math.IsInf(number, 0) && !math.IsNaN(number) {
+		text := strconv.FormatFloat(number, 'f', -1, 64)
+		if !strings.Contains(text, ".") {
+			text += ".0"
+		}
+		return text, true
+	}
+	return "", false
+}
+
+// legacyFiles decodes the [metadata.files] table of the first format versions. A
+// value that is not a table at all is passed over by the decoder rather than
+// refused, so the type is read first: a file list nothing was read from is a set of
+// hashes silently missing from the entries, which is worth a reason of its own.
+func legacyFiles(md *toml.MetaData, value toml.Primitive) (map[string][]file, error) {
+	if md.Type(metadataTable, filesKey) != tomlTable {
+		return nil, fmt.Errorf("it is %s", describeType(md, metadataTable, filesKey))
+	}
+	var files map[string][]file
+	if err := md.PrimitiveDecode(value, &files); err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+// describeType names the type the file wrote a key with, so that a reason says what
+// to go and look at. The decoder knows every key's type whether or not the value
+// was decoded into anything.
+func describeType(md *toml.MetaData, key ...string) string {
+	switch name := md.Type(key...); name {
+	case "":
+		return "of a type the decoder does not name"
+	case tomlTable:
+		return "a table"
+	case "ArrayHash":
+		return "an array of tables"
+	case "Array", "Integer":
+		return "an " + strings.ToLower(name)
+	default:
+		return "a " + strings.ToLower(name)
+	}
 }
 
 // packageTable is one [[package]] table. Only the fields the checks need are read;

@@ -1,6 +1,7 @@
 package poetry
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -411,8 +412,17 @@ func TestParseDropsTablesItCannotRead(t *testing.T) {
 }
 
 // TestParseReadsCRLF proves the line numbers on a Windows checkout: the same file
-// with CRLF endings must give the same entries on the same lines.
+// with CRLF endings must give the same entries on the same lines. The fixture is
+// only a test of anything while it really carries them, and the repository
+// normalizes every other file to LF, so that is checked first.
 func TestParseReadsCRLF(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "crlf.poetry.lock"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	if !bytes.Contains(data, []byte("\r\n")) {
+		t.Fatal("the fixture has lost its carriage returns, so it tests nothing: see testdata/.gitattributes")
+	}
 	lf := parseFixture(t, "sources.poetry.lock")
 	crlf := parseFixture(t, "crlf.poetry.lock")
 
@@ -480,6 +490,93 @@ lock-version = "2.1"
 	for _, e := range lf.Entries {
 		if line, ok := want[e.Ref.String()]; !ok || e.Line != line {
 			t.Errorf("%s is on line %d, want %d", e.Ref, e.Line, line)
+		}
+	}
+}
+
+// TestParseKeepsAPackageWhoseHeaderCannotBeFound is the other end of the placing:
+// a decoder reads a TOML escape and the finder reads the text the header was
+// written in, so a name spelled with one is confirmed by no header. The package is
+// still an installed package and still has to be evaluated, so it is kept with no
+// line, which is what Entry.Line documents zero as.
+func TestParseKeepsAPackageWhoseHeaderCannotBeFound(t *testing.T) {
+	lf, err := Parser{}.Parse("poetry.lock", strings.NewReader(`[[package]]
+name = "escape\u0064"
+version = "1.0.0"
+optional = false
+groups = ["main"]
+
+[metadata]
+lock-version = "2.1"
+`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	want := lockfile.Entry{
+		Ref:    model.MustParseRef("pypi:escaped@1.0.0"),
+		Source: lockfile.SourceRegistry,
+	}
+	if len(lf.Entries) != 1 || lf.Entries[0] != want {
+		t.Fatalf("entries = %+v, want the one package with no line", lf.Entries)
+	}
+	if len(lf.Dropped) != 0 {
+		t.Errorf("dropped %v, want nothing: a package the parser cannot place is still a package", lf.Dropped)
+	}
+}
+
+// TestParseReadsMetadataLeniently holds Parse to what its doc says, that only a
+// file which is not TOML fails. [metadata] is small enough to be written by hand,
+// and a lock version spelled as a number instead of a string is the way it comes
+// back wrong; a file that is otherwise perfectly readable must still be read, and a
+// value nothing can be made of costs that one field and says so.
+func TestParseReadsMetadataLeniently(t *testing.T) {
+	const packages = `[[package]]
+name = "readable"
+version = "1.0.0"
+optional = false
+groups = ["main"]
+
+[metadata]
+`
+	tests := []struct {
+		what     string
+		metadata string
+		want     string
+		dropped  string
+	}{
+		{what: "the spelling poetry writes", metadata: `lock-version = "2.1"`, want: "2.1"},
+		{what: "a lock version written as a float", metadata: "lock-version = 2.1", want: "2.1"},
+		{what: "a whole lock version written as a float, which keeps its fraction", metadata: "lock-version = 2.0", want: "2.0"},
+		{what: "a lock version written as an integer", metadata: "lock-version = 2", want: "2"},
+		{
+			what:     "a lock version no spelling makes a version of",
+			metadata: "lock-version = true",
+			dropped:  `[metadata]: "lock-version" is a bool, not a version, so the file states none`,
+		},
+		{
+			what:     "a file list that is not a file list",
+			metadata: `files = "nope"`,
+			dropped:  `[metadata]: "files" is not the table of artifact lists this format writes (it is a string), so the hashes it holds are not read`,
+		},
+		{what: "a metadata table with nothing the parser reads", metadata: `content-hash = "sha256:1234"`},
+	}
+	for _, tt := range tests {
+		lf, err := Parser{}.Parse("poetry.lock", strings.NewReader(packages+tt.metadata+"\n"))
+		if err != nil {
+			t.Errorf("%s: Parse: %v", tt.what, err)
+			continue
+		}
+		if len(lf.Entries) != 1 || lf.Entries[0].Ref.String() != "pypi:readable@1.0.0" || lf.Entries[0].Line != 1 {
+			t.Errorf("%s: entries = %+v, want the one package on line 1", tt.what, lf.Entries)
+		}
+		if lf.Version != tt.want {
+			t.Errorf("%s: Version = %q, want %q", tt.what, lf.Version, tt.want)
+		}
+		switch {
+		case tt.dropped == "" && len(lf.Dropped) != 0:
+			t.Errorf("%s: dropped %v, want nothing", tt.what, lf.Dropped)
+		case tt.dropped != "" && (len(lf.Dropped) != 1 || lf.Dropped[0] != tt.dropped):
+			t.Errorf("%s: dropped %v, want the one reason\n %s", tt.what, lf.Dropped, tt.dropped)
 		}
 	}
 }

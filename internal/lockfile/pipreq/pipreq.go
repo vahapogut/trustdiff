@@ -1,7 +1,8 @@
 // Package pipreq reads the hash pinned requirements files a Python project hands to
 // pip, the ones pip-compile and pip-tools write and the ones people write by hand:
 // requirements.txt, requirements-dev.txt, requirements_dev.txt and the files inside
-// a requirements directory.
+// a requirements directory, apart from the documentation that sits in one too.
+// Detect says which names are claimed and why the documentation is left alone.
 //
 // A requirements file is not a lockfile the way the other formats are. It has no
 // version, no schema and no graph; it is a list of arguments to pip, one per logical
@@ -96,6 +97,7 @@ package pipreq
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/vahapogut/trustdiff/internal/lockfile"
@@ -108,12 +110,69 @@ import (
 const Format = "requirements.txt"
 
 // The pieces of a name Detect accepts: a file called requirements with an optional
-// suffix, or any .txt file inside a directory called requirements.
+// suffix, or a .txt file inside a directory called requirements whose name is not
+// one a repository gives its documentation.
 const (
 	requirementsStem = "requirements"
 	txtSuffix        = ".txt"
 	stemSeparators   = "-_."
 )
+
+// documentationStems are the words a repository names the files that explain it
+// with, as opposed to the files that build it. They decide the one shape of name
+// Detect would otherwise take on the directory alone: a .txt inside a requirements
+// directory. Every other name Detect accepts begins with the word requirements, so
+// none of these can reach it.
+var documentationStems = []string{
+	"authors",
+	"changelog",
+	"changes",
+	"contributing",
+	"contributors",
+	"copying",
+	"history",
+	"licence",
+	"license",
+	"news",
+	"notice",
+	"readme",
+	"security",
+	"todo",
+}
+
+// environmentStems are the words a project puts in front of the word requirements
+// when it keeps one file per environment: dev-requirements.txt beside
+// test-requirements.txt. They are listed rather than accepted wholesale because
+// "requirements" is an ordinary English word and a .txt named after it is as likely
+// to be prose: system-requirements.txt, hardware-requirements.txt and
+// project-requirements.txt describe a product, not a dependency set, and reading one
+// as a lockfile turns a sentence that quotes a pinned version into a package the
+// scan reports on. Every word here names an environment or a stage of a build, which
+// prose about requirements does not.
+var environmentStems = []string{
+	"base",
+	"build",
+	"ci",
+	"common",
+	"dev",
+	"development",
+	"doc",
+	"docs",
+	"extra",
+	"extras",
+	"lint",
+	"local",
+	"main",
+	"optional",
+	"prod",
+	"production",
+	"release",
+	"runtime",
+	"staging",
+	"test",
+	"testing",
+	"tests",
+}
 
 // hashOption is how a requirement names the hash of an artifact it may be installed
 // from. pip accepts it glued to its value and separated by a space, and both are
@@ -150,11 +209,35 @@ func (Parser) Name() string { return Format }
 // names say nothing and accepting every .txt file would swallow unrelated text. So
 // Detect also accepts a name that carries its parent directory, "requirements/dev.txt",
 // and a caller that has the whole path can pass it to have those recognized.
+//
+// A requirements directory holds more than requirements, though, and a .txt inside
+// one is not enough on its own. A README.txt, a CHANGELOG.txt, a LICENSE.txt or a
+// NOTICE.txt sits beside them often, and prose quoting a pinned requirement in an
+// indented example reads exactly like a file that pins it, so a documentation file
+// claimed here turns an example into a package a scan reports on. The walker calls
+// lockfile.For on every file it finds, which is how such a file reaches this parser
+// at all. So a name whose first word is one of documentationStems is refused,
+// however it is capitalized and whatever it is suffixed with:
+// "requirements/README.txt", "requirements/readme-first.txt" and
+// "requirements/changelog.old.txt" are not requirements files, while
+// "requirements/readmes.txt" is, because the rule is about the word and not about
+// its first letters.
+//
+// The third shape is the same word at the other end, dev-requirements.txt, which is
+// as common as requirements-dev.txt and comes from the same habit of one file per
+// environment. Only the words in environmentStems are accepted in front of it, for
+// the reason given there: this end of the name is where prose about a product's
+// requirements ends up, and system-requirements.txt is not a lockfile.
+//
+// The rule is on the name alone, because a name is all lockfile.Parser gives Detect
+// and content sniffing would need the file opened twice. That leaves one shape
+// through: prose committed as requirements.txt itself, which is a name nobody gives
+// a README, so the name is taken at its word there.
 func (Parser) Detect(base string) bool {
 	name := strings.ToLower(strings.ReplaceAll(base, `\`, "/"))
 	if i := strings.LastIndex(name, "/"); i >= 0 {
 		dir, file := name[:i], name[i+1:]
-		if parentDirectory(dir) == requirementsStem && strings.HasSuffix(file, txtSuffix) {
+		if parentDirectory(dir) == requirementsStem && strings.HasSuffix(file, txtSuffix) && !documentation(file) {
 			return true
 		}
 		name = file
@@ -163,13 +246,30 @@ func (Parser) Detect(base string) bool {
 	if !ok {
 		return false
 	}
-	rest, ok := strings.CutPrefix(stem, requirementsStem)
-	if !ok {
+	if rest, ok := strings.CutPrefix(stem, requirementsStem); ok {
+		// "requirements.txt" itself, or a suffix the name is joined to by one of the
+		// separators people spell it with.
+		if rest == "" || strings.ContainsRune(stemSeparators, rune(rest[0])) {
+			return true
+		}
+	}
+	rest, ok := strings.CutSuffix(stem, requirementsStem)
+	if !ok || rest == "" || !strings.ContainsRune(stemSeparators, rune(rest[len(rest)-1])) {
 		return false
 	}
-	// "requirements.txt" itself, or a suffix the name is joined to by one of the
-	// separators people spell it with.
-	return rest == "" || strings.ContainsRune(stemSeparators, rune(rest[0]))
+	return slices.Contains(environmentStems, rest[:len(rest)-1])
+}
+
+// documentation reports whether the lower cased .txt file name is one a repository
+// gives its documentation or its metadata. Only the first word of the name is
+// compared, so that a suffix people add to either kind of file does not hide the
+// word that decides.
+func documentation(file string) bool {
+	stem := strings.TrimSuffix(file, txtSuffix)
+	if i := strings.IndexAny(stem, stemSeparators); i >= 0 {
+		stem = stem[:i]
+	}
+	return slices.Contains(documentationStems, stem)
 }
 
 // parentDirectory is the last segment of a directory path.
