@@ -2,7 +2,7 @@
 
 trustdiff is a single-binary command line tool that finds trust regressions in a project's dependency tree before they land. A trust regression is not a change in a package's code but a change in the signals that made the package trustworthy: a version published by an account that never published one before, a release that lost the provenance every earlier release had, a version that adds an install script or a dependency the previous one did not have, a name one keystroke away from a popular package, a version with a known malicious or vulnerable advisory. Each of these preceded a real incident (event-stream in 2018, ua-parser-js in 2021, Shai-Hulud in 2025, axios in 2026), and each is visible in registry metadata before anyone has looked at the code. Cooldowns buy time and malware feeds catch what is already known; trustdiff tells you, across npm (npm, pnpm, yarn, bun), PyPI (pip, uv, poetry) and crates.io, in one binary with no account and no telemetry, that a dependency's trust signals regressed relative to its own history.
 
-Version 0.4.0 ships `check` for single packages, `diff` for pull requests with the GitHub Action, the pre-commit hook and SARIF output, `doctor` for the hardening settings your package managers already support, `baseline` for the registries that only answer about now, and an offline advisory mirror. It reads nine lockfile formats and evaluates npm, PyPI, crates.io and JSR; see the [roadmap](#roadmap).
+Version 0.4.0 ships `check` for single packages and for a manifest read at the versions its ranges resolve to, `diff` for pull requests with the GitHub Action, the pre-commit hook and SARIF output, `doctor` for the hardening settings your package managers already support, `baseline` for the registries that only answer about now, an offline advisory mirror, and a Bun scanner that stops an install before anything reaches the disk. It reads nine lockfile formats and evaluates npm, PyPI, crates.io and JSR; see the [roadmap](#roadmap).
 
 ## Demo
 
@@ -75,7 +75,7 @@ scoop bucket add trustdiff https://github.com/vahapogut/scoop-bucket
 scoop install trustdiff
 ```
 
-The way that works today, on every platform and without a Go toolchain, is to download a release from the [releases page](https://github.com/vahapogut/trustdiff/releases). Every release ships one archive per platform (`trustdiff_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows), `checksums.txt`, its cosign bundle `checksums.txt.sigstore.json`, an SPDX SBOM per archive and GitHub build provenance. Download the archive for your platform together with the two checksum files and verify before you unpack; substitute the archive you downloaded for `trustdiff_0.3.0_linux_amd64.tar.gz`.
+The way that works today, on every platform and without a Go toolchain, is to download a release from the [releases page](https://github.com/vahapogut/trustdiff/releases). Every release ships one archive per platform (`trustdiff_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows), `checksums.txt`, its cosign bundle `checksums.txt.sigstore.json`, an SPDX SBOM per archive and GitHub build provenance. Download the archive for your platform together with the two checksum files and verify before you unpack; substitute the archive you downloaded for `trustdiff_0.4.0_linux_amd64.tar.gz`.
 
 1. Verify the signature on the checksum file (cosign v3 or later). The identity is the release workflow of this repository, running on a version tag.
 
@@ -97,14 +97,14 @@ The way that works today, on every platform and without a Go toolchain, is to do
    On Windows, compare the two outputs by eye:
 
    ```powershell
-   (Get-FileHash .\trustdiff_0.3.0_windows_amd64.zip -Algorithm SHA256).Hash
+   (Get-FileHash .\trustdiff_0.4.0_windows_amd64.zip -Algorithm SHA256).Hash
    Select-String windows_amd64 .\checksums.txt
    ```
 
 3. Verify the build provenance with the GitHub CLI.
 
    ```sh
-   gh attestation verify trustdiff_0.3.0_linux_amd64.tar.gz \
+   gh attestation verify trustdiff_0.4.0_linux_amd64.tar.gz \
      --owner vahapogut \
      --signer-workflow vahapogut/trustdiff/.github/workflows/release.yml
    ```
@@ -115,7 +115,9 @@ If any step fails, do not run the binary; [SECURITY.md](SECURITY.md) says where 
 
 ### 1. About to add a dependency
 
-`trustdiff check <ecosystem>:<name>[@<version>]` prints one card per package: age, publisher continuity, maintainers, provenance, install scripts, dependencies added since the previous version, look-alike names, advisories, downloads. Without a version the latest non-prerelease version is evaluated. The ecosystems are `npm`, `pypi`, `cargo` and `jsr`. A `deno:` ref is accepted and every check reports itself as skipped: Deno packages live on JSR, and deno.land/x exposes none of the publisher, provenance or download data these checks read. This is the 2018 handover of event-stream as the registry still records it:
+`trustdiff check <ecosystem>:<name>[@<version>]` prints one card per package: age, publisher continuity, maintainers, provenance, install scripts, dependencies added since the previous version, look-alike names, advisories, downloads. Without a version the latest non-prerelease version is evaluated. The ecosystems are `npm`, `pypi`, `cargo` and `jsr`. A `deno:` ref is accepted and every check reports itself as skipped: Deno packages live on JSR, and deno.land/x exposes none of the publisher, provenance or download data these checks read.
+
+`check` also takes the path of a manifest: `trustdiff check package.json`, `pyproject.toml` or `Cargo.toml` reads that file's direct dependencies and evaluates each at the version its declared range resolves to today. Ranges are matched by trustdiff itself, in the grammar the ecosystem uses: node-semver range sets for npm, Cargo requirements for crates.io, PEP 440 specifier sets for PyPI, and Poetry's mixture of the two. A declaration nothing can be resolved from, a path dependency or a workspace protocol among them, is listed beside the report with the reason rather than passed over. This is the 2018 handover of event-stream as the registry still records it:
 
 ```
 $ trustdiff check npm:event-stream@3.3.5
@@ -217,6 +219,14 @@ $ trustdiff --format json check cargo:serde@1.0.210
 }
 ```
 
+If you install with Bun, the same evaluation can run before anything is written to disk. Bun hands every package it is about to fetch, transitive dependencies included, to the scanner named in `bunfig.toml`, and [`@trustdiff/bun-scanner`](integrations/bun-scanner/README.md) is such a scanner: it runs the binary you already have and cancels the install on a blocking finding. It has no dependencies and no network of its own, and a package it could not check is reported rather than passed over, because an install where nothing could be checked should not look like an install where nothing was wrong.
+
+```toml
+# bunfig.toml
+[install.security]
+scanner = "@trustdiff/bun-scanner"
+```
+
 ### 2. A pull request gate
 
 `trustdiff diff` evaluates only what a lockfile change adds or modifies, against a git base that defaults to the merge base with `origin/main`. It reads `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `deno.lock`, `uv.lock`, `poetry.lock`, `Cargo.lock` and hash-pinned `requirements` files, and every finding carries the lockfile line the entry sits on:
@@ -239,7 +249,7 @@ Exit code 0 (no blocking findings).
 In a workflow, write SARIF instead and let code scanning put those findings on the diff:
 
 ```yaml
-- uses: vahapogut/trustdiff@v0.3.0
+- uses: vahapogut/trustdiff@v0.4.0
   with:
     fail-on: block
     format: sarif
