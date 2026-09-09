@@ -15,12 +15,22 @@ Set Rows 36
 Set Padding 20
 Set TypingSpeed 40ms
 
-# The three cards of the 0.1.0 acceptance scenario, against the live registries.
+# Warm the cache off camera. The recorded runs then answer from disk, so the demo
+# shows the tool rather than the network, and a rate-limited registry (the npm
+# downloads API answers 429 to shared CI addresses often enough to matter) delays
+# this hidden run instead of timing the recording out.
+Hide
+Type "trustdiff check npm:express@4.19.2 pypi:requests cargo:serde >/dev/null 2>&1; trustdiff check npm:flatmap-stream@0.1.1 >/dev/null 2>&1; clear"
+Enter
+Wait@300s /\$ $/
+Show
+
+# The three cards of the 0.1.0 acceptance scenario.
 Type "trustdiff check npm:express@4.19.2 pypi:requests cargo:serde"
 Sleep 500ms
 Enter
 # The summary line is the last thing the report prints.
-Wait+Screen@60s /Exit code/
+Wait+Screen@120s /Exit code/
 Sleep 5s
 
 Type "clear"
@@ -31,5 +41,5 @@ Sleep 500ms
 Type "trustdiff check npm:flatmap-stream@0.1.1"
 Sleep 500ms
 Enter
-Wait+Screen@60s /Exit code/
+Wait+Screen@120s /Exit code/
 Sleep 6s
