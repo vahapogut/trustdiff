@@ -118,6 +118,83 @@ release:
   preflight:
     fail_on_error: true
 
+# The Homebrew tap and the Scoop bucket.
+#
+# Every key in the two blocks below was checked against the goreleaser v2.18.1
+# documentation and its deprecation list on 2026-09-10. The current spelling is
+# "homebrew_casks" and "scoops"; "brews" has been deprecated since v2.10 and
+# "goreleaser check" now fails the whole file when it appears. Inside the blocks
+# the current names are "repository" rather than the older "tap" and "bucket",
+# and "directory" rather than the older "folder". The cask uses the plural
+# "binaries" because the singular "binary" was deprecated in v2.12.6, and it
+# does not set "url.verified", which v2.18.1 itself deprecated after Homebrew
+# removed the stanza.
+#
+# Neither vahapogut/homebrew-tap nor vahapogut/scoop-bucket exists yet, and the
+# release job is given only the automatic GITHUB_TOKEN, which can write to this
+# repository and to no other. Both blocks therefore skip the upload unless
+# TAP_GITHUB_TOKEN is present in the environment. The test is an environment
+# variable rather than a command line flag so that reading the workflow is
+# enough to see whether a release will touch the tap. When the variable is
+# absent goreleaser still writes the cask and the manifest into dist/, logs that
+# it is skipping the upload, and the release finishes normally; nothing else in
+# the pipeline depends on either repository. docs/releasing.md holds the steps
+# that create the two repositories and store the secret.
+#
+# "auto" rather than "false" for the case where the variable is set: it makes
+# goreleaser leave the tap alone for a tag with a prerelease suffix, which is
+# the same rule the release block above applies to the GitHub release itself.
+
+homebrew_casks:
+  - name: trustdiff
+    ids:
+      - trustdiff
+    # The archives carry a single executable and nothing else needs linking.
+    binaries:
+      - trustdiff
+    description: Finds trust regressions in a project's dependency tree before they land
+    homepage: https://github.com/vahapogut/trustdiff
+    # Two stanzas a formula would carry are missing here on purpose. A Homebrew
+    # cask has no "test" block, so the "trustdiff version" smoke test cannot
+    # live in this file. docs/releasing.md runs it by hand after every release,
+    # and the extract step of action.yml runs it on every archive it downloads,
+    # so the check still happens; it just happens somewhere else. A cask has no
+    # "license" stanza either, and goreleaser's own configuration documents its
+    # "license" key as having no effect for casks, so setting it would only look
+    # like it was doing something. The Scoop manifest below states the license,
+    # because a Scoop manifest has a field for it.
+    directory: Casks
+    repository:
+      owner: vahapogut
+      name: homebrew-tap
+      branch: main
+      # Read only after the skip_upload test below has decided to publish, so a
+      # release without the secret never expands this and never fails on it.
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    skip_upload: '{{ if isEnvSet "TAP_GITHUB_TOKEN" }}auto{{ else }}true{{ end }}'
+
+scoops:
+  - name: trustdiff
+    ids:
+      - trustdiff
+    description: Finds trust regressions in a project's dependency tree before they land
+    homepage: https://github.com/vahapogut/trustdiff
+    license: Apache-2.0
+    # The architecture entries are not written here. goreleaser builds the
+    # manifest's "architecture" object itself from the windows archives above,
+    # one entry per goarch, each with the download URL, the binary name and the
+    # sha256 it already computed for checksums.txt. There is no configuration
+    # key for them, and a hand-written table would go stale on the first
+    # release that changes an archive name.
+    directory: bucket
+    repository:
+      owner: vahapogut
+      name: scoop-bucket
+      branch: main
+      # Same reasoning as the cask above.
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    skip_upload: '{{ if isEnvSet "TAP_GITHUB_TOKEN" }}auto{{ else }}true{{ end }}'
+
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 

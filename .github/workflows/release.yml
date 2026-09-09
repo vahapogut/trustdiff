@@ -66,6 +66,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.epoch }}
+          # The token that lets goreleaser push the Homebrew cask and the Scoop
+          # manifest into the tap repositories, which the job's own GITHUB_TOKEN
+          # cannot reach because they are other repositories. When the secret is
+          # not set the two blocks skip their upload and the release still
+          # succeeds; docs/releasing.md says what the token needs.
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2

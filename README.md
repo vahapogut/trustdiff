@@ -63,7 +63,18 @@ With a Go toolchain (1.26 or newer):
 go install github.com/vahapogut/trustdiff/cmd/trustdiff@latest
 ```
 
-Or download a release from the [releases page](https://github.com/vahapogut/trustdiff/releases). Every release ships one archive per platform (`trustdiff_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows), `checksums.txt`, its cosign bundle `checksums.txt.sigstore.json`, an SPDX SBOM per archive and GitHub build provenance. Download the archive for your platform together with the two checksum files and verify before you unpack; substitute the archive you downloaded for `trustdiff_0.2.0_linux_amd64.tar.gz`.
+Homebrew and Scoop are configured in the release pipeline but not published yet. The tap and the bucket do not exist, so the lines below do nothing today; they start working with the first release that writes to them, which is 0.4.0.
+
+```sh
+# macOS, once the tap exists
+brew install vahapogut/tap/trustdiff
+
+# Windows, once the bucket exists
+scoop bucket add trustdiff https://github.com/vahapogut/scoop-bucket
+scoop install trustdiff
+```
+
+The way that works today, on every platform and without a Go toolchain, is to download a release from the [releases page](https://github.com/vahapogut/trustdiff/releases). Every release ships one archive per platform (`trustdiff_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows), `checksums.txt`, its cosign bundle `checksums.txt.sigstore.json`, an SPDX SBOM per archive and GitHub build provenance. Download the archive for your platform together with the two checksum files and verify before you unpack; substitute the archive you downloaded for `trustdiff_0.3.0_linux_amd64.tar.gz`.
 
 1. Verify the signature on the checksum file (cosign v3 or later). The identity is the release workflow of this repository, running on a version tag.
 
@@ -85,19 +96,19 @@ Or download a release from the [releases page](https://github.com/vahapogut/trus
    On Windows, compare the two outputs by eye:
 
    ```powershell
-   (Get-FileHash .\trustdiff_0.2.0_windows_amd64.zip -Algorithm SHA256).Hash
+   (Get-FileHash .\trustdiff_0.3.0_windows_amd64.zip -Algorithm SHA256).Hash
    Select-String windows_amd64 .\checksums.txt
    ```
 
 3. Verify the build provenance with the GitHub CLI.
 
    ```sh
-   gh attestation verify trustdiff_0.2.0_linux_amd64.tar.gz \
+   gh attestation verify trustdiff_0.3.0_linux_amd64.tar.gz \
      --owner vahapogut \
      --signer-workflow vahapogut/trustdiff/.github/workflows/release.yml
    ```
 
-If any step fails, do not run the binary; [SECURITY.md](SECURITY.md) says where to report it. Homebrew (`brew install vahapogut/tap/trustdiff`) and Scoop (`scoop install trustdiff` from the bucket) arrive with 0.4.0.
+If any step fails, do not run the binary; [SECURITY.md](SECURITY.md) says where to report it. These three steps stay the recommended install even after the tap and the bucket exist, because they are the only route that lets you check the signature and the provenance yourself. [docs/releasing.md](docs/releasing.md) describes how a release is built and what is left to do before `brew` and `scoop` work.
 
 ## Three ways to use it
 
