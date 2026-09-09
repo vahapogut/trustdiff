@@ -308,7 +308,13 @@ func (a *App) baselineSet(ctx context.Context, cmd *cobra.Command, path string) 
 		a.Opts.Log.Debug("no base revision to read the baseline at", "error", err)
 		return set, nil
 	}
-	rel, relErr := filepath.Rel(repo.Root(), path)
+	// Both sides are resolved first. A temporary directory is a link to another
+	// place on macOS (/var against /private/var) and carries a short name on
+	// Windows (RUNNER~1), while git always answers with the resolved path, and an
+	// unresolved comparison then reads as "outside the repository" and quietly
+	// falls back to the working tree's own record, which is the copy a pull
+	// request may have written.
+	rel, relErr := filepath.Rel(resolve(repo.Root()), resolve(path))
 	if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		// A baseline outside the repository (an absolute --policy style path, a
 		// working directory above the root) has no copy in the history to read, and
@@ -451,4 +457,15 @@ func driftFinding(c *baseline.Change, level model.Level, now time.Time) model.Fi
 			"baseline_age_days":    days,
 		},
 	}
+}
+
+// resolve follows the links in a path so that two spellings of one directory
+// compare equal. A path that cannot be resolved is returned as it came: the
+// caller only needs the two sides to agree, and a path that does not exist has
+// nothing to disagree about.
+func resolve(path string) string {
+	if evaluated, err := filepath.EvalSymlinks(path); err == nil {
+		return evaluated
+	}
+	return path
 }

@@ -3,7 +3,6 @@ package baseline
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 )
 
@@ -33,7 +32,12 @@ type RevisionReader interface {
 // Expected call site: (*App).baselineSet in internal/cli/baseline.go, which
 // internal/cli/diff.go reaches through (*App).evaluateWithBaseline.
 func AtRevision(ctx context.Context, r RevisionReader, sha, path string) (*File, error) {
-	path = filepath.ToSlash(path)
+	// Backslashes are replaced whatever the platform, rather than through
+	// filepath.ToSlash, which does nothing off Windows: the path may have been
+	// built on Windows and handed here in a test or a document, and git speaks in
+	// forward slashes everywhere. A file whose name really contains a backslash,
+	// which only a Unix filesystem allows, is not a path this reads.
+	path = strings.ReplaceAll(path, "\\", "/")
 	data, err := r.FileAt(ctx, sha, path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s at %s: %w", path, short(sha), err)
