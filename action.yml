@@ -38,7 +38,7 @@
 #     - uses: actions/checkout@<sha>
 #       with:
 #         fetch-depth: 0       # diff needs the base commit's lockfiles
-#     - uses: vahapogut/trustdiff@v0.3.0
+#     - uses: vahapogut/trustdiff@v0.4.0
 #       with:
 #         base: ${{ github.event.pull_request.base.sha }}
 
@@ -53,14 +53,14 @@ branding:
 inputs:
   version:
     description: >-
-      Release tag of trustdiff to run, for example v0.3.0. The default is the
+      Release tag of trustdiff to run, for example v0.4.0. The default is the
       version whose sha256 table is embedded in this file; any other version is
       verified through the release's cosign-signed checksums.txt instead.
     required: false
     # The pin and the sha256 table below are updated after every release, in a
     # commit named "chore(action): pin <tag> and checksums". v0.1.0 is not a
     # usable default here: it has no diff command.
-    default: v0.3.0
+    default: v0.4.0
   base:
     description: >-
       Git ref or commit to compare against. Leave it empty to let trustdiff use
@@ -108,7 +108,7 @@ runs:
         # publishes, so a typo is a message here rather than a 404 later.
         version="$VERSION"
         if ! [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
-          echo "::error::version must be a release tag such as v0.3.0 or v0.3.0-rc.1; got '${version}'"
+          echo "::error::version must be a release tag such as v0.4.0 or v0.4.0-rc.1; got '${version}'"
           exit 1
         fi
 
@@ -143,16 +143,16 @@ runs:
         # signature. An entry left as "pending" falls back to the cosign route
         # below, which proves the same thing by a longer path, so the action keeps
         # working before the table is filled in.
-        pinned_version=v0.3.0
+        pinned_version=v0.4.0
         sha=""
         if [ "$version" = "$pinned_version" ]; then
           case "${os}_${arch}" in
-            linux_amd64)   sha=55ccf15964857f0006f453d0d29bc9bae2785087c34befd45d0242feb336d0a2 ;;
-            linux_arm64)   sha=2e742ae4d5aa9e0e2280dbfdd55e1d8f8a08934c3ebf87351e850eb1f2cbe44a ;;
-            darwin_amd64)  sha=54ea7546889d97be830562708a17741bda6bcd3a1f6c60c0ff7a4ac8908f5657 ;;
-            darwin_arm64)  sha=b0fc17bee9907e0d4becc933d7793621597ffda5607c9e17a03d0801e4f2b9bb ;;
-            windows_amd64) sha=8500d07f15404cca86b7963a96faa116fc1d9759228e19c423688701464fb6a0 ;;
-            windows_arm64) sha=e22dd3658a186176740d979807348ad720b9b14245923427bade8ee08730a2b2 ;;
+            linux_amd64)    sha=94bdb32c1d76b9eaa682f81e51e1b7be28b094e310030904c7a7f6adf2ad3b9e ;;
+            linux_arm64)    sha=ecddbf3ef5d028113863c6625dc5e369c9d5a311f91bbc9049bc2acd7d335963 ;;
+            darwin_amd64)   sha=12dc31ff447e22478ce481645455ca264dfe9286a405717478d9d24c7aea5425 ;;
+            darwin_arm64)   sha=ed10f206d14164cacc744bb0568431a261565d692b6afc7be90a7e29b967fb43 ;;
+            windows_amd64)  sha=a399d541ad9dc3ee024a919500cd34d32a77bf4d1114117f9e320add85acd477 ;;
+            windows_arm64)  sha=c1a9d740087d055a62c43c5ade556094f89f3d699107be215d90e682e8f47c68 ;;
           esac
         fi
         verify=pinned
