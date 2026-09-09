@@ -1,0 +1,259 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "trustdiff",
+          "version": "v0.0.1",
+          "informationUri": "https://github.com/vahapogut/trustdiff",
+          "rules": [
+            {
+              "id": "TD000",
+              "name": "expired-allow",
+              "shortDescription": {
+                "text": "A policy allow entry has expired while it still matches this package."
+              },
+              "fullDescription": {
+                "text": "An allow entry carries an expiry date that has passed, so the check it was written for is evaluated again as if the entry were not there. The finding stays in the report until someone renews the entry or removes it, which is what keeps a list of exceptions from rotting."
+              },
+              "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td000-expired-allow"
+            },
+            {
+              "id": "TD001",
+              "name": "young-version",
+              "shortDescription": {
+                "text": "The version was published less than the cooldown ago."
+              },
+              "fullDescription": {
+                "text": "A release that has been public for hours has not had the time it takes for a compromise to be noticed and reported, and the malicious releases of the last years were removed within hours. The cooldown defaults to 3d, and to 7d for crates.io; the publish time comes from the registry, or from deps.dev when the registry records none."
+              },
+              "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td001-young-version"
+            },
+            {
+              "id": "TD002",
+              "name": "publisher-changed",
+              "shortDescription": {
+                "text": "The publishing account is not among the publishers of the previous versions."
+              },
+              "fullDescription": {
+                "text": "The account that published this version does not appear among the accounts that published the previous releases, which is how a handover of a package shows up in the registry. The window is the previous five non-prerelease, non-yanked releases by publish time."
+              },
+              "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td002-publisher-changed"
+            },
+            {
+              "id": "TD003",
+              "name": "maintainers-changed",
+              "shortDescription": {
+                "text": "The maintainer set differs from the set at the previous version."
+              },
+              "fullDescription": {
+                "text": "Maintainers were added or removed between the previous version and this one. npm records the set per version; crates.io and PyPI expose current ownership only, so there the comparison is against the committed baseline."
+              },
+              "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td003-maintainers-changed"
+            },
+            {
+              "id": "TD004",
+              "name": "trust-downgrade",
+              "shortDescription": {
+                "text": "The publishing evidence is weaker than the previous version's."
+              },
+              "fullDescription": {
+                "text": "The previous version carried a verified build attestation or a trusted publishing record and this one carries a bare signature or nothing. Strength runs none, signature, attestation, trusted publisher, and a verified record ranks above an unverified one of the same kind."
+              },
+              "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td004-trust-downgrade"
+            },
+            {
+              "id": "TD005",
+              "name": "install-script-introduced",
+              "shortDescription": {
+                "text": "The version added an install script the previous version did not declare."
+              },
+              "fullDescription": {
+                "text": "An npm version declares preinstall, install, postinstall or prepare while the previous version declared none. The first three run on every install of the package, so code that arrives this way runs on the machine of everyone who updates."
+              },
+              "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td005-install-script-introduced"
+            },
+            {
+              "id": "TD006",
+              "name": "install-script-present",
+              "shortDescription": {
+                "text": "The version runs code at install time."
+              },
+              "fullDescription": {
+                "text": "The version runs code before or during installation: an npm install script, a crate with a build.rs or a proc-macro library, or a PyPI release published as an sdist only, whose setup.py executes on install. It is normal for many packages and is reported so that it is a decision."
+              },
+              "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td006-install-script-present"
+            },
+            {
+              "id": "TD007",
+              "name": "new-dependency-introduced",
+              "shortDescription": {
+                "text": "The version declares a runtime dependency the previous version did not."
+              },
+              "fullDescription": {
+                "text": "Every added dependency is reported on its own, so that a reviewed one can be allowed separately. A new dependency that is itself young, barely used or unknown to deps.dev is escalated, because a package that pulls in a payload usually pulls in a fresh one."
+              },
+              "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td007-new-dependency-introduced"
+            },
+            {
+              "id": "TD008",
+              "name": "typosquat-suspect",
+              "shortDescription": {
+                "text": "The name looks like a misspelling of a popular package."
+              },
+              "fullDescription": {
+                "text": "The name is a small edit away from a name on the ecosystem's popular list while the package itself is not on that list, or deps.dev reports a much more popular package with a similar name. The check compares names only; it says nothing about what the package contains."
+              },
+              "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td008-typosquat-suspect"
+            },
+            {
+              "id": "TD009",
+              "name": "malicious-advisory",
+              "shortDescription": {
+                "text": "A malicious package advisory covers this version."
+              },
+              "fullDescription": {
+                "text": "OSV lists the version under an advisory whose id starts with MAL-, or deps.dev reports a MALICIOUS finding for it. The two sources are consulted independently, so one of them being unavailable does not silence the other."
+              },
+              "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td009-malicious-advisory"
+            },
+            {
+              "id": "TD010",
+              "name": "vulnerability",
+              "shortDescription": {
+                "text": "An advisory at or above the configured severity affects this version."
+              },
+              "fullDescription": {
+                "text": "OSV reports a vulnerability that affects the version and whose severity is at or above the policy threshold, which defaults to high, one finding per advisory. The severity is the advisory's own label, or the base score computed from its CVSS vector."
+              },
+              "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td010-vulnerability"
+            },
+            {
+              "id": "TD011",
+              "name": "deprecated-or-yanked",
+              "shortDescription": {
+                "text": "The version or the package is deprecated, yanked or archived."
+              },
+              "fullDescription": {
+                "text": "The registry marks the version yanked or deprecated, the package as a whole is deprecated or archived, or deps.dev reports it deprecated. A yanked version is one the publisher asked people to stop installing."
+              },
+              "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td011-deprecated-or-yanked"
+            },
+            {
+              "id": "TD012",
+              "name": "low-usage",
+              "shortDescription": {
+                "text": "The package has few weekly downloads."
+              },
+              "fullDescription": {
+                "text": "Weekly downloads are below the policy threshold, which defaults to 500, or deps.dev reports a LOW_USAGE finding. Low usage is not a defect; it says how many other people would have noticed a problem before you did."
+              },
+              "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td012-low-usage"
+            },
+            {
+              "id": "TD013",
+              "name": "exotic-source",
+              "shortDescription": {
+                "text": "The lockfile entry resolves to a git repository, a tarball or an http URL."
+              },
+              "fullDescription": {
+                "text": "The entry does not come from the ecosystem's registry, so what it installs is whatever that URL serves at install time, and the registry checks in this list cannot be applied to it."
+              },
+              "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td013-exotic-source"
+            },
+            {
+              "id": "TD014",
+              "name": "integrity-missing",
+              "shortDescription": {
+                "text": "The lockfile entry has no integrity hash, or resolves over plain http."
+              },
+              "fullDescription": {
+                "text": "Without a hash the lockfile cannot tell that what it installs is what it locked, and a plain http URL leaves the download to whatever is on the network path."
+              },
+              "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td014-integrity-missing"
+            },
+            {
+              "id": "TD015",
+              "name": "version-anomaly",
+              "shortDescription": {
+                "text": "The version number does not fit the package's history."
+              },
+              "fullDescription": {
+                "text": "Either the step from the previous release is far beyond the package's own cadence, or the version sorts below a release of its own line that was published earlier. Both are how a mistaken or a hostile upload tends to look from outside."
+              },
+              "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td015-version-anomaly"
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "TD002",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "Publisher of 4.19.3 is not among the previous publishers\n\nprevious 5 versions were published by alice; 4.19.3 was published by bob-ci, an account that has published nothing else"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "package-lock.json"
+                },
+                "region": {
+                  "startLine": 42
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "trustdiffFindingV1": "9bc570f7636a2388c894ac41a1f4fe62"
+          },
+          "properties": {
+            "evidence": {
+              "previous_publishers": [
+                "alice"
+              ],
+              "publisher": "bob-ci",
+              "window": 5
+            },
+            "ref": "npm:example-lib@4.19.3"
+          }
+        },
+        {
+          "ruleId": "TD001",
+          "ruleIndex": 1,
+          "level": "warning",
+          "message": {
+            "text": "Version is 6 hours old\n\n4.19.3 was published on 2026-09-08T18:00:00Z, 6 hours before this run; the cooldown is 3d"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "package-lock.json"
+                },
+                "region": {
+                  "startLine": 42
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "trustdiffFindingV1": "9d36af0a6c435860595f547e8815a6d9"
+          },
+          "properties": {
+            "evidence": {
+              "age": "6h",
+              "cooldown": "3d",
+              "published_at": "2026-09-08T18:00:00Z"
+            },
+            "ref": "npm:example-lib@4.19.3"
+          }
+        }
+      ]
+    }
+  ]
+}

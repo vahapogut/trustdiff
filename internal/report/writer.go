@@ -24,17 +24,23 @@ type Options struct {
 	Width int
 }
 
-// New returns the writer for a --format value. "human" and "json" are available;
-// "sarif" and "markdown" arrive in milestone M2 and report ErrUnsupportedFormat
-// until then, as does any unknown name.
+// New returns the writer for a --format value: "human" for a terminal, "json" for
+// the document schema/report.v1.json describes, "sarif" for a code scanning service
+// and "markdown" for a pull request comment. Any other name, the empty one included,
+// reports ErrUnsupportedFormat and names what it was given.
+//
+// Only Human reads opts; the three document formats render the same bytes wherever
+// they are written.
 func New(format string, opts Options) (Writer, error) {
 	switch format {
 	case "human":
 		return Human(opts), nil
 	case "json":
 		return JSON{}, nil
-	case "sarif", "markdown":
-		return nil, fmt.Errorf("%w: %q is planned for a later release", ErrUnsupportedFormat, format)
+	case "sarif":
+		return SARIF{}, nil
+	case "markdown":
+		return Markdown{}, nil
 	}
 	return nil, fmt.Errorf("%w: %q", ErrUnsupportedFormat, format)
 }

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -19,9 +21,10 @@ func TestNew(t *testing.T) {
 	}{
 		{format: "human", want: Human{Color: true, Width: 120}},
 		{format: "json", want: JSON{}},
-		{format: "sarif", wantErr: true},
-		{format: "markdown", wantErr: true},
+		{format: "sarif", want: SARIF{}},
+		{format: "markdown", want: Markdown{}},
 		{format: "yaml", wantErr: true},
+		{format: "SARIF", wantErr: true},
 		{format: "", wantErr: true},
 	}
 	for _, tt := range tests {
@@ -109,4 +112,32 @@ func TestJSONEmptyReportAndNoHTMLEscaping(t *testing.T) {
 	if !strings.Contains(buf.String(), `"subjects": []`) {
 		t.Errorf("empty report must render subjects as []:\n%s", buf.String())
 	}
+}
+
+// assertGolden renders the fixture report with w and compares the bytes with the
+// golden file of that name under testdata, after normalizing CRLF so that a file
+// written on Windows and one written on Linux compare equal. It returns what was
+// rendered, for a test that has more to say about it than that it did not change.
+// Regenerate the golden files with: go test ./internal/report/ -update
+func assertGolden(t *testing.T, name string, w Writer) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := w.Write(&buf, fixtureReport()); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	got := normalizeNewlines(buf.Bytes())
+	path := filepath.Join("testdata", name)
+	if *update {
+		if err := os.WriteFile(path, got, 0o644); err != nil {
+			t.Fatalf("write golden: %v", err)
+		}
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden (run with -update to create it): %v", err)
+	}
+	if want = normalizeNewlines(want); !bytes.Equal(got, want) {
+		t.Errorf("output differs from %s\n--- got ---\n%s\n--- want ---\n%s", path, got, want)
+	}
+	return got
 }
