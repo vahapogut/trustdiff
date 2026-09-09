@@ -121,6 +121,17 @@
       "verified": "2026-09-09"
     },
     {
+      "rule": "DR031",
+      "name": "bun-security-scanner",
+      "manager": "npm",
+      "status": "advice",
+      "level": "info",
+      "file": ".npmrc",
+      "detail": "which scanner to trust is a decision for the project, so this is reported and never written",
+      "docs": "https://example.test/docs/bun-security-scanner",
+      "verified": "2026-09-09"
+    },
+    {
       "rule": "DR015",
       "name": "pnpm-trust-policy",
       "manager": "pnpm",
@@ -136,8 +147,9 @@
   ],
   "summary": {
     "managers": 2,
-    "results": 7,
+    "results": 8,
     "statuses": {
+      "advice": 1,
       "missing": 1,
       "not applicable": 1,
       "set": 2,

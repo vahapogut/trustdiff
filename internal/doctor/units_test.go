@@ -72,8 +72,14 @@ func TestUnitsRefuseTheOtherSpellings(t *testing.T) {
 	if _, err := Words.Parse("4320"); err == nil {
 		t.Error("a bare number parsed as a duration in words")
 	}
-	if _, err := Words.Parse("2 months"); err == nil {
-		t.Error("months parsed, although no month has a fixed length")
+	// A month is read, because a file that already says "1 month" asks for a longer
+	// wait than any cooldown, and never written, because no month has a fixed
+	// length.
+	if d, err := Words.Parse("2 months"); err != nil || d != 60*day {
+		t.Errorf("2 months = %s, %v, want 1440h", d, err)
+	}
+	if got := Words.Format(60 * day); got != "8 weeks" && got != "60 days" {
+		t.Errorf("Format writes %q, which is a unit nothing should write", got)
 	}
 }
 
@@ -99,16 +105,16 @@ func TestMinimumAgeNamesTheUnitConfusion(t *testing.T) {
 // that version does not have.
 func TestMinimumAgeCreditsTheDefaultOnlyFromTheVersionThatHasIt(t *testing.T) {
 	rule := MinimumAge{Unit: Minutes, Default: day, DefaultSince: "11"}
-	if status, _ := rule.Judge(&configfile.Value{}, Params{Cooldown: day, Version: "11.2.0"}); status != StatusSet {
+	if status, _ := rule.Judge(&configfile.Value{}, Params{Cooldown: day, Version: "11.2.0", VersionExact: true}); status != StatusSet {
 		t.Errorf("pnpm 11 with a one day policy = %s, want set", status)
 	}
-	if status, _ := rule.Judge(&configfile.Value{}, Params{Cooldown: day, Version: "10.20.0"}); status != StatusMissing {
+	if status, _ := rule.Judge(&configfile.Value{}, Params{Cooldown: day, Version: "10.20.0", VersionExact: true}); status != StatusMissing {
 		t.Errorf("pnpm 10 with a one day policy = %s, want missing", status)
 	}
 	if status, _ := rule.Judge(&configfile.Value{}, Params{Cooldown: day}); status != StatusMissing {
 		t.Errorf("an unknown version = %s, want missing: a default nobody confirmed is not protection", status)
 	}
-	if status, _ := rule.Judge(&configfile.Value{}, Params{Cooldown: threeDays, Version: "11.2.0"}); status != StatusMissing {
+	if status, _ := rule.Judge(&configfile.Value{}, Params{Cooldown: threeDays, Version: "11.2.0", VersionExact: true}); status != StatusMissing {
 		t.Errorf("pnpm 11 with a three day policy = %s, want missing: the default is only one day", status)
 	}
 }
@@ -154,18 +160,51 @@ func TestCompareVersions(t *testing.T) {
 // somebody to write onlyBuiltDependencies into pnpm 11 is telling them to write a
 // key their pnpm refuses.
 func TestRuleAppliesFollowsTheManagerVersion(t *testing.T) {
-	if ok, _ := pnpmOnlyBuiltDependencies.Applies("11.2.0"); ok {
+	if ok, _ := pnpmOnlyBuiltDependencies.Applies(pinned(PNPM, "11.2.0")); ok {
 		t.Error("the pnpm 10 key still applies on pnpm 11")
 	}
-	if ok, _ := pnpmOnlyBuiltDependencies.Applies("10.20.0"); !ok {
+	if ok, _ := pnpmOnlyBuiltDependencies.Applies(pinned(PNPM, "10.20.0")); !ok {
 		t.Error("the pnpm 10 key does not apply on pnpm 10")
 	}
-	if ok, why := npmMinReleaseAge.Applies("11.9.0"); ok || why == "" {
+	if ok, why := npmMinReleaseAge.Applies(pinned(NPM, "11.9.0")); ok || why == "" {
 		t.Errorf("npm 11.9 is older than the setting: ok = %v, why = %q", ok, why)
 	}
-	if ok, _ := npmMinReleaseAge.Applies("12.0.2"); !ok {
+	if ok, _ := npmMinReleaseAge.Applies(pinned(NPM, "12.0.2")); !ok {
 		t.Error("npm 12 does not get the min-release-age rule")
 	}
+}
+
+// A lockfile format marker says only that the manager is no older than a version,
+// and pnpm 10 and 11 both write lockfileVersion 9.0. Reading that floor as the
+// version this project runs would report every setting added later as not
+// applicable, which is the shape of most repositories and would leave the
+// scorecard with nothing on it.
+func TestRuleAppliesTreatsALockfileFloorAsUnknown(t *testing.T) {
+	floor := &Manager{ID: PNPM, Version: "9.0.0", VersionSource: "lockfileVersion 9.0 of pnpm-lock.yaml"}
+	ok, why := pnpmMinimumReleaseAge.Applies(floor)
+	if !ok {
+		t.Fatalf("a pnpm project with only a lockfile gets no rules: %s", why)
+	}
+	if !strings.Contains(why, "at least 9.0.0") {
+		t.Errorf("the caveat does not say what is known: %q", why)
+	}
+	// A floor that already reaches the setting needs no caveat at all.
+	if ok, why := pnpmStrictDepBuilds.Applies(&Manager{ID: PNPM, Version: "10.5.0"}); !ok || why != "" {
+		t.Errorf("a floor above the setting's own version = %v, %q, want it to apply plainly", ok, why)
+	}
+	// A default is not credited against a floor: pnpm 11 waits a day and pnpm 10
+	// does not, and a lockfile cannot tell them apart.
+	status, _ := MinimumAge{Unit: Minutes, Default: day, DefaultSince: "11"}.
+		Judge(&configfile.Value{}, Params{Cooldown: day, Version: "11.0.0"})
+	if status != StatusMissing {
+		t.Errorf("a floor of 11.0.0 was credited with pnpm 11's default: %s", status)
+	}
+}
+
+// pinned is a manager whose version is the one it runs, which is what a
+// packageManager field or the binary itself answers.
+func pinned(id ManagerID, version string) *Manager {
+	return &Manager{ID: id, Version: version, VersionExact: true}
 }
 
 // Every rule is a row somebody has to be able to check: an id, a name, a level, a

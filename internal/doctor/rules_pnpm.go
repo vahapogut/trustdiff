@@ -102,13 +102,12 @@ var pnpmAllowBuilds = &Rule{
 // own version reads. Until says pnpm 11, where the key is gone and reporting it
 // missing would be telling somebody to write a setting their pnpm rejects.
 var pnpmOnlyBuiltDependencies = &Rule{
-	ID:       "DR013",
-	Name:     "pnpm-only-built-dependencies",
-	Manager:  PNPM,
-	Summary:  "name the packages allowed to run a build script (pnpm 10)",
-	Since:    "10.0.0",
-	Until:    "11.0.0",
-	Replaces: "pnpm-allow-builds",
+	ID:      "DR013",
+	Name:    "pnpm-only-built-dependencies",
+	Manager: PNPM,
+	Summary: "name the packages allowed to run a build script (pnpm 10)",
+	Since:   "10.0.0",
+	Until:   "11.0.0",
 	Targets: []Target{{
 		Name:   "pnpm-workspace.yaml",
 		Format: configfile.FormatYAML,

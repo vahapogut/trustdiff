@@ -49,7 +49,7 @@ var bunSecurityScanner = &Rule{
 	Targets: []Target{{
 		Name:   "bunfig.toml",
 		Format: configfile.FormatTOML,
-		Key:    configfile.Key{"install.security", "scanner"},
+		Key:    configfile.Key{"install", "security", "scanner"},
 	}},
 	Desired:  Advice{},
 	Level:    model.LevelInfo,

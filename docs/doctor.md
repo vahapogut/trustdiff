@@ -22,10 +22,10 @@ and the install log says nothing at all.
 So a row can be present and still wrong, and the scorecard says which:
 
 ```
-bun 1.4.2  (bunfig.toml)
-  wrong    DR030 bun-minimum-release-age  bunfig.toml:4
-    10080 is 168 minutes, and the policy asks for 3 days (259200 here). 10080 is
-    1 week in minutes, the unit pnpm and Yarn count in
+bun 1.4.2  (version from the packageManager field of apps/native/package.json, apps/native)
+  wrong           DR030 bun-minimum-release-age  apps/native/bunfig.toml:3
+      10080 is 168 minutes, and the policy asks for 3 days (259200 here). 10080 is 1 week in
+      minutes, the unit pnpm and Yarn count in
 ```
 
 ## Statuses
@@ -36,10 +36,23 @@ bun 1.4.2  (bunfig.toml)
 | `wrong` | the key is there and its value is not enough: the wrong unit, or a threshold too short to mean anything |
 | `missing` | the file does not state the key |
 | `unreadable` | the file exists and could not be read, or the value sits somewhere the writer will not touch |
+| `advice` | the rule has no value to check and its sentence is the whole row: which packages may run a build script, what a manager offers instead of a setting it does not have |
 | `not applicable` | this version of the manager does not have the setting, or a newer key replaced it |
 
 `--ci` exits 1 on any `wrong`, `missing` or `unreadable` at or above
-`doctor.ci_min_severity`, which defaults to `warn`.
+`doctor.ci_min_severity`, which defaults to `warn`. `set`, `advice` and
+`not applicable` never fail a gate.
+
+## Which version a rule is judged against
+
+A rule that exists only from a given version is judged by the version this project
+runs, which is what a `packageManager` field, a committed Yarn release or the
+manager on this machine answers. A lockfile format marker is not that: pnpm 10 and
+pnpm 11 both write `lockfileVersion: '9.0'`, and npm 7 through 12 all write
+`lockfileVersion: 3`. A marker gives a floor, and where the floor does not already
+answer the question, the rule is judged as if the manager were current and the line
+says so. A manager's own default is credited only against an exact version, because
+a project pinned to pnpm 10 does not get pnpm 11's day of waiting.
 
 ## What `--fix` writes, and what it refuses
 
@@ -164,7 +177,9 @@ list somebody else ordered is not a judgment this tool makes.
 
 **A workflow that names an action by a tag** runs whatever that tag points at today.
 It is a dependency with no lockfile and the most access in the job. A local action
-and a container image need no pin. The SLSA generator is the one published workflow
+needs no pin, and a `docker://` image is pinned by its `@sha256:` digest: a tag on an
+image moves exactly the way a tag on an action does. A `uses:` line inside a `run: |`
+block is a line of a shell script and is not judged. The SLSA generator is the one published workflow
 that must stay on a tag, because its verifier checks the reference of the workflow
 that built an artifact; doctor reports it as pinned by design when it carries a full
 version tag such as `@v2.1.0`, and as wrong when it carries a shortened one.

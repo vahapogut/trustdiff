@@ -128,14 +128,20 @@ func (a *App) writeScorecard(card *doctor.Scorecard, settings policy.DoctorSetti
 	}
 	pol, cooldown := a.applyCooldownOverride(pol)
 
+	// Without --ci nothing fails, and the document says so in the field a script
+	// reads for it. --fail-on is not what gates a scorecard: the policy's doctor
+	// section is, and reporting the wrong one would tell a script the run was gated
+	// by something it was not.
 	failOn := model.LevelOff
+	gate := "never"
 	if ci {
 		failOn = settings.CIMinSeverity
+		gate = settings.CIMinSeverity.String()
 	}
 	doc := report.BuildDoctor(card, report.CurrentTool(), report.Policy{
 		Path:     policyPath,
 		Cooldown: cooldown,
-		FailOn:   a.Opts.FailOn,
+		FailOn:   gate,
 	}, failOn)
 	if doc.Summary.ExitCode == ExitOK && unreadableFails(pol, card) {
 		doc.SetExitCode(ExitUnavailable)
@@ -155,8 +161,8 @@ func (a *App) writeScorecard(card *doctor.Scorecard, settings policy.DoctorSetti
 // package manager rather than to an ecosystem's registry, so there is no override
 // to apply.
 func unreadableFails(pol *policy.Policy, card *doctor.Scorecard) bool {
-	return card.Counts()[doctor.StatusUnreadable] > 0 &&
-		pol.Effective("").OnDataUnavailable == policy.OnDataUnavailableFail
+	incomplete := card.Counts()[doctor.StatusUnreadable] > 0 || len(card.Failed) > 0
+	return incomplete && pol.Effective("").OnDataUnavailable == policy.OnDataUnavailableFail
 }
 
 // doctorOptions turns the policy and the flags into what a run works under. The
@@ -274,11 +280,16 @@ type userConfig struct {
 // returns, and the others under the home directory or XDG's configuration
 // directory. A file that is not there is simply not reported.
 func userConfigFiles(home, config string) []userConfig {
+	// Only the managers whose user level file has the same name as the file the
+	// rules read. pnpm keeps its own settings in a file called rc and Poetry in one
+	// called config.toml, and a rule that went looking for pnpm-workspace.yaml or
+	// poetry.toml in those directories would report a setting missing that is
+	// written a few bytes away. Reporting nothing is better than reporting the
+	// wrong file, and the two are listed here so the next person knows why they
+	// are absent.
 	files := []userConfig{
 		{doctor.NPM, home, ".npmrc", "the home directory"},
 		{doctor.Yarn, home, ".yarnrc.yml", "the home directory"},
-		{doctor.PNPM, filepath.Join(config, "pnpm"), "rc", "the pnpm configuration directory"},
-		{doctor.Poetry, filepath.Join(config, "pypoetry"), "config.toml", "the Poetry configuration directory"},
 	}
 	if runtime.GOOS == "windows" {
 		files = append(files, userConfig{doctor.Pip, filepath.Join(config, "pip"), "pip.ini", "the pip configuration directory"})

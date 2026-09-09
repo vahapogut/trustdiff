@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/vahapogut/trustdiff/internal/model"
 )
 
 // dependabotScanner reads .github/dependabot.yml and judges the cooldown of every
@@ -67,28 +69,34 @@ func (dependabotScanner) Scan(root string, m *Manager, p Params) ([]Result, erro
 	return results, nil
 }
 
-// dependabotBlock judges one update block.
+// dependabotBlock judges one update block against the cooldown its own ecosystem
+// is entitled to. A repository that waits three days for npm and seven for
+// crates.io says so in its policy, and the block names which one it updates.
 func dependabotBlock(file string, block *yaml.Node, p Params) Result {
 	name := blockName(block)
-	res := Result{File: file, Line: lineOf(block), Want: Days.Format(p.Cooldown)}
+	want := blockCooldown(block, p)
+	res := Result{File: file, Line: lineOf(block), Want: Days.Format(want)}
 	cooldown := mappingValue(block, "cooldown")
-	if cooldown == nil {
-		if p.Cooldown <= dependabotDefaultWait {
+	days := mappingValue(cooldown, "default-days")
+	if days == nil {
+		// No cooldown at all, and a cooldown that names only the semver kinds, wait
+		// the same three days GitHub applies by default to a version update. The
+		// two used to be judged differently, which reported the more careful file as
+		// the worse one.
+		res.Line = firstLine(block, cooldown)
+		detail := fmt.Sprintf("%s has no cooldown of its own", name)
+		if cooldown != nil {
+			detail = fmt.Sprintf("%s sets no default-days", name)
+		}
+		if want <= dependabotDefaultWait {
 			res.Status = StatusSet
-			res.Detail = fmt.Sprintf("%s has no cooldown, and a version update waits %s by default, which is at least the %s the policy asks for",
-				name, Humanize(dependabotDefaultWait), Humanize(p.Cooldown))
+			res.Detail = fmt.Sprintf("%s, and a version update waits %s by default, which is at least the %s the policy asks for",
+				detail, Humanize(dependabotDefaultWait), Humanize(want))
 			return res
 		}
 		res.Status = StatusMissing
-		res.Detail = fmt.Sprintf("%s has no cooldown, and the default wait of %s is shorter than the %s the policy asks for",
-			name, Humanize(dependabotDefaultWait), Humanize(p.Cooldown))
-		return res
-	}
-	res.Line = lineOf(cooldown)
-	days := mappingValue(cooldown, "default-days")
-	if days == nil {
-		res.Status = StatusMissing
-		res.Detail = fmt.Sprintf("%s has a cooldown without default-days, so only the version kinds it names wait", name)
+		res.Detail = fmt.Sprintf("%s, and the default wait of %s is shorter than the %s the policy asks for",
+			detail, Humanize(dependabotDefaultWait), Humanize(want))
 		return res
 	}
 	res.Line = days.Line
@@ -100,14 +108,52 @@ func dependabotBlock(file string, block *yaml.Node, p Params) Result {
 		return res
 	}
 	switch {
-	case have < p.Cooldown:
+	case have < want:
 		res.Status = StatusWrong
-		res.Detail = fmt.Sprintf("%s waits %s, and the policy asks for %s", name, Humanize(have), Humanize(p.Cooldown))
+		res.Detail = fmt.Sprintf("%s waits %s, and the policy asks for %s", name, Humanize(have), Humanize(want))
 	default:
 		res.Status = StatusSet
 		res.Detail = fmt.Sprintf("%s waits %s", name, Humanize(have))
 	}
 	return res
+}
+
+// blockCooldown is the wait this block's ecosystem is entitled to.
+func blockCooldown(block *yaml.Node, p Params) time.Duration {
+	if eco, ok := dependabotEcosystem(scalarValue(mappingValue(block, "package-ecosystem"))); ok {
+		if cooldown, set := p.Cooldowns[eco]; set && cooldown > 0 {
+			return cooldown
+		}
+	}
+	return p.Cooldown
+}
+
+// dependabotEcosystem maps a package-ecosystem value onto the registry the policy
+// knows it by. Dependabot updates more ecosystems than this tool evaluates, and one
+// it does not know keeps the policy's own cooldown rather than being guessed at.
+func dependabotEcosystem(value string) (model.Ecosystem, bool) {
+	switch value {
+	case "npm":
+		return model.NPM, true
+	case "pip", "uv":
+		return model.PyPI, true
+	case "cargo":
+		return model.Cargo, true
+	}
+	return "", false
+}
+
+// firstLine is the line a message about a missing key should point at: the key it
+// is missing from when that key is there, and the block itself when it is not.
+func firstLine(block, cooldown *yaml.Node) int {
+	if cooldown != nil {
+		// The value node of a mapping starts at its first child, and what a reader
+		// wants is the line above it, where "cooldown:" is written.
+		if line := lineOf(cooldown); line > 1 {
+			return line - 1
+		}
+	}
+	return lineOf(block)
 }
 
 // blockName words which update block a line is about, which is the pair a reader

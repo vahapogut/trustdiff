@@ -39,6 +39,7 @@ var doctorSummaryOrder = []doctor.Status{
 	doctor.StatusWrong,
 	doctor.StatusMissing,
 	doctor.StatusUnreadable,
+	doctor.StatusAdvice,
 	doctor.StatusNotApplicable,
 }
 
@@ -403,12 +404,30 @@ func (Markdown) WriteDoctor(w io.Writer, d *Doctor) error {
 	b.WriteString(doctorMarkdownHeading(d))
 	b.WriteString("\n\n")
 	writeDoctorMarkdownTable(&b, d)
+	writeDoctorMarkdownNotes(&b, d)
 	b.WriteString(doctorSummaryExit(d.Summary))
 	b.WriteString("\n")
 	if _, err := io.WriteString(w, b.String()); err != nil {
 		return fmt.Errorf("write markdown doctor scorecard: %w", err)
 	}
 	return nil
+}
+
+// writeDoctorMarkdownNotes writes what the run could not read, one line each,
+// followed by a blank line. A comment that carried the table and dropped the note
+// saying half the repository was unreadable would be a comment that reads as an
+// all clear.
+//
+// The lines are escaped like a table cell, because they name paths a pull request
+// chose.
+func writeDoctorMarkdownNotes(b *strings.Builder, d *Doctor) {
+	if len(d.Notes) == 0 {
+		return
+	}
+	for _, note := range d.Notes {
+		b.WriteString(escapeCell(note))
+		b.WriteString("\n\n")
+	}
 }
 
 // doctorMarkdownHeading names the command and carries the counts, without the
@@ -549,10 +568,12 @@ func doctorStatusRank(status string) int {
 		return 2
 	case doctor.StatusSet:
 		return 3
-	case doctor.StatusNotApplicable:
+	case doctor.StatusAdvice:
 		return 4
+	case doctor.StatusNotApplicable:
+		return 5
 	}
-	return 5
+	return 6
 }
 
 // doctorStatusColor is the color of a status word. A problem takes the color of its
@@ -563,7 +584,7 @@ func doctorStatusColor(res *DoctorResult) string {
 	switch doctor.Status(res.Status) {
 	case doctor.StatusSet:
 		return ansiGreen
-	case doctor.StatusNotApplicable:
+	case doctor.StatusAdvice, doctor.StatusNotApplicable:
 		return ansiDim
 	}
 	return levelColor(res.Level)

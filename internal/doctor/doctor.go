@@ -98,6 +98,17 @@ type Manager struct {
 	// VersionSource says where Version came from, in the words the scorecard
 	// prints: "the packageManager field", "pnpm-lock.yaml", "pnpm --version".
 	VersionSource string
+	// VersionExact is true when Version is the version this project runs: a
+	// packageManager pin, a committed Yarn release, or the binary's own answer. It
+	// is false when Version was derived from a lockfile format marker, which says
+	// only that the manager is no older than that: pnpm 10 and pnpm 11 both write
+	// lockfileVersion 9.0, and npm 7 through 12 all write lockfileVersion 3.
+	//
+	// The difference decides whether a rule is judged or assumed. A floor read as
+	// an exact version would report every setting added after it as "not
+	// applicable", which is the most common repository shape there is and would
+	// make the scorecard quietly useless.
+	VersionExact bool
 	// Evidence is what made this manager count as present, one line each: a
 	// lockfile, a manifest field, a configuration file.
 	Evidence []string
@@ -169,8 +180,16 @@ type Params struct {
 	// doctor recommends here too. A project that decided three days for its own
 	// gate is not told to configure seven in its package manager.
 	Cooldown time.Duration
-	// Version is the manager's version, empty when unknown.
-	Version string
+	// Version is the manager's version, empty when unknown, and VersionExact says
+	// whether it is the version this project runs or only a floor a lockfile
+	// implies. A default is credited only against an exact version.
+	Version      string
+	VersionExact bool
+	// Cooldowns is the wait the policy sets per ecosystem. A rule about one manager
+	// is judged against its own ecosystem's, which paramsFor has already put in
+	// Cooldown; this map is for a rule whose subject names an ecosystem of its own,
+	// which is what each Dependabot update block does.
+	Cooldowns map[model.Ecosystem]time.Duration
 	// Now is the run clock, for a rule that has to reason about time.
 	Now time.Time
 	// PinExceptions are the workflow references a project has decided may stay on
@@ -229,9 +248,6 @@ type Rule struct {
 	// because a newer key replaced it. onlyBuiltDependencies is a pnpm 10 key that
 	// allowBuilds replaces in 11.
 	Until string
-	// Replaces names the rule this one supersedes, so a scorecard does not report
-	// both as missing.
-	Replaces string
 	// Targets are the files the setting can live in, most preferred first.
 	Targets []Target
 	// Desired is the value and the judgment.
@@ -267,13 +283,26 @@ type Rule struct {
 // scorecard that helps nobody. The caveat says what the answer rests on, and a rule
 // a newer version replaced is left out, because assuming a current release means
 // assuming the key that release reads.
-func (r *Rule) Applies(version string) (bool, string) {
+func (r *Rule) Applies(m *Manager) (bool, string) {
+	version := ""
+	if m.VersionExact {
+		version = m.Version
+	}
 	if version == "" {
+		known := m.Version
+		if known != "" && CompareVersions(known, r.Since) >= 0 && (r.Until == "" || CompareVersions(known, r.Until) < 0) {
+			// The floor alone already puts this project inside the range the
+			// setting exists in, so there is nothing to assume.
+			return true, ""
+		}
 		switch {
 		case r.Until != "":
 			return false, fmt.Sprintf("%s %s replaced this setting, and the version in use could not be determined", r.Manager, r.Until)
 		case r.Since == "":
 			return true, ""
+		case known != "":
+			return true, fmt.Sprintf("%s is at least %s, from the lockfile, and the exact version could not be determined; this setting needs %s or later",
+				r.Manager, known, r.Since)
 		}
 		return true, fmt.Sprintf("the %s version could not be determined; this setting needs %s or later", r.Manager, r.Since)
 	}

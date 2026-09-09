@@ -42,7 +42,7 @@ func (m MinimumAge) defaulted(p Params) bool {
 	if m.DefaultSince == "" {
 		return true
 	}
-	return p.Version != "" && CompareVersions(p.Version, m.DefaultSince) >= 0
+	return p.VersionExact && p.Version != "" && CompareVersions(p.Version, m.DefaultSince) >= 0
 }
 
 // Want is the project's cooldown in this manager's unit.
@@ -177,7 +177,7 @@ func (b BoolSetting) defaulted(p Params) bool {
 	if b.DefaultSince == "" {
 		return true
 	}
-	return p.Version != "" && CompareVersions(p.Version, b.DefaultSince) >= 0
+	return p.VersionExact && p.Version != "" && CompareVersions(p.Version, b.DefaultSince) >= 0
 }
 
 // Want is the hardened value.
@@ -221,6 +221,24 @@ type EnumSetting struct {
 	Accepted []string
 	// Weaker explains, in one clause, what the values other than Want give up.
 	Weaker string
+	// Default is what the manager does when the key is absent, empty when it does
+	// nothing, and DefaultSince is the version that default arrived in. Yarn
+	// already throws on a checksum mismatch and npm 12 already refuses a git
+	// dependency, and telling those projects to write a line that changes nothing
+	// is how a scorecard loses a reader.
+	Default      string
+	DefaultSince string
+}
+
+// defaulted reports whether this run may credit the manager's own default.
+func (e EnumSetting) defaulted(p Params) bool {
+	if e.Default == "" {
+		return false
+	}
+	if e.DefaultSince == "" {
+		return true
+	}
+	return p.VersionExact && p.Version != "" && CompareVersions(p.Version, e.DefaultSince) >= 0
 }
 
 // Want is the value to write.
@@ -231,8 +249,11 @@ func (e EnumSetting) Describe(Params) string { return e.Value }
 
 // Judge compares the text, and says whether an unexpected value is one of the
 // manager's own or a spelling mistake.
-func (e EnumSetting) Judge(v *configfile.Value, _ Params) (Status, string) {
+func (e EnumSetting) Judge(v *configfile.Value, p Params) (Status, string) {
 	if !v.Found() {
+		if e.defaulted(p) && e.Default == e.Value {
+			return StatusSet, fmt.Sprintf("not set, and this version defaults to %s", e.Default)
+		}
 		return StatusMissing, ""
 	}
 	text := strings.TrimSpace(v.Text)

@@ -116,7 +116,7 @@ func TestFixWritesEachManagersUnitAndIsIdempotent(t *testing.T) {
 // never as a setting somebody forgot.
 func TestEvaluateSkipsRulesTheVersionDoesNotHave(t *testing.T) {
 	root := writeFixture(t)
-	managers := []Manager{{ID: PNPM, Root: ".", Version: "10.20.0", Files: []string{"pnpm-workspace.yaml"}}}
+	managers := []Manager{{ID: PNPM, Root: ".", Version: "10.20.0", VersionExact: true, Files: []string{"pnpm-workspace.yaml"}}}
 	card, err := Evaluate(root, managers, Options{Params: Params{Cooldown: threeDays, Version: "10.20.0", Now: fixedNow()}})
 	if err != nil {
 		t.Fatal(err)
@@ -169,7 +169,7 @@ func TestEvaluateRefusesASymbolicLink(t *testing.T) {
 		t.Skipf("this machine does not allow creating a symbolic link: %v", err)
 	}
 
-	managers := []Manager{{ID: PNPM, Root: "apps/linked", Version: "11.2.0", Files: []string{"apps/linked/pnpm-workspace.yaml"}}}
+	managers := []Manager{{ID: PNPM, Root: "apps/linked", Version: "11.2.0", VersionExact: true, Files: []string{"apps/linked/pnpm-workspace.yaml"}}}
 	card, err := Evaluate(root, managers, Options{Params: Params{Cooldown: threeDays, Version: "11.2.0", Now: fixedNow()}})
 	if err != nil {
 		t.Fatal(err)
@@ -200,9 +200,9 @@ func writeFixture(t *testing.T) string {
 // that these tests do not depend on detection.
 func fixtureManagers() []Manager {
 	return []Manager{
-		{ID: PNPM, Root: ".", Version: "11.2.0", VersionSource: "the packageManager field", Files: []string{"pnpm-workspace.yaml"}},
-		{ID: Bun, Root: ".", Version: "1.4.2", VersionSource: "bun --version", Files: []string{"bunfig.toml"}},
-		{ID: NPM, Root: ".", Version: "12.0.2", VersionSource: "npm --version", Files: []string{".npmrc"}},
+		{ID: PNPM, Root: ".", Version: "11.2.0", VersionExact: true, VersionSource: "the packageManager field", Files: []string{"pnpm-workspace.yaml"}},
+		{ID: Bun, Root: ".", Version: "1.4.2", VersionExact: true, VersionSource: "bun --version", Files: []string{"bunfig.toml"}},
+		{ID: NPM, Root: ".", Version: "12.0.2", VersionExact: true, VersionSource: "npm --version", Files: []string{".npmrc"}},
 	}
 }
 

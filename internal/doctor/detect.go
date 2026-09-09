@@ -297,9 +297,13 @@ func claimsFor(rel string) []claim {
 	case "package-lock.json":
 		return []claim{{NPM, dir, true}}
 	case ".npmrc":
-		// pnpm reads .npmrc too, and several of its hardening settings can live
-		// there, so the file is listed among pnpm's files. It only proves npm.
-		return []claim{{NPM, dir, true}, {PNPM, dir, false}}
+		// An .npmrc alone does not prove npm. Every Node manager reads one for its
+		// registry and authentication settings, and a pnpm or Yarn repository that
+		// keeps a registry line in one would otherwise gain a whole npm scorecard
+		// telling it to configure a manager it does not run. What proves npm is a
+		// package-lock.json or a packageManager field naming it, and the file is
+		// listed among the files of the manager that is proven.
+		return []claim{{NPM, dir, false}, {PNPM, dir, false}, {Yarn, dir, false}, {Bun, dir, false}}
 	case "pnpm-lock.yaml", "pnpm-workspace.yaml":
 		return []claim{{PNPM, dir, true}}
 	case "yarn.lock", ".yarnrc.yml":
@@ -517,22 +521,25 @@ func sortedKeys(set map[string]bool) []string {
 // may be nothing like the one CI will run.
 func (d *detector) resolveVersion(ctx context.Context, m *Manager) {
 	if version, source, ok := d.pinnedVersion(m); ok {
-		m.Version, m.VersionSource = version, source
+		m.Version, m.VersionSource, m.VersionExact = version, source, true
 		return
 	}
 	if version, source, ok := d.yarnVersion(m); ok {
-		m.Version, m.VersionSource = version, source
+		m.Version, m.VersionSource, m.VersionExact = version, source, true
 		return
 	}
-	if version, source, ok := d.markerVersion(m); ok {
-		m.Version, m.VersionSource = version, source
-		return
+	// A marker is asked before the binary because it describes this repository
+	// rather than this machine, but what it gives is a floor and not a version, and
+	// the binary can still improve on it below.
+	marker, markerSource, hasMarker := d.markerVersion(m)
+	if hasMarker {
+		m.Version, m.VersionSource, m.VersionExact = marker, markerSource, false
 	}
 	if !d.opts.RunBinaries {
 		return
 	}
 	if version, source, ok := d.binaryVersion(ctx, m); ok {
-		m.Version, m.VersionSource = version, source
+		m.Version, m.VersionSource, m.VersionExact = version, source, true
 	}
 }
 

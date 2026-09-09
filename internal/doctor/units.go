@@ -140,8 +140,14 @@ func wordUnitLength(unit string) (time.Duration, error) {
 		return 24 * time.Hour, nil
 	case "week":
 		return 7 * 24 * time.Hour, nil
-	case "month", "year":
-		return 0, fmt.Errorf("%s have no fixed length; use days or weeks", unit)
+	case "month":
+		// Reading is not writing. No month has a fixed length, which is why nothing
+		// here ever writes one, but a file that already says "1 month" is asking for
+		// a longer wait than any cooldown and calling that wrong would be absurd.
+		// Thirty days is the shortest month, so it is the honest reading.
+		return 30 * 24 * time.Hour, nil
+	case "year":
+		return 365 * 24 * time.Hour, nil
 	}
 	return 0, fmt.Errorf("unknown unit %q; use hours, days or weeks", unit)
 }

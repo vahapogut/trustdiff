@@ -2,9 +2,9 @@ package doctor
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/vahapogut/trustdiff/internal/configfile"
 	"github.com/vahapogut/trustdiff/internal/textdiff"
@@ -40,9 +40,14 @@ func applyFixes(root string, card *Scorecard, opts *Options) error {
 		if err != nil {
 			// One file that cannot be written must not stop the others: the run
 			// says so on the result and carries on, because a monorepo where one
-			// directory is read only should still get the other nine fixed.
-			res.Detail = appendSentence(res.Detail, fmt.Sprintf("could not be written: %v", err))
-			card.Notes = append(card.Notes, fmt.Sprintf("%s: %v", res.File, err))
+			// directory is read only should still get the other nine fixed. The run
+			// is still incomplete, which the exit code follows.
+			reason := slashed(err.Error())
+			res.Detail = appendSentence(res.Detail, "could not be written: "+reason)
+			card.Notes = append(card.Notes, res.File+": "+reason)
+			if !contains(card.Failed, res.File) {
+				card.Failed = append(card.Failed, res.File)
+			}
 			continue
 		}
 		if !changed {
@@ -126,13 +131,12 @@ func fixOne(root string, res *Result, opts *Options, backups map[string]string) 
 			// Another rule of this run already copied the file.
 			backup = existing
 		case opts.Backup:
-			written, backupErr := textdiff.Backup(full, opts.Params.Now)
+			copied, backupErr := textdiff.Backup(full, opts.Params.Now)
 			if backupErr != nil {
 				return false, "", backupErr
 			}
-			backup = filepath.ToSlash(mustRel(root, written))
+			backup = filepath.ToSlash(mustRel(root, copied))
 			backups[full] = backup
-			res.Detail = appendSentence(res.Detail, "the previous file is kept as "+backup)
 		}
 	} else if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
 		return false, "", err
@@ -140,6 +144,15 @@ func fixOne(root string, res *Result, opts *Options, backups map[string]string) 
 	if err := textdiff.Write(full, next.Bytes(), mode); err != nil {
 		return false, "", err
 	}
+	// The judgment described the value that was there, and it is not there any
+	// more. A line that says "set" over a sentence explaining what is wrong with it
+	// is a line nobody can read.
+	written := strings.TrimSpace(strings.Join(edit.Lines, " "))
+	res.Detail = "written: " + written
+	if backup != "" {
+		res.Detail = appendSentence(res.Detail, "the previous file is kept as "+backup)
+	}
+	res.Current = written
 	res.Fixed = true
 	res.Status = StatusSet
 	res.Line = edit.Start
@@ -178,4 +191,12 @@ func contains(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// slashed writes the paths inside a message the way the rest of the report writes
+// them. An error from the file system carries the platform's own separator, and a
+// scorecard that says C:\Users in one line and C:/Users in the next is one nobody
+// can grep.
+func slashed(message string) string {
+	return strings.ReplaceAll(message, "\\", "/")
 }

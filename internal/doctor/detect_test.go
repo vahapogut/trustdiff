@@ -64,12 +64,13 @@ func TestDetectMonorepo(t *testing.T) {
 	}, {
 		// A workspace member with its own lockfile is its own manager, and the root
 		// pin names pnpm, so nothing pins this npm and the lockfile marker answers
-		// as the floor it is.
+		// as the floor it is. The .npmrc beside it is a file npm reads, not
+		// evidence that npm is what installs here.
 		ID:            NPM,
 		Root:          "apps/web",
 		Version:       "7.0.0",
 		VersionSource: "lockfileVersion 3 of apps/web/package-lock.json, which no npm older than 7.0.0 writes",
-		Evidence:      []string{".npmrc", "package-lock.json"},
+		Evidence:      []string{"package-lock.json"},
 		Files:         []string{"apps/web/.npmrc", "apps/web/package-lock.json"},
 	}, {
 		// The pin beats the lockfile marker beside it: pnpm-lock.yaml says 9.0,
@@ -77,6 +78,7 @@ func TestDetectMonorepo(t *testing.T) {
 		ID:            PNPM,
 		Root:          ".",
 		Version:       "11.2.0",
+		VersionExact:  true,
 		VersionSource: "the packageManager field of package.json",
 		Evidence:      []string{"pnpm-lock.yaml", "pnpm-workspace.yaml", "the packageManager field of package.json"},
 		Files:         []string{"package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"},
@@ -573,4 +575,37 @@ func spellManagers(managers []Manager) string {
 		lines = append(lines, spellManager(&m))
 	}
 	return "\n\t" + strings.Join(lines, "\n\t")
+}
+
+// An .npmrc is not proof that npm is what installs. Every Node manager reads one
+// for its registry and authentication settings, and a pnpm repository that keeps a
+// registry line in one used to gain a whole npm scorecard telling it to configure a
+// manager it does not run.
+func TestDetectDoesNotInventNpmFromAnNpmrc(t *testing.T) {
+	root := writeDetectFixture(t, map[string]string{
+		".npmrc":         "registry=https://registry.npmjs.org/\n",
+		"pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+		"package.json":   `{"name":"x"}` + "\n",
+	})
+
+	managers, _, err := Detect(context.Background(), root, DetectOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pnpm *Manager
+	for i := range managers {
+		if managers[i].ID == NPM {
+			t.Errorf("an npm manager was invented from an .npmrc: %+v", managers[i])
+		}
+		if managers[i].ID == PNPM {
+			pnpm = &managers[i]
+		}
+	}
+	if pnpm == nil {
+		t.Fatal("pnpm was not detected")
+	}
+	// The file is still listed for the manager that does read it.
+	if !slices.Contains(pnpm.Files, ".npmrc") {
+		t.Errorf("pnpm files = %v, want the .npmrc among them", pnpm.Files)
+	}
 }

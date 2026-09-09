@@ -82,6 +82,9 @@ var yarnChecksumBehavior = &Rule{
 		Value:    "throw",
 		Accepted: []string{"update", "ignore", "reset"},
 		Weaker:   "accepts bytes that do not match the lockfile, which is the one thing the checksum is there to stop",
+		// Yarn has thrown since the setting existed, so a file that says nothing is
+		// already right and the rule exists for the project that changed it.
+		Default: "throw",
 	},
 	Level:    model.LevelWarn,
 	Docs:     "https://yarnpkg.com/configuration/yarnrc",

@@ -1,4 +1,4 @@
-## trustdiff doctor: 2 set, 2 wrong, 1 missing, 1 unreadable, 1 not applicable
+## trustdiff doctor: 2 set, 2 wrong, 1 missing, 1 unreadable, 1 advice, 1 not applicable
 
 | Manager | Rule | Status | Setting | Location |
 | --- | --- | --- | --- | --- |
@@ -8,6 +8,9 @@
 | pnpm 10.16.1 (apps/web) | DR011 pnpm-strict-dep-builds | unreadable |  | apps/web/pnpm-workspace.yaml:9 |
 | npm 11.16.0 | DR002 npm-strict-allow-scripts | set | true | .npmrc:6 |
 | npm 11.16.0 | DR004 npm-allow-remote | set | false | .npmrc:4 |
+| npm 11.16.0 | DR031 bun-security-scanner | advice |  | .npmrc |
 | pnpm 10.16.1 (apps/web) | DR015 pnpm-trust-policy | not applicable |  |  |
+
+apps/web/pnpm-workspace.yaml: the value of strictDepBuilds is a YAML alias, which this reader will not interpret
 
 Exit code 1 (problems at or above the threshold).

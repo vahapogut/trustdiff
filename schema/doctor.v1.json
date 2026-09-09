@@ -87,13 +87,13 @@
           "type": "string"
         },
         "cooldown": {
-          "description": "Threshold of the young-version check in the spelling the policy accepts, for example 3d, 12h, 1w or P3D. It is also what doctor asks each manager to wait, written into each rule in that manager's own unit, so that a project which decided three days for its own gate is not told to configure seven.",
+          "description": "The policy's own cooldown, in the spelling it accepts, for example 3d, 12h, 1w or P3D. It is what doctor asks each manager to wait, written into each rule in that manager's own unit, so that a project which decided three days for its own gate is not told to configure seven. A manager whose ecosystem the policy gave a cooldown of its own is judged against that one instead, and the rule's want field then says what was asked for.",
           "type": "string"
         },
         "fail_on": {
-          "description": "Lowest rule level that makes the exit code 1. never means the exit code is 0 whatever the scorecard says; exit codes 2 and 3 are unaffected.",
+          "description": "Lowest rule level that makes the exit code 1, which for doctor is the policy's doctor.ci_min_severity and not the --fail-on flag, since --fail-on gates findings about packages. It is never without --ci, because a scorecard that was only asked for a report does not fail; exit codes 2 and 3 are unaffected.",
           "type": "string",
-          "enum": ["block", "warn", "never"]
+          "enum": ["block", "warn", "info", "never"]
         }
       }
     },
@@ -174,9 +174,9 @@
           "$ref": "#/definitions/manager_id"
         },
         "status": {
-          "description": "What the rule concluded. set means the file holds a value that does what the rule asks; wrong means the key is there and its value is not, the wrong unit or a threshold too permissive to mean anything; missing means the file does not state the key at all; unreadable means the file exists and could not be read, or the value sits in a construct the reader will not interpret; not applicable means the manager is older than the setting or a newer key replaced it. The first and the last are not problems; the middle three are.",
+          "description": "What the rule concluded. set means the file holds a value that does what the rule asks; wrong means the key is there and its value is not, the wrong unit or a threshold too permissive to mean anything; missing means the file does not state the key at all; unreadable means the file exists and could not be read, or the value sits in a construct the reader will not interpret; advice means the rule has no value to check and its detail is what the reader is here for, such as which packages may run a build script; not applicable means the manager is older than the setting or a newer key replaced it. Only wrong, missing and unreadable are problems.",
           "type": "string",
-          "enum": ["set", "wrong", "missing", "unreadable", "not applicable"]
+          "enum": ["set", "wrong", "missing", "unreadable", "advice", "not applicable"]
         },
         "level": {
           "description": "Effective level after the policy was applied, which is what decides whether this result can make the exit code 1. A rule set to off is not evaluated and produces no result at all.",
@@ -238,7 +238,7 @@
         "statuses": {
           "description": "Number of results per status. Every key is present even when its count is zero, and the keys are the status values themselves, so a reader can count with the status field of a result.",
           "type": "object",
-          "required": ["set", "wrong", "missing", "unreadable", "not applicable"],
+          "required": ["set", "wrong", "missing", "unreadable", "advice", "not applicable"],
           "additionalProperties": false,
           "properties": {
             "set": {
@@ -258,6 +258,11 @@
             },
             "unreadable": {
               "description": "Settings whose file could not be read or whose value sits where the reader will not interpret it.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "advice": {
+              "description": "Rules with no value to check, whose detail is the whole content of the row.",
               "type": "integer",
               "minimum": 0
             },

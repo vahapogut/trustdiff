@@ -63,6 +63,16 @@ func fixtureScorecard() *doctor.Scorecard {
 		Managers: []*doctor.Manager{npm, pnpm},
 		Results: []doctor.Result{
 			{
+				// A rule with no value to check: its detail is the whole row, and its
+				// status is the one the schema and the counts most easily forget.
+				Rule:    fixtureRule("DR031", "bun-security-scanner", doctor.NPM, model.LevelInfo),
+				Manager: npm,
+				Status:  doctor.StatusAdvice,
+				Detail:  "which scanner to trust is a decision for the project, so this is reported and never written",
+				File:    ".npmrc",
+				Level:   model.LevelInfo,
+			},
+			{
 				Rule:    fixtureRule("DR001", "npm-min-release-age", doctor.NPM, model.LevelWarn),
 				Manager: npm,
 				Status:  doctor.StatusWrong,
@@ -219,7 +229,7 @@ func TestDoctorHumanBlocks(t *testing.T) {
 	if want := "apps/web/pnpm-workspace.yaml: the value of strictDepBuilds is a YAML alias, which this reader will not interpret"; lines[0] != want {
 		t.Errorf("first line = %q, want the note %q", lines[0], want)
 	}
-	if want := "2 set, 2 wrong, 1 missing, 1 unreadable, 1 not applicable. Exit code 1 (problems at or above the threshold)."; lines[len(lines)-1] != want {
+	if want := "2 set, 2 wrong, 1 missing, 1 unreadable, 1 advice, 1 not applicable. Exit code 1 (problems at or above the threshold)."; lines[len(lines)-1] != want {
 		t.Errorf("last line = %q, want %q", lines[len(lines)-1], want)
 	}
 	for _, want := range []string{
@@ -263,6 +273,21 @@ func TestDoctorHumanBlocks(t *testing.T) {
 // The markdown comment is a table a reviewer reads without opening a log, so the
 // heading carries the counts, the rows are the rules with the problems first, and the
 // last line says whether the gate failed.
+// A comment that carried the table and dropped the note saying half the repository
+// was unreadable would read as an all clear.
+func TestDoctorMarkdownCarriesTheNotes(t *testing.T) {
+	card := fixtureScorecard()
+	card.Notes = []string{"apps/web/pnpm-workspace.yaml: could not be read"}
+	d := BuildDoctor(card, testTool(), testPolicy(), model.LevelBlock)
+	var buf bytes.Buffer
+	if err := (Markdown{}).WriteDoctor(&buf, d); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "could not be read") {
+		t.Errorf("the comment drops the note:\n%s", buf.String())
+	}
+}
+
 func TestDoctorMarkdownComment(t *testing.T) {
 	var buf bytes.Buffer
 	if err := (Markdown{}).WriteDoctor(&buf, fixtureDoctorDocument()); err != nil {
@@ -270,7 +295,7 @@ func TestDoctorMarkdownComment(t *testing.T) {
 	}
 	out := string(normalizeNewlines(buf.Bytes()))
 	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
-	if want := "## trustdiff doctor: 2 set, 2 wrong, 1 missing, 1 unreadable, 1 not applicable"; lines[0] != want {
+	if want := "## trustdiff doctor: 2 set, 2 wrong, 1 missing, 1 unreadable, 1 advice, 1 not applicable"; lines[0] != want {
 		t.Errorf("heading = %q, want %q", lines[0], want)
 	}
 	if want := "Exit code 1 (problems at or above the threshold)."; lines[len(lines)-1] != want {
@@ -286,6 +311,7 @@ func TestDoctorMarkdownComment(t *testing.T) {
 		{"pnpm 10.16.1 (apps/web)", "DR011 pnpm-strict-dep-builds", "unreadable", "", "apps/web/pnpm-workspace.yaml:9"},
 		{"npm 11.16.0", "DR002 npm-strict-allow-scripts", "set", "true", ".npmrc:6"},
 		{"npm 11.16.0", "DR004 npm-allow-remote", "set", "false", ".npmrc:4"},
+		{"npm 11.16.0", "DR031 bun-security-scanner", "advice", "", ".npmrc"},
 		{"pnpm 10.16.1 (apps/web)", "DR015 pnpm-trust-policy", "not applicable", "", ""},
 	}
 	if len(rows) != len(want) {
@@ -404,8 +430,8 @@ func TestDoctorEmptyScorecard(t *testing.T) {
 		if d.Managers == nil || d.Results == nil || d.Notes == nil {
 			t.Error("an empty scorecard left a slice nil, which json writes as null")
 		}
-		if len(d.Summary.Statuses) != 5 {
-			t.Errorf("statuses = %v, want all five keys", d.Summary.Statuses)
+		if len(d.Summary.Statuses) != len(doctorSummaryOrder) {
+			t.Errorf("statuses = %v, want every status the package defines", d.Summary.Statuses)
 		}
 		if d.Summary.ExitCode != 0 {
 			t.Errorf("exit code = %d, want 0", d.Summary.ExitCode)
@@ -620,6 +646,7 @@ func TestDoctorSchemaMatchesConstants(t *testing.T) {
 		string(doctor.StatusWrong),
 		string(doctor.StatusMissing),
 		string(doctor.StatusUnreadable),
+		string(doctor.StatusAdvice),
 		string(doctor.StatusNotApplicable),
 	}
 	if got := doc.Definitions.Result.Properties.Status.Enum; !slices.Equal(got, statuses) {
@@ -672,8 +699,8 @@ func TestDoctorJSONWritesEveryRequiredField(t *testing.T) {
 		requireKeys(t, "manager "+string(rune('0'+i)), m.(map[string]any), doc.Definitions.Manager.Required)
 	}
 	results, _ := out["results"].([]any)
-	if len(results) != 7 {
-		t.Fatalf("the fixture must render seven results, got %d", len(results))
+	if len(results) != 8 {
+		t.Fatalf("the fixture must render eight results, got %d", len(results))
 	}
 	for i, res := range results {
 		requireKeys(t, "result "+string(rune('0'+i)), res.(map[string]any), doc.Definitions.Result.Required)

@@ -184,13 +184,21 @@ func TestDoctorFixWritesEachManagersUnit(t *testing.T) {
 		}
 	}
 
-	// Five npm rules write into one .npmrc, and every one of them has to land. The
+	// Three npm rules write into one .npmrc, and every one of them has to land. The
 	// first version of this took a backup per rule, the names collided inside one
-	// second, and four of the five settings were quietly not written.
+	// second, and two of the three settings were quietly not written.
 	npmrc := readFileAt(t, dir, ".npmrc")
-	for _, key := range []string{"min-release-age", "strict-allow-scripts", "allow-git", "allow-remote", "strict-npmrc"} {
+	for _, key := range []string{"min-release-age", "strict-allow-scripts", "strict-npmrc"} {
 		if !strings.Contains(npmrc, key) {
 			t.Errorf(".npmrc does not hold %s:\n%s", key, npmrc)
+		}
+	}
+	// npm 12 already refuses a git or a URL dependency, so those two rules report
+	// set and write nothing. A fixer that adds a line changing nothing is one
+	// people stop trusting.
+	for _, key := range []string{"allow-git", "allow-remote"} {
+		if strings.Contains(npmrc, key) {
+			t.Errorf(".npmrc was given %s, which npm 12 already does:\n%s", key, npmrc)
 		}
 	}
 	// And one copy of the file as the person left it, not one per setting.
@@ -280,6 +288,37 @@ func TestDoctorJSONDocument(t *testing.T) {
 		if !strings.Contains(bun, want) {
 			t.Errorf("the bun result does not say %q:\n%s", want, bun)
 		}
+	}
+}
+
+// The document says what actually gated the run. --fail-on gates findings about
+// packages and has nothing to do with a scorecard, and a script that read it would
+// believe the run was gated by something it was not.
+func TestDoctorDocumentNamesTheGate(t *testing.T) {
+	writeDoctorFixture(t)
+
+	gate := func(t *testing.T, args ...string) string {
+		t.Helper()
+		_, stdout, _ := run(t, args...)
+		var doc struct {
+			Policy struct {
+				FailOn string `json:"fail_on"`
+			} `json:"policy"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+			t.Fatalf("decode: %v\n%s", err, stdout)
+		}
+		return doc.Policy.FailOn
+	}
+	if got := gate(t, "--format", "json", "doctor", "--offline"); got != "never" {
+		t.Errorf("without --ci the document says the gate is %q, and nothing fails", got)
+	}
+	if got := gate(t, "--format", "json", "doctor", "--ci", "--offline"); got != "warn" {
+		t.Errorf("with --ci the document says the gate is %q, want the policy's warn", got)
+	}
+	// --fail-on is about findings, so it must not change the answer.
+	if got := gate(t, "--format", "json", "--fail-on", "never", "doctor", "--ci", "--offline"); got != "warn" {
+		t.Errorf("--fail-on changed the doctor gate to %q", got)
 	}
 }
 

@@ -53,6 +53,11 @@ type Scorecard struct {
 	Changed []string
 	// Backups maps a changed file to the backup written beside it.
 	Backups map[string]string
+	// Failed are the files a fix could not write, relative to the root, sorted. A
+	// run that was asked to write and could not is not a run that found nothing to
+	// do, and the exit code follows on_data_unavailable for the same reason an
+	// unreadable file does.
+	Failed []string
 }
 
 // Counts returns how many results ended in each status, which is what the summary
@@ -112,6 +117,7 @@ func Evaluate(root string, managers []Manager, opts Options) (*Scorecard, error)
 		}
 	}
 	sort.Strings(card.Changed)
+	sort.Strings(card.Failed)
 	return card, nil
 }
 
@@ -120,6 +126,8 @@ func Evaluate(root string, managers []Manager, opts Options) (*Scorecard, error)
 func (o *Options) paramsFor(m *Manager) Params {
 	params := o.Params
 	params.Version = m.Version
+	params.VersionExact = m.VersionExact
+	params.Cooldowns = o.Cooldowns
 	if eco, ok := m.ID.Ecosystem(); ok {
 		if cooldown, ok := o.Cooldowns[eco]; ok && cooldown > 0 {
 			params.Cooldown = cooldown
@@ -139,7 +147,7 @@ func (o *Options) level(r *Rule) model.Level {
 // evaluateRule judges one rule for one manager, and returns the notes for
 // anything it could not read.
 func evaluateRule(root string, m *Manager, rule *Rule, params Params) ([]Result, []string) {
-	applies, caveat := rule.Applies(m.Version)
+	applies, caveat := rule.Applies(m)
 	if !applies {
 		return []Result{{Status: StatusNotApplicable, Detail: caveat}}, nil
 	}
@@ -154,6 +162,14 @@ func evaluateRule(root string, m *Manager, rule *Rule, params Params) ([]Result,
 		results = scanned
 	} else {
 		results, notes = evaluateTargets(root, m, rule, params)
+	}
+	for i := range results {
+		// An advice rule judges nothing, so its note is the whole content of the
+		// line. Without this the scorecard prints a status and an id and leaves the
+		// reader to guess what the question was.
+		if results[i].Status == StatusAdvice && results[i].Detail == "" {
+			results[i].Detail = rule.Note
+		}
 	}
 	if caveat != "" {
 		// The caveat rides on every result of the rule, because somebody deciding

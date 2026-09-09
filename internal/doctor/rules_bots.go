@@ -42,17 +42,24 @@ var renovateMinimumReleaseAge = &Rule{
 	Name:    "renovate-minimum-release-age",
 	Manager: Renovate,
 	Summary: "wait before opening a pull request for a release that was just published",
+	// Renovate reads its configuration from any of several names, and from a
+	// "renovate" object in package.json, which is where a project that started with
+	// the GitHub app most often has it. Reading only renovate.json reported those
+	// projects as missing a setting they had written.
 	Targets: []Target{
 		{Name: "renovate.json", Format: configfile.FormatJSON, Key: configfile.Key{"minimumReleaseAge"}},
+		{Name: "renovate.json5", Format: configfile.FormatJSONC, Key: configfile.Key{"minimumReleaseAge"}},
 		{Name: ".renovaterc.json", Format: configfile.FormatJSON, Key: configfile.Key{"minimumReleaseAge"}},
+		{Name: ".renovaterc.json5", Format: configfile.FormatJSONC, Key: configfile.Key{"minimumReleaseAge"}},
 		{Name: ".renovaterc", Format: configfile.FormatJSON, Key: configfile.Key{"minimumReleaseAge"}},
+		{Name: "package.json", Format: configfile.FormatJSON, Key: configfile.Key{"renovate", "minimumReleaseAge"}},
 	},
 	Desired:  MinimumAge{Unit: Words, Quoted: true},
 	Level:    model.LevelWarn,
 	Docs:     "https://docs.renovatebot.com/configuration-options/#minimumreleaseage",
 	Verified: "2026-09-09",
 	Fixable:  true,
-	Note:     "Renovate takes a duration in words such as \"3 days\". It can also sit inside a packageRules entry, and minimumReleaseAgeBehaviour decides when the wait applies.",
+	Note:     "Renovate takes a duration in words such as \"3 days\". It can also sit inside a packageRules entry, which this does not read, and minimumReleaseAgeBehaviour decides when the wait applies. A json5 configuration is read as far as its syntax is json with comments; a file that uses unquoted keys is reported as unreadable rather than as missing the setting.",
 }
 
 // A workflow that names an action by a tag runs whatever that tag points at

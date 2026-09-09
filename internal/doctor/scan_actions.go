@@ -28,6 +28,10 @@ type actionsScanner struct{}
 // value that is quoted or that carries a trailing comment is trimmed below.
 var usesLine = regexp.MustCompile(`^\s*(?:-\s*)?uses:\s*(\S+)`)
 
+// blockScalar matches a key whose value is a literal or folded block, which is how
+// a workflow writes a shell script. Everything indented under it is that script.
+var blockScalar = regexp.MustCompile(`^\s*(?:-\s*)?[A-Za-z0-9_.-]+:\s*[|>][+-]?\d*\s*(?:#.*)?$`)
+
 // fullSHA is a git object name written in full, which is the only form that
 // cannot be moved. Forty hexadecimal characters today, and sixty four when git
 // finishes moving to sha-256, so both lengths are accepted.
@@ -72,7 +76,26 @@ func (actionsScanner) Scan(root string, m *Manager, p Params) ([]Result, error) 
 func scanWorkflow(rel, text string, p Params) []Result {
 	var problems []Result
 	pinned := 0
+	// A run: | block holds a shell script, and a line of that script that happens to
+	// begin with "uses:" is text somebody wrote, not a step. Tracking the block
+	// scalar is what keeps a workflow that prints an example from being reported as
+	// one that runs it.
+	block := -1
 	for i, line := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
+		indent := len(line) - len(strings.TrimLeft(line, " \t"))
+		switch {
+		case block >= 0 && strings.TrimSpace(line) == "":
+			// A blank line does not end a block scalar.
+			continue
+		case block >= 0 && indent > block:
+			continue
+		case block >= 0:
+			block = -1
+		}
+		if blockScalar.MatchString(line) {
+			block = indent
+			continue
+		}
 		match := usesLine.FindStringSubmatch(line)
 		if match == nil {
 			continue
@@ -119,7 +142,13 @@ func judgeUses(ref string, p Params) (Status, string) {
 		// is no other version of it to pin to.
 		return StatusSet, fmt.Sprintf("%s is in this repository", ref)
 	case strings.HasPrefix(ref, "docker://"):
-		return StatusSet, fmt.Sprintf("%s is a container image, which its own digest pins", ref)
+		// A container image is pinned by its digest. A tag on an image moves exactly
+		// the way a tag on an action does, and calling it pinned was the same
+		// mistake in a different syntax.
+		if strings.Contains(ref, "@sha256:") {
+			return StatusSet, fmt.Sprintf("%s names a digest, which cannot be moved", ref)
+		}
+		return StatusWrong, fmt.Sprintf("%s is a container image on a tag, which can be republished over; name it by @sha256 digest", ref)
 	}
 	repo, version, ok := strings.Cut(ref, "@")
 	if !ok {
