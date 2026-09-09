@@ -130,12 +130,23 @@ jobs:
 
       - name: Decide whether this version needs staging
         id: decide
-        # The scanner's version is bumped with the trustdiff release it belongs
-        # to, but not every release changes the scanner, so most tags will find
-        # the version already on the registry. That is a skip and not a failure:
-        # republishing an existing version is an error npm would raise at the
-        # very end of the job, after the tests have already passed, and a red
-        # release for "nothing to do" teaches people to ignore red releases.
+        # Three outcomes, and two of them are a quiet skip rather than a failure.
+        # A red release for something nobody can act on teaches people to ignore
+        # red releases, and both skips here are exactly that.
+        #
+        # The package does not exist yet: everything below would fail, because
+        # trusted publishing cannot create a package and the organisation may not
+        # exist either. That is the state this repository is in until the three
+        # one-time steps in docs/releasing.md section 8 are done, so it says so
+        # and stops.
+        #
+        # The version is already public: the scanner's version is bumped with the
+        # trustdiff release it belongs to, but not every release changes the
+        # scanner, so most tags find the version already there. Staging it again
+        # would be an error raised at the end of the job, after the tests have
+        # already run.
+        #
+        # Otherwise there is something to stage.
         run: |
           version=$(node --print "require('./package.json').version")
           name=$(node --print "require('./package.json').name")
@@ -143,21 +154,26 @@ jobs:
           echo "version=${version}" >>"${GITHUB_OUTPUT}"
           echo "${name} in this checkout is ${version}"
 
-          tag="${GITHUB_REF_NAME}"
-          case "${GITHUB_REF_TYPE}" in
-          tag)
-            if [ "v${version}" != "${tag}" ]; then
-              echo "::notice::the tag is ${tag} and package.json says ${version}; publishing what package.json says"
-            fi
-            ;;
-          esac
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::notice::the tag is ${GITHUB_REF_NAME} and package.json says ${version}; going by package.json"
+          fi
+
+          if ! npm view "${name}" version >/dev/null 2>&1; then
+            echo "publish=false" >>"${GITHUB_OUTPUT}"
+            echo "reason=absent" >>"${GITHUB_OUTPUT}"
+            echo "::notice::${name} is not on the registry yet, so there is nothing this job can add to. The first version has to be published by hand: docs/releasing.md section 8."
+            exit 0
+          fi
 
           if npm view "${name}@${version}" version >/dev/null 2>&1; then
             echo "publish=false" >>"${GITHUB_OUTPUT}"
-            echo "::notice::${name}@${version} is already on the registry; nothing to publish"
-          else
-            echo "publish=true" >>"${GITHUB_OUTPUT}"
+            echo "reason=published" >>"${GITHUB_OUTPUT}"
+            echo "::notice::${name}@${version} is already published; nothing to stage"
+            exit 0
           fi
+
+          echo "publish=true" >>"${GITHUB_OUTPUT}"
+          echo "reason=new" >>"${GITHUB_OUTPUT}"
 
       - name: The tarball must hold four files and nothing else
         if: steps.decide.outputs.publish == 'true'
@@ -198,10 +214,16 @@ jobs:
         run: |
           name="${{ steps.decide.outputs.name }}"
           version="${{ steps.decide.outputs.version }}"
-          if [ "${{ steps.decide.outputs.publish }}" != "true" ]; then
+          case "${{ steps.decide.outputs.reason }}" in
+          absent)
+            echo "nothing staged; ${name} does not exist on the registry yet"
+            exit 0
+            ;;
+          published)
             echo "nothing staged; ${name}@${version} is already published"
             exit 0
-          fi
+            ;;
+          esac
           echo "::notice::${name}@${version} is staged and nobody can install it yet."
           echo "Approve it to make it public:"
           echo "  npm stage list ${name}"
