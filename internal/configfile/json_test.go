@@ -175,6 +175,22 @@ func TestJSONRefusesAPathThroughSomethingThatIsNotAnObject(t *testing.T) {
 	wantRefused(t, doc, Key{"name", "first"}, String("no"), "does not hold an object")
 }
 
+func TestJSONCRefusesAValueWithACommentInsideIt(t *testing.T) {
+	// The imports object runs over three lines and one of them carries a comment.
+	// Replacing it with a value on one line would delete that comment, which is the
+	// one thing the whole blanked copy exists to avoid.
+	doc := load(t, "deno.jsonc", FormatJSONC)
+	key := Key{"imports"}
+	v, err := Get(doc, key)
+	if err != nil {
+		t.Fatalf("Get(%s): %v", key, err)
+	}
+	if v.Editable {
+		t.Errorf("Get(%s) reported a value with a comment inside it as editable", key)
+	}
+	wantRefused(t, doc, key, String("none"), "holds a comment")
+}
+
 func TestJSONReportsAFileItCannotParse(t *testing.T) {
 	// The same bytes are a valid .jsonc and not a valid .json, which is the whole
 	// difference between the two codecs.

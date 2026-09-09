@@ -85,7 +85,7 @@ var npmAllowGit = &Rule{
 		Key:      configfile.Key{"allow-git"},
 		CreateIf: true,
 	}},
-	Desired: EnumSetting{
+	Desired: &EnumSetting{
 		Value:        "none",
 		Accepted:     []string{"all", "root"},
 		Weaker:       "lets a dependency come from a git remote, where the version number promises nothing about what is installed",
@@ -111,7 +111,7 @@ var npmAllowRemote = &Rule{
 		Key:      configfile.Key{"allow-remote"},
 		CreateIf: true,
 	}},
-	Desired: EnumSetting{
+	Desired: &EnumSetting{
 		Value:        "none",
 		Accepted:     []string{"all", "root"},
 		Weaker:       "lets a dependency come from a tarball URL, which can serve different bytes tomorrow without the lockfile changing",

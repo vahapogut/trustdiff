@@ -152,16 +152,35 @@ type Doc struct {
 	// crlf is true when the file's first line ending was a carriage return and a
 	// newline, which is how a file written on Windows reaches us.
 	crlf bool
+	// bom is true when the file began with a UTF-8 byte order mark. Windows editors
+	// put one in front of a package.json and a pyproject.toml, and it is taken off
+	// here so a codec reads the first key of the file rather than a key with three
+	// invisible bytes in front of it.
+	bom bool
 	// finalNewline is true when the file ends with a line ending. A file that does
 	// not is left without one.
 	finalNewline bool
 }
 
+// byteOrderMark is the UTF-8 encoding of U+FEFF, which is a mark at the top of a
+// file and a character everywhere else.
+const byteOrderMark = "\ufeff"
+
 // NewDoc splits data into lines and remembers how to put it back together.
 func NewDoc(path string, format Format, data []byte) *Doc {
 	d := &Doc{Path: path, Format: format}
 	text := string(data)
-	d.crlf = strings.Contains(text, "\r\n")
+	if d.bom = strings.HasPrefix(text, byteOrderMark); d.bom {
+		// The mark is not part of the first line and no format's reader knows what to
+		// do with it: it is put back by Bytes and nothing in between has to see it.
+		text = strings.TrimPrefix(text, byteOrderMark)
+	}
+	// The style of the first line ending is the style the whole file is written back
+	// with, so a file that is all "\n" but for one stray "\r\n" line keeps its own
+	// endings and a diff shows the line the edit changed rather than every line.
+	if i := strings.IndexByte(text, '\n'); i > 0 && text[i-1] == '\r' {
+		d.crlf = true
+	}
 	// The split is on "\n" and the carriage returns are trimmed, so a file with
 	// mixed endings is read whole and written back with one style, which is the
 	// only case here where a file does not come out byte for byte.
@@ -192,10 +211,13 @@ func (d *Doc) Line(n int) string {
 // NumLines is how many lines the document has.
 func (d *Doc) NumLines() int { return len(d.lines) }
 
-// Bytes writes the document back out, with the line ending style and the trailing
-// newline it was read with.
+// Bytes writes the document back out, with the byte order mark, the line ending
+// style and the trailing newline it was read with.
 func (d *Doc) Bytes() []byte {
 	var b bytes.Buffer
+	if d.bom {
+		b.WriteString(byteOrderMark)
+	}
 	end := "\n"
 	if d.crlf {
 		end = "\r\n"

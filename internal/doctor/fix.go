@@ -24,7 +24,7 @@ const newFileMode os.FileMode = 0o600
 // answer. It never writes into a construct the codec refuses, and the reason ends
 // up in the scorecard instead. And it never writes a file it did not first read,
 // so a fix is always a change to something the run has seen.
-func applyFixes(root string, card *Scorecard, opts *Options) error {
+func applyFixes(root string, card *Scorecard, opts *Options) {
 	// One backup per file, not one per setting. Five npm rules write into the same
 	// .npmrc, and a copy taken before each of them would be four copies of a file
 	// this run has already changed, under names that collide inside the same
@@ -60,7 +60,6 @@ func applyFixes(root string, card *Scorecard, opts *Options) error {
 			card.Backups[res.File] = backup
 		}
 	}
-	return nil
 }
 
 // fixable reports whether a result is one --fix may write.
@@ -100,7 +99,7 @@ func fixOne(root string, res *Result, opts *Options, backups map[string]string) 
 	}
 
 	doc := configfile.NewDoc(res.File, res.target.Format, data)
-	edit, ok, err := configfile.Set(doc, res.target.Key, res.Rule.Desired.Want(res.params))
+	edit, ok, err := configfile.Set(doc, res.target.Key, res.Rule.Desired.Want(&res.params))
 	switch {
 	case errors.Is(err, configfile.ErrNotEditable):
 		res.Detail = appendSentence(res.Detail, err.Error()+", so it was left alone")

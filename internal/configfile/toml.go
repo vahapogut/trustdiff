@@ -184,17 +184,24 @@ func tomlLookup(doc *Doc, key Key) (tomlFound, error) {
 	if !md.IsDefined(key...) {
 		return tomlFound{value: Value{Key: key}, src: src}, nil
 	}
+	// The line is looked up before the value is built, because a number the decoder
+	// does not resolve to an integer is reported as the file spelled it and the file
+	// is the only place that spelling still exists.
+	at, placed := src.find(key)
+	raw := ""
+	if placed {
+		raw = src.text[at.start:at.end]
+	}
 	v := Value{Key: key, Kind: KindOther}
 	if got, ok := tomlWalk(top, key); ok {
-		v = tomlValue(key, got)
+		v = tomlValue(key, got, raw)
 	}
-	at, placed := src.find(key)
+	v.Raw = raw
 	if !placed {
 		v.Editable = false
 		v.Reason = "the file defines it in a shape this reader cannot point at a line for, an array of tables most likely"
 		return tomlFound{value: v, src: src}, nil
 	}
-	v.Raw = src.text[at.start:at.end]
 	v.Line, v.EndLine = src.line(at.start), src.line(max(at.start, at.end-1))
 	v.Editable = at.why == ""
 	if !v.Editable {
@@ -221,8 +228,9 @@ func tomlWalk(top map[string]any, key Key) (any, bool) {
 
 // tomlValue turns a decoded Go value into the shape a rule reads. A number that is
 // not an integer, a date and anything else the decoder produced are KindOther: a
-// rule can print them and will not compare them.
-func tomlValue(key Key, got any) Value {
+// rule can print them and will not compare them. raw is the bytes the file holds,
+// empty when the scanner could not place the key.
+func tomlValue(key Key, got any, raw string) Value {
 	v := Value{Key: key, Kind: KindOther}
 	switch x := got.(type) {
 	case bool:
@@ -240,7 +248,10 @@ func tomlValue(key Key, got any) Value {
 		}
 		v.Kind, v.Items = KindList, items
 	default:
-		v.Text = fmt.Sprint(got)
+		// A float, a date or anything else with one value on one line. The file's own
+		// spelling is what Text promises and what a message has to print: 3.0 printed
+		// as the decoder's 3 would send somebody to a line that does not say 3.
+		v.Text = raw
 	}
 	return v
 }

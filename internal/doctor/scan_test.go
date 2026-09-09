@@ -27,7 +27,7 @@ jobs:
       - uses: docker://ghcr.io/example/image@sha256:0000000000000000000000000000000000000000000000000000000000000000
       - uses: ./.github/actions/local
 `
-	results := scanWorkflow("ci.yml", workflow, Params{})
+	results := scanWorkflow("ci.yml", workflow, &Params{})
 	if len(results) != 1 || results[0].Status != StatusSet {
 		for _, r := range results {
 			t.Logf("%s %s %s", r.Status, r.Current, r.Detail)
@@ -48,7 +48,7 @@ func TestActionsScannerWantsAnImageDigest(t *testing.T) {
     steps:
       - uses: docker://alpine:latest
 `
-	results := scanWorkflow("ci.yml", workflow, Params{})
+	results := scanWorkflow("ci.yml", workflow, &Params{})
 	if len(results) != 1 || results[0].Status != StatusWrong {
 		t.Fatalf("results = %+v, want the tagged image reported", results)
 	}
@@ -83,7 +83,7 @@ updates:
 			model.Cargo: 7 * 24 * time.Hour,
 		},
 	}
-	results, err := (dependabotScanner{}).Scan(root, m, params)
+	results, err := (dependabotScanner{}).Scan(root, m, &params)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestDependabotScannerReportsAFileItCannotRead(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, ".github/dependabot.yml", "version: 2\nupdates: [\n")
 	m := &Manager{ID: Dependabot, Root: ".", Files: []string{".github/dependabot.yml"}}
-	results, err := (dependabotScanner{}).Scan(root, m, Params{Cooldown: 24 * time.Hour})
+	results, err := (dependabotScanner{}).Scan(root, m, &Params{Cooldown: 24 * time.Hour})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestActionsScannerRefusesASymbolicLink(t *testing.T) {
 		t.Skipf("this machine does not allow creating a symbolic link: %v", err)
 	}
 	m := &Manager{ID: Actions, Root: ".", Files: []string{".github/workflows/ci.yml"}}
-	results, err := (actionsScanner{}).Scan(root, m, Params{})
+	results, err := (actionsScanner{}).Scan(root, m, &Params{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -78,7 +78,7 @@ var yarnChecksumBehavior = &Rule{
 		Key:      configfile.Key{"checksumBehavior"},
 		CreateIf: true,
 	}},
-	Desired: EnumSetting{
+	Desired: &EnumSetting{
 		Value:    "throw",
 		Accepted: []string{"update", "ignore", "reset"},
 		Weaker:   "accepts bytes that do not match the lockfile, which is the one thing the checksum is there to stop",

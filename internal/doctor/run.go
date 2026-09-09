@@ -100,7 +100,7 @@ func Evaluate(root string, managers []Manager, opts Options) (*Scorecard, error)
 			if level == model.LevelOff {
 				continue
 			}
-			results, notes := evaluateRule(root, m, rule, params)
+			results, notes := evaluateRule(root, m, rule, &params)
 			for j := range results {
 				results[j].Rule = rule
 				results[j].Manager = m
@@ -112,9 +112,7 @@ func Evaluate(root string, managers []Manager, opts Options) (*Scorecard, error)
 		}
 	}
 	if opts.Fix {
-		if err := applyFixes(root, card, &opts); err != nil {
-			return card, err
-		}
+		applyFixes(root, card, &opts)
 	}
 	sort.Strings(card.Changed)
 	sort.Strings(card.Failed)
@@ -146,7 +144,7 @@ func (o *Options) level(r *Rule) model.Level {
 
 // evaluateRule judges one rule for one manager, and returns the notes for
 // anything it could not read.
-func evaluateRule(root string, m *Manager, rule *Rule, params Params) ([]Result, []string) {
+func evaluateRule(root string, m *Manager, rule *Rule, params *Params) ([]Result, []string) {
 	applies, caveat := rule.Applies(m)
 	if !applies {
 		return []Result{{Status: StatusNotApplicable, Detail: caveat}}, nil
@@ -184,7 +182,7 @@ func evaluateRule(root string, m *Manager, rule *Rule, params Params) ([]Result,
 // evaluateTargets reads the rule's files in order and judges the first one that
 // states the key. A rule whose files all exist and state nothing is missing, and
 // the file named is the one a fix would write.
-func evaluateTargets(root string, m *Manager, rule *Rule, params Params) ([]Result, []string) {
+func evaluateTargets(root string, m *Manager, rule *Rule, params *Params) ([]Result, []string) {
 	var notes []string
 	var fallback *Result
 	for _, target := range rule.Targets {

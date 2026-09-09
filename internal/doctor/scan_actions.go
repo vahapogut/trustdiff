@@ -47,7 +47,7 @@ var tagPinnedByDesign = []string{
 }
 
 // Scan walks the workflow files and judges every reference in them.
-func (actionsScanner) Scan(root string, m *Manager, p Params) ([]Result, error) {
+func (actionsScanner) Scan(root string, m *Manager, p *Params) ([]Result, error) {
 	files := workflowFiles(m)
 	results := make([]Result, 0, len(files))
 	for _, rel := range files {
@@ -73,7 +73,7 @@ func (actionsScanner) Scan(root string, m *Manager, p Params) ([]Result, error) 
 // reference is pinned gets one line saying so rather than one line per step: a
 // repository with five workflows and thirty steps would otherwise fill a scorecard
 // with thirty lines that say nothing is wrong.
-func scanWorkflow(rel, text string, p Params) []Result {
+func scanWorkflow(rel, text string, p *Params) []Result {
 	var problems []Result
 	pinned := 0
 	// A run: | block holds a shell script, and a line of that script that happens to
@@ -135,7 +135,7 @@ func scanWorkflow(rel, text string, p Params) []Result {
 }
 
 // judgeUses decides what one reference is worth.
-func judgeUses(ref string, p Params) (Status, string) {
+func judgeUses(ref string, p *Params) (Status, string) {
 	switch {
 	case strings.HasPrefix(ref, "./"), strings.HasPrefix(ref, "../"):
 		// An action in this repository is reviewed with the repository, and there

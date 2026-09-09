@@ -160,6 +160,8 @@ func (c jsonCodec) lookup(doc *Doc, key Key) (jsonFound, error) {
 // jsonSource is the file as one string, the copy the decoder reads, and the index
 // that turns an offset back into a line.
 type jsonSource struct {
+	// path is the file as the caller named it, for the reason a refusal prints.
+	path string
 	// text is the file's lines joined with "\n", which is what an edit changes.
 	text string
 	// scan is text with the comments and the trailing commas blanked out, which is
@@ -177,7 +179,7 @@ type jsonSource struct {
 // carriage return never shifts anything.
 func newJSONSource(doc *Doc, format Format) *jsonSource {
 	text := strings.Join(doc.Lines(), "\n")
-	s := &jsonSource{text: text, scan: text, starts: make([]int, 1, strings.Count(text, "\n")+1)}
+	s := &jsonSource{path: doc.Path, text: text, scan: text, starts: make([]int, 1, strings.Count(text, "\n")+1)}
 	for i := range len(text) {
 		if text[i] == '\n' {
 			s.starts = append(s.starts, i+1)
@@ -279,6 +281,14 @@ func (s *jsonSource) value(key Key, m jsonMember) Value {
 		Key: key, Kind: KindOther, Raw: s.text[m.valAt:m.valEnd],
 		Line: s.line(m.keyEnd), EndLine: s.line(m.valEnd), Editable: true,
 	}
+	if s.holdsComment(m.valAt, m.valEnd) {
+		// A value is replaced by one line, and a comment written inside an array or an
+		// object that runs over several of them would go with the lines it was on. The
+		// comment is somebody's note about what is there, so the codec says so and
+		// leaves the value alone.
+		v.Editable = false
+		v.Reason = "the value holds a comment, which rewriting it would delete: change it by hand in " + s.path
+	}
 	if raw == "" {
 		return v
 	}
@@ -303,6 +313,19 @@ func (s *jsonSource) value(key Key, m jsonMember) Value {
 		}
 	}
 	return v
+}
+
+// holdsComment reports whether a comment sits inside a byte range. The blanked
+// copy is the answer: every byte a comment held is a space there and something
+// else in the file. A trailing comma was blanked too and is not a comment, and in
+// a .json nothing was blanked at all.
+func (s *jsonSource) holdsComment(from, to int) bool {
+	for i := from; i < to && i < len(s.scan); i++ {
+		if s.scan[i] != s.text[i] && !s.blanked(i) {
+			return true
+		}
+	}
+	return false
 }
 
 // jsonItems reads an array of scalars. An array holding an object or another array

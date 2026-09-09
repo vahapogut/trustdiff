@@ -35,7 +35,7 @@ type MinimumAge struct {
 }
 
 // defaulted reports whether this run may credit the manager's own default.
-func (m MinimumAge) defaulted(p Params) bool {
+func (m MinimumAge) defaulted(p *Params) bool {
 	if m.Default <= 0 {
 		return false
 	}
@@ -46,7 +46,7 @@ func (m MinimumAge) defaulted(p Params) bool {
 }
 
 // Want is the project's cooldown in this manager's unit.
-func (m MinimumAge) Want(p Params) configfile.Literal {
+func (m MinimumAge) Want(p *Params) configfile.Literal {
 	text := m.Unit.Format(p.Cooldown)
 	if m.Quoted {
 		return configfile.String(text)
@@ -59,7 +59,7 @@ func (m MinimumAge) Want(p Params) configfile.Literal {
 
 // Describe says what the setting should hold, for a scorecard line about a value
 // that is not there.
-func (m MinimumAge) Describe(p Params) string {
+func (m MinimumAge) Describe(p *Params) string {
 	text := m.Unit.Format(p.Cooldown)
 	if words := Humanize(p.Cooldown); text != words {
 		// A number alone says nothing, so the value is followed by what it means.
@@ -73,7 +73,7 @@ func (m MinimumAge) Describe(p Params) string {
 // small is worse than one that is missing, because somebody set it and believes
 // they are protected, so the detail says what it really means and, when the number
 // would be right in another manager's unit, says that too.
-func (m MinimumAge) Judge(v *configfile.Value, p Params) (Status, string) {
+func (m MinimumAge) Judge(v *configfile.Value, p *Params) (Status, string) {
 	if !v.Found() {
 		if m.defaulted(p) && m.Default >= p.Cooldown {
 			return StatusSet, fmt.Sprintf("not set, and this version waits %s by default, which is at least the %s the policy asks for",
@@ -170,7 +170,7 @@ type BoolSetting struct {
 }
 
 // defaulted reports whether this run may credit the manager's own default.
-func (b BoolSetting) defaulted(p Params) bool {
+func (b BoolSetting) defaulted(p *Params) bool {
 	if !b.Defaulted {
 		return false
 	}
@@ -181,14 +181,14 @@ func (b BoolSetting) defaulted(p Params) bool {
 }
 
 // Want is the hardened value.
-func (b BoolSetting) Want(Params) configfile.Literal { return configfile.Bool(b.On) }
+func (b BoolSetting) Want(*Params) configfile.Literal { return configfile.Bool(b.On) }
 
 // Describe says which value the rule asks for.
-func (b BoolSetting) Describe(Params) string { return strconv.FormatBool(b.On) }
+func (b BoolSetting) Describe(*Params) string { return strconv.FormatBool(b.On) }
 
 // Judge accepts the boolean the file holds, and the strings "true" and "false",
 // which is how an ini file and a quoted YAML value spell one.
-func (b BoolSetting) Judge(v *configfile.Value, p Params) (Status, string) {
+func (b BoolSetting) Judge(v *configfile.Value, p *Params) (Status, string) {
 	if !v.Found() {
 		if b.defaulted(p) && b.Default == b.On {
 			return StatusSet, fmt.Sprintf("not set, and this version defaults to %t", b.Default)
@@ -212,7 +212,9 @@ func (b BoolSetting) Judge(v *configfile.Value, p Params) (Status, string) {
 }
 
 // EnumSetting is a setting whose value comes from a fixed set, such as pnpm's
-// trustPolicy or Yarn's checksumBehavior.
+// trustPolicy or Yarn's checksumBehavior. Its methods are on the pointer, so a
+// rule writes &EnumSetting{...}: the value carries five strings and a slice, and
+// the judgment runs once per rule per manager.
 type EnumSetting struct {
 	// Want is the value the rule asks for.
 	Value string
@@ -231,7 +233,7 @@ type EnumSetting struct {
 }
 
 // defaulted reports whether this run may credit the manager's own default.
-func (e EnumSetting) defaulted(p Params) bool {
+func (e *EnumSetting) defaulted(p *Params) bool {
 	if e.Default == "" {
 		return false
 	}
@@ -242,14 +244,14 @@ func (e EnumSetting) defaulted(p Params) bool {
 }
 
 // Want is the value to write.
-func (e EnumSetting) Want(Params) configfile.Literal { return configfile.String(e.Value) }
+func (e *EnumSetting) Want(*Params) configfile.Literal { return configfile.String(e.Value) }
 
 // Describe names the value the rule asks for.
-func (e EnumSetting) Describe(Params) string { return e.Value }
+func (e *EnumSetting) Describe(*Params) string { return e.Value }
 
 // Judge compares the text, and says whether an unexpected value is one of the
 // manager's own or a spelling mistake.
-func (e EnumSetting) Judge(v *configfile.Value, p Params) (Status, string) {
+func (e *EnumSetting) Judge(v *configfile.Value, p *Params) (Status, string) {
 	if !v.Found() {
 		if e.defaulted(p) && e.Default == e.Value {
 			return StatusSet, fmt.Sprintf("not set, and this version defaults to %s", e.Default)
@@ -278,14 +280,14 @@ func (e EnumSetting) Judge(v *configfile.Value, p Params) (Status, string) {
 type Advice struct{}
 
 // Want is nothing, because an advisory rule writes nothing.
-func (Advice) Want(Params) configfile.Literal { return configfile.Literal{} }
+func (Advice) Want(*Params) configfile.Literal { return configfile.Literal{} }
 
 // Describe says there is nothing to set.
-func (Advice) Describe(Params) string { return "nothing to set" }
+func (Advice) Describe(*Params) string { return "nothing to set" }
 
 // Judge always reports advice, whatever the file holds: there is no value to
 // compare against, and the rule's note is what the reader is here for.
-func (Advice) Judge(*configfile.Value, Params) (Status, string) { return StatusAdvice, "" }
+func (Advice) Judge(*configfile.Value, *Params) (Status, string) { return StatusAdvice, "" }
 
 // quote writes a value the way a message should show it, so an empty string and a
 // string of spaces are visible.

@@ -44,6 +44,14 @@ type yamlFound struct {
 	depth   int
 	// step is the indentation one nesting level costs in this file.
 	step int
+	// blocked is why the walk could go no further, empty when it only ran out of
+	// keys, which is a plain miss. blockedAt is the line to send somebody to.
+	blocked   string
+	blockedAt int
+	// empty is true when the parser found no node at all, which is an empty file and
+	// a file of nothing but comments. Neither states a key and a key may be added to
+	// either.
+	empty bool
 }
 
 // Get locates a key.
@@ -84,24 +92,39 @@ func yamlLookup(doc *Doc, key Key) (yamlFound, error) {
 	if err != nil {
 		return yamlFound{}, err
 	}
-	found := yamlFound{value: Value{Key: key}, step: yamlStep(top)}
+	found := yamlFound{value: Value{Key: key}, step: yamlStep(top), empty: top == nil}
 	if top == nil {
 		return found, nil
 	}
-	cur, why := top, ""
+	// from is the line of the key the walk came down through, which is the line to
+	// name when what that key holds is not a mapping.
+	cur, why, whyAt, from := top, "", 0, 0
 	for i, part := range key {
 		if cur.Kind != yaml.MappingNode {
 			// The walk ran into something that holds no keys, so the rest of the path
 			// is not in the file. Where it stopped is remembered only when it is a
 			// mapping, because that is the only thing a key can be added to.
+			if i > 0 {
+				// A segment of the path holds a scalar. Adding the key underneath would
+				// state that segment a second time and leave the file with two of it, one
+				// more on every run, so the walk says what stopped it instead.
+				found.blocked = fmt.Sprintf("%s at line %d does not hold a mapping", key[:i], from)
+				found.blockedAt = from
+			}
 			return found, nil
 		}
 		found.stopped, found.depth = cur, i
-		if merged := yamlMerge(cur); merged != "" && why == "" {
-			why = merged
+		if merged, at := yamlMerge(cur); merged != "" && why == "" {
+			why, whyAt = merged, at
 		}
 		k, node := yamlMember(cur, part)
 		if k == nil {
+			if why != "" {
+				// The mapping merges another one, so a key that is not written in it may
+				// still be one the file states. Calling it missing would send the fixer off
+				// to add a key the file already has.
+				found.value = yamlUnreadable(doc, key, whyAt, why)
+			}
 			return found, nil
 		}
 		if i < len(key)-1 {
@@ -111,7 +134,7 @@ func yamlLookup(doc *Doc, key Key) (yamlFound, error) {
 				found.value = yamlUnreadable(doc, key, k.Line, refuse)
 				return found, nil
 			}
-			cur = node
+			cur, from = node, k.Line
 			continue
 		}
 		found.key, found.node, found.depth = k, node, len(key)
@@ -141,8 +164,12 @@ func yamlTop(doc *Doc) (*yaml.Node, error) {
 }
 
 // yamlMember returns the key node and the value node of one entry of a mapping.
+// The search runs from the back, because a file that states the same key twice is
+// read as the one further down, exactly as the json codec reads a repeated key,
+// and that is the entry an edit has to change: rewriting the first one would leave
+// the value a reader of the file actually gets untouched.
 func yamlMember(mapping *yaml.Node, name string) (key, value *yaml.Node) {
-	for i := 0; i+1 < len(mapping.Content); i += 2 {
+	for i := len(mapping.Content) - 2; i >= 0; i -= 2 {
 		if mapping.Content[i].Value == name {
 			return mapping.Content[i], mapping.Content[i+1]
 		}
@@ -150,17 +177,19 @@ func yamlMember(mapping *yaml.Node, name string) (key, value *yaml.Node) {
 	return nil, nil
 }
 
-// yamlMerge names the merge key of a mapping when it has one. A mapping that
-// merges another one states keys this reader cannot see the lines of, so every
-// key in it is reported rather than edited: the value on the line may not be the
-// value the mapping ends up with.
-func yamlMerge(mapping *yaml.Node) string {
+// yamlMerge names the merge key of a mapping when it has one, and the line it is
+// written on. A mapping that merges another one states keys this reader cannot see
+// the lines of, so every key in it is reported rather than edited: the value on
+// the line may not be the value the mapping ends up with, and a key that is not on
+// any line of it may still be one the mapping holds.
+func yamlMerge(mapping *yaml.Node) (string, int) {
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		if mapping.Content[i].Value == "<<" {
-			return fmt.Sprintf("a merge key, << at line %d, which brings keys in from another mapping", mapping.Content[i].Line)
+			at := mapping.Content[i].Line
+			return fmt.Sprintf("a merge key, << at line %d, which brings keys in from another mapping", at), at
 		}
 	}
-	return ""
+	return "", 0
 }
 
 // yamlRefuse names the construct that stops an edit at a node, empty when there
@@ -227,8 +256,8 @@ func yamlRefuseScalar(doc *Doc, n *yaml.Node) string {
 }
 
 // yamlRefuseSequence names what stops a block sequence from being rewritten: an
-// item that is not a plain scalar, and a comment or a blank line between two
-// items, which replacing the range would delete.
+// item that is not a plain scalar, a comment on an item, and a comment or a blank
+// line between two items, all of which replacing the range would delete.
 func yamlRefuseSequence(doc *Doc, n *yaml.Node) string {
 	if n.Style&yaml.FlowStyle != 0 {
 		return ""
@@ -239,6 +268,12 @@ func yamlRefuseSequence(doc *Doc, n *yaml.Node) string {
 		}
 		if refuse := yamlRefuse(doc, item); refuse != "" {
 			return refuse
+		}
+		if item.HeadComment != "" || item.LineComment != "" || item.FootComment != "" {
+			// The comment says something about the item it sits on. New items are not
+			// that item, so there is nowhere to write it back to and rewriting the
+			// sequence would simply lose it.
+			return "a sequence with a comment on one of its items"
 		}
 	}
 	if yamlEnd(n)-n.Line+1 != len(n.Content) {
@@ -383,8 +418,13 @@ func yamlEnd(n *yaml.Node) int {
 // yamlReplace plans the edit that puts a new value where the old one is.
 func yamlReplace(doc *Doc, found *yamlFound, key Key, want Literal) (Edit, bool, error) {
 	node := found.node
-	block := node.Kind == yaml.SequenceNode && node.Style&yaml.FlowStyle == 0
-	if want.Kind == KindList && block {
+	// A block collection is written under its key rather than beside it, so the
+	// lines to replace start at the key and not where the parser says the value
+	// begins. A mapping is one of these too: measuring it from its first child put
+	// the new value in front of that child's own key.
+	block := node.Style&yaml.FlowStyle == 0 &&
+		(node.Kind == yaml.SequenceNode || node.Kind == yaml.MappingNode)
+	if want.Kind == KindList && block && node.Kind == yaml.SequenceNode {
 		// The file already writes this key as a block sequence, so the new items are
 		// written the same way, at the indentation the old ones had.
 		indent := Indent(doc.Line(node.Line))
@@ -395,15 +435,16 @@ func yamlReplace(doc *Doc, found *yamlFound, key Key, want Literal) (Edit, bool,
 		return Edit{Start: node.Line, End: yamlEnd(node), Lines: lines, Description: describe(key, want, false)}, true, nil
 	}
 	if block {
-		// A scalar replacing a block sequence: the sequence's lines go away and the
-		// value moves up beside its key, which is the only shape a scalar has here.
+		// A value replacing a block collection: the collection's lines go away and the
+		// value moves up beside its key, which is the only shape a value that is not a
+		// block sequence has here.
 		line := doc.Line(found.key.Line)
 		head, ok := yamlAfterColon(line, found.key.Column)
 		if !ok {
 			return Edit{}, false, NotEditable(key, found.key.Line, "the key and its \":\" are not on one line: change it by hand in "+doc.Path)
 		}
 		return Edit{
-			Start: found.key.Line, End: yamlEnd(node),
+			Start: found.key.Line, End: yamlLast(doc, found.key, node),
 			Lines:       []string{line[:head] + " " + yamlSpell(want)},
 			Description: describe(key, want, false),
 		}, true, nil
@@ -415,9 +456,20 @@ func yamlReplace(doc *Doc, found *yamlFound, key Key, want Literal) (Edit, bool,
 	line := doc.Line(slot.line)
 	return Edit{
 		Start: slot.line, End: slot.line,
-		Lines:       []string{line[:slot.from] + yamlSpell(want) + line[slot.to:]},
+		Lines:       []string{line[:slot.from] + slot.lead + yamlSpell(want) + line[slot.to:]},
 		Description: describe(key, want, false),
 	}, true, nil
+}
+
+// yamlLast is the last line the value under a key occupies. A block mapping owns
+// every line indented deeper than its key, which is more than the parser reports
+// when one of its values is a block scalar: the body of that scalar would be left
+// behind under the new value and read as keys of whatever comes next.
+func yamlLast(doc *Doc, k, node *yaml.Node) int {
+	if node.Kind != yaml.MappingNode || node.Style&yaml.FlowStyle != 0 {
+		return yamlEnd(node)
+	}
+	return yamlBlockEnd(doc, node, len(Indent(doc.Line(k.Line))))
 }
 
 // yamlPlace is the byte range on one line that holds a value, so an edit can put a
@@ -425,6 +477,10 @@ func yamlReplace(doc *Doc, found *yamlFound, key Key, want Literal) (Edit, bool,
 type yamlPlace struct {
 	line     int
 	from, to int
+	// lead goes in front of the new value. It is one space for a key written with
+	// nothing after its colon, where the range is empty and a value written straight
+	// onto the ":" would stop the line being yaml, and nothing everywhere else.
+	lead string
 }
 
 // yamlSlot finds the bytes of a value on its line. A key written with no value at
@@ -438,7 +494,7 @@ func yamlSlot(doc *Doc, found *yamlFound) (yamlPlace, string) {
 		if !ok {
 			return yamlPlace{}, "a key whose \":\" this reader could not find"
 		}
-		return yamlPlace{line: found.key.Line, from: at, to: at}, ""
+		return yamlPlace{line: found.key.Line, from: at, to: at, lead: " "}, ""
 	}
 	line := doc.Line(node.Line)
 	at := yamlColumn(line, node.Column)
@@ -538,12 +594,19 @@ func yamlInsert(doc *Doc, found *yamlFound, key Key, want Literal) (Edit, bool, 
 		// The walk stopped on a construct it reported rather than on a missing key.
 		return Edit{}, false, NotEditable(key, found.value.Line, found.value.Reason)
 	}
+	if found.blocked != "" {
+		return Edit{}, false, NotEditable(key, found.blockedAt, found.blocked+": change it by hand in "+doc.Path)
+	}
 	if found.stopped == nil {
-		if doc.NumLines() > 0 && strings.TrimSpace(doc.Text()) != "" {
+		if !found.empty {
 			return Edit{}, false, NotEditable(key, 1, "the top of the file is not a mapping: change it by hand in "+doc.Path)
 		}
+		// The parser found no node, which is an empty file and a file of nothing but
+		// comments. The key goes under whatever is there, so a header comment somebody
+		// wrote before they had a setting to put in the file stays at the top of it.
+		at := doc.NumLines()
 		lines := yamlNest("", found.step, key, want)
-		return Edit{Start: 1, End: 0, Lines: lines, Description: describe(key, want, true)}, true, nil
+		return Edit{Start: at + 1, End: at, Lines: lines, Description: describe(key, want, true)}, true, nil
 	}
 	mapping := found.stopped
 	if mapping.Style&yaml.FlowStyle != 0 {

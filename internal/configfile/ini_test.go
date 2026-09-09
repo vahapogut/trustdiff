@@ -140,6 +140,14 @@ func wantIdempotent(t *testing.T, doc *Doc, key Key, want Literal) {
 	}
 }
 
+// wantSettled asserts that the file an edit produced is one Set will not change
+// again. It is the second half of every round trip here, because a fixer whose
+// second run writes something is a fixer nobody can put in a script.
+func wantSettled(t *testing.T, doc *Doc, after string, key Key, want Literal) {
+	t.Helper()
+	wantIdempotent(t, NewDoc(doc.Path, doc.Format, []byte(after)), key, want)
+}
+
 func TestINIGetReadsNpmrcAndPipConf(t *testing.T) {
 	npmrc := load(t, "npmrc", FormatINI)
 	pip := load(t, "pip.conf", FormatINI)
@@ -378,6 +386,115 @@ func TestAnEmptyFileGetsTheKeyAndNothingElse(t *testing.T) {
 				t.Errorf("the edit wrote %q, want %q", after, tc.text)
 			}
 		})
+	}
+}
+
+func TestINIReadsAValueContinuedOnTheLineUnderItAndCoversItWithTheEdit(t *testing.T) {
+	// pip reads an indented line under a key as more of that key's value. The
+	// scanner used to see neither the second url nor, when it held a query string,
+	// anything but a key of its own, so an edit rewrote the first line and left pip
+	// reading two urls while the scorecard said the setting was written.
+	source := "[global]\nextra-index-url = https://a.example\n    https://b.example/simple?token=1\ntimeout = 60\n"
+	doc := NewDoc("pip.conf", FormatINI, []byte(source))
+	key := Key{"global", "extra-index-url"}
+	v, err := Get(doc, key)
+	if err != nil {
+		t.Fatalf("Get(%s): %v", key, err)
+	}
+	if want := "https://a.example\nhttps://b.example/simple?token=1"; v.Text != want || v.Line != 2 || v.EndLine != 3 {
+		t.Errorf("Get(%s) = text %q lines %d to %d, want text %q lines 2 to 3", key, v.Text, v.Line, v.EndLine, want)
+	}
+	wantMissing(t, doc, Key{"global", "https://b.example/simple?token"})
+
+	before := doc.Text()
+	after, ok := edit(t, doc, key, String("https://c.example"))
+	if !ok {
+		t.Fatal("Set planned nothing on a value that has to change")
+	}
+	wantChange(t, before, after,
+		[]string{"extra-index-url = https://a.example", "    https://b.example/simple?token=1"},
+		[]string{"extra-index-url = https://c.example"})
+	wantSettled(t, doc, after, key, String("https://c.example"))
+}
+
+func TestAByteOrderMarkIsKeptAndDoesNotHideTheFirstKey(t *testing.T) {
+	// Windows editors write a package.json and a pyproject.toml with a byte order
+	// mark in front of the first byte. Every codec used to read the mark as part of
+	// what follows it: the file did not parse, or the key came back missing and a
+	// second copy of it was appended under the first.
+	const bom = "\ufeff"
+	tests := []struct {
+		name   string
+		format Format
+		source string
+		key    Key
+		want   Literal
+		was    string
+		now    string
+	}{
+		{
+			name: "ini", format: FormatINI, source: "[global]\ntimeout = 60\n",
+			key: Key{"global", "timeout"}, want: Int(120),
+			was: "timeout = 60", now: "timeout = 120",
+		},
+		{
+			name: "toml", format: FormatTOML, source: "[install]\nminimumReleaseAge = 1\n",
+			key: Key{"install", "minimumReleaseAge"}, want: Int(4320),
+			was: "minimumReleaseAge = 1", now: "minimumReleaseAge = 4320",
+		},
+		{
+			name: "json", format: FormatJSON, source: "{\n  \"name\": \"acme\"\n}\n",
+			key: Key{"name"}, want: String("other"),
+			was: `  "name": "acme"`, now: `  "name": "other"`,
+		},
+		{
+			// The key of this one is on the line the mark is on, because the parser
+			// takes the mark off and then counts columns in a line that still has it.
+			name: "yaml", format: FormatYAML, source: "minimumReleaseAge: 1\nother: keep\n",
+			key: Key{"minimumReleaseAge"}, want: Int(4320),
+			was: bom + "minimumReleaseAge: 1", now: bom + "minimumReleaseAge: 4320",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := NewDoc(tc.name, tc.format, []byte(bom+tc.source))
+			if got := doc.Text(); got != bom+tc.source {
+				t.Fatalf("the document read back as %q, want the mark and the file", got)
+			}
+			v, err := Get(doc, tc.key)
+			if err != nil {
+				t.Fatalf("Get(%s): %v", tc.key, err)
+			}
+			if !v.Found() {
+				t.Fatalf("Get(%s) = missing, in a file whose first line is the mark", tc.key)
+			}
+			before := doc.Text()
+			after, ok := edit(t, doc, tc.key, tc.want)
+			if !ok {
+				t.Fatal("Set planned nothing on a value that has to change")
+			}
+			if !strings.HasPrefix(after, bom) {
+				t.Errorf("the edit wrote %q, which no longer starts with the mark", after)
+			}
+			wantChange(t, before, after, []string{tc.was}, []string{tc.now})
+			wantSettled(t, doc, after, tc.key, tc.want)
+		})
+	}
+}
+
+func TestTheFirstLineEndingDecidesHowAMixedFileIsWrittenBack(t *testing.T) {
+	// One line ending in "\r\n" used to turn every line of the file into a "\r\n"
+	// line, which is a diff in which nothing is unchanged and the one line somebody
+	// asked to have changed is impossible to find.
+	source := "registry=https://registry.npmjs.org/\nminimumReleaseAge=1440\nignore-scripts=true\r\n"
+	doc := NewDoc(".npmrc", FormatINI, []byte(source))
+	after, ok := edit(t, doc, Key{"minimumReleaseAge"}, Int(4320))
+	if !ok {
+		t.Fatal("Set planned nothing on a value that has to change")
+	}
+	want := "registry=https://registry.npmjs.org/\nminimumReleaseAge=4320\nignore-scripts=true\n"
+	if after != want {
+		t.Errorf("the edit wrote %q, want %q", after, want)
 	}
 }
 

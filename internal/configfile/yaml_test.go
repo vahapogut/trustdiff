@@ -212,6 +212,149 @@ func TestYAMLRefusesTheConstructsItWillNotWriteInto(t *testing.T) {
 	}
 }
 
+func TestYAMLSetFillsAKeyWrittenWithNothingAfterItsColon(t *testing.T) {
+	// The new value used to be spliced straight onto the ":", which left
+	// "registry:https://r.example" behind and stopped the file being yaml at all.
+	tests := []struct {
+		name string
+		want Literal
+		now  string
+	}{
+		{name: "a string", want: String("https://r.example"), now: `registry: "https://r.example"`},
+		{name: "an integer", want: Int(4320), now: "registry: 4320"},
+		{name: "a boolean", want: Bool(true), now: "registry: true"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := NewDoc("pnpm-workspace.yaml", FormatYAML, []byte("registry:\nother: 1\n"))
+			before := doc.Text()
+			after, ok := edit(t, doc, Key{"registry"}, tc.want)
+			if !ok {
+				t.Fatal("Set planned nothing for a key written with no value")
+			}
+			wantChange(t, before, after, []string{"registry:"}, []string{tc.now})
+			wantSettled(t, doc, after, Key{"registry"}, tc.want)
+		})
+	}
+}
+
+func TestYAMLSetReplacesAWholeBlockMappingAndNotItsFirstChildsLine(t *testing.T) {
+	// The mapping's lines were measured from its first child, so the value landed in
+	// front of that child's key and the second run put another copy in front of the
+	// first.
+	tests := []struct {
+		name   string
+		source string
+		was    []string
+	}{
+		{
+			name:   "a mapping of scalars",
+			source: "minimumReleaseAge:\n  a: 1\n  b: 2\nother: keep\n",
+			was:    []string{"minimumReleaseAge:", "  a: 1", "  b: 2"},
+		},
+		{
+			// The parser reports where the block scalar starts and not where its body
+			// ends, and a body left behind would be read as keys of what follows it.
+			name:   "a mapping holding a block scalar",
+			source: "minimumReleaseAge:\n  a: |\n    text\nother: keep\n",
+			was:    []string{"minimumReleaseAge:", "  a: |", "    text"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := NewDoc("pnpm-workspace.yaml", FormatYAML, []byte(tc.source))
+			before := doc.Text()
+			after, ok := edit(t, doc, Key{"minimumReleaseAge"}, Int(4320))
+			if !ok {
+				t.Fatal("Set planned nothing on a mapping that has to become a number")
+			}
+			wantChange(t, before, after, tc.was, []string{"minimumReleaseAge: 4320"})
+			wantSettled(t, doc, after, Key{"minimumReleaseAge"}, Int(4320))
+		})
+	}
+}
+
+func TestYAMLInsertRefusesAPathThroughSomethingThatIsNotAMapping(t *testing.T) {
+	// install holds false, so install.minimumReleaseAge is not a path this file has.
+	// Adding it used to write a second "install:" at the end, and every further run
+	// wrote the pair again.
+	doc := NewDoc(".yarnrc.yml", FormatYAML, []byte("install: false\n"))
+	wantMissing(t, doc, Key{"install", "minimumReleaseAge"})
+	wantRefused(t, doc, Key{"install", "minimumReleaseAge"}, Int(4320), "does not hold a mapping")
+}
+
+func TestYAMLGetReportsAKeyAMergedMappingStatesRatherThanMissing(t *testing.T) {
+	// The mapping pulls enableScripts in through the merge key, so the file does
+	// state it. It used to read as missing, which sent the fixer off to add a key
+	// that is already there.
+	doc := NewDoc(".yarnrc.yml", FormatYAML, []byte("base: &base\n  enableScripts: false\nconfig:\n  <<: *base\n"))
+	key := Key{"config", "enableScripts"}
+	v, err := Get(doc, key)
+	if err != nil {
+		t.Fatalf("Get(%s): %v", key, err)
+	}
+	if !v.Found() {
+		t.Errorf("Get(%s) = missing, although the mapping merges one that states it", key)
+	}
+	if v.Editable {
+		t.Errorf("Get(%s) reported a key that arrives through a merge as editable", key)
+	}
+	wantRefused(t, doc, key, Bool(true), "a merge key, <<")
+}
+
+func TestYAMLReadsTheLastOfTwoKeysWithTheSameName(t *testing.T) {
+	// A reader of the file ends up with the second one, so the first is the one an
+	// edit must leave alone. Rewriting line 1 left line 3 saying something else and
+	// the fixer calling the file correct on every run after that.
+	doc := NewDoc("pnpm-workspace.yaml", FormatYAML, []byte("minimumReleaseAge: 100\nother: 1\nminimumReleaseAge: 200\n"))
+	key := Key{"minimumReleaseAge"}
+	v, err := Get(doc, key)
+	if err != nil {
+		t.Fatalf("Get(%s): %v", key, err)
+	}
+	if v.Text != "200" || v.Line != 3 {
+		t.Errorf("Get(%s) = text %q on line %d, want text \"200\" on line 3", key, v.Text, v.Line)
+	}
+	before := doc.Text()
+	after, ok := edit(t, doc, key, Int(4320))
+	if !ok {
+		t.Fatal("Set planned nothing on a value that has to change")
+	}
+	wantChange(t, before, after, []string{"minimumReleaseAge: 200"}, []string{"minimumReleaseAge: 4320"})
+	wantSettled(t, doc, after, key, Int(4320))
+}
+
+func TestYAMLRefusesASequenceWithACommentOnOneOfItsItems(t *testing.T) {
+	// Rewriting the items would delete the comment, and the comment is about the
+	// item it sits on, so there is nowhere to put it back.
+	doc := NewDoc("pnpm-workspace.yaml", FormatYAML, []byte("packages:\n  - a # keep me\n  - b\n"))
+	key := Key{"packages"}
+	v, err := Get(doc, key)
+	if err != nil {
+		t.Fatalf("Get(%s): %v", key, err)
+	}
+	if v.Editable {
+		t.Errorf("Get(%s) reported a sequence with a comment on an item as editable", key)
+	}
+	wantRefused(t, doc, key, List("c", "d"), "a comment on one of its items")
+}
+
+func TestYAMLInsertWritesUnderAFileThatHoldsOnlyComments(t *testing.T) {
+	// A .yarnrc.yml often starts life as the header comment somebody wrote before
+	// they had a setting to put in it. It used to be refused as a file whose top is
+	// not a mapping, which is the one thing a file with no nodes in it cannot be.
+	source := "# managed by the platform team\n"
+	doc := NewDoc(".yarnrc.yml", FormatYAML, []byte(source))
+	after, ok := edit(t, doc, Key{"enableScripts"}, Bool(false))
+	if !ok {
+		t.Fatal("Set planned nothing for a key a file of comments cannot state")
+	}
+	if want := source + "enableScripts: false\n"; after != want {
+		t.Errorf("the edit wrote %q, want %q", after, want)
+	}
+	wantSettled(t, doc, after, Key{"enableScripts"}, Bool(false))
+}
+
 func TestYAMLReportsAFileItCannotParse(t *testing.T) {
 	doc := NewDoc("pnpm-workspace.yaml", FormatYAML, []byte("packages:\n  - a\n - b\n"))
 	if _, err := Get(doc, Key{"packages"}); err == nil {

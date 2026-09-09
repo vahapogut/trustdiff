@@ -89,7 +89,7 @@ func TestUnitsRefuseTheOtherSpellings(t *testing.T) {
 func TestMinimumAgeNamesTheUnitConfusion(t *testing.T) {
 	rule := MinimumAge{Unit: Seconds}
 	value := configfile.Value{Kind: configfile.KindInt, Text: "10080", Raw: "10080", Line: 3}
-	status, detail := rule.Judge(&value, Params{Cooldown: threeDays})
+	status, detail := rule.Judge(&value, &Params{Cooldown: threeDays})
 	if status != StatusWrong {
 		t.Fatalf("status = %s, want wrong", status)
 	}
@@ -105,16 +105,16 @@ func TestMinimumAgeNamesTheUnitConfusion(t *testing.T) {
 // that version does not have.
 func TestMinimumAgeCreditsTheDefaultOnlyFromTheVersionThatHasIt(t *testing.T) {
 	rule := MinimumAge{Unit: Minutes, Default: day, DefaultSince: "11"}
-	if status, _ := rule.Judge(&configfile.Value{}, Params{Cooldown: day, Version: "11.2.0", VersionExact: true}); status != StatusSet {
+	if status, _ := rule.Judge(&configfile.Value{}, &Params{Cooldown: day, Version: "11.2.0", VersionExact: true}); status != StatusSet {
 		t.Errorf("pnpm 11 with a one day policy = %s, want set", status)
 	}
-	if status, _ := rule.Judge(&configfile.Value{}, Params{Cooldown: day, Version: "10.20.0", VersionExact: true}); status != StatusMissing {
+	if status, _ := rule.Judge(&configfile.Value{}, &Params{Cooldown: day, Version: "10.20.0", VersionExact: true}); status != StatusMissing {
 		t.Errorf("pnpm 10 with a one day policy = %s, want missing", status)
 	}
-	if status, _ := rule.Judge(&configfile.Value{}, Params{Cooldown: day}); status != StatusMissing {
+	if status, _ := rule.Judge(&configfile.Value{}, &Params{Cooldown: day}); status != StatusMissing {
 		t.Errorf("an unknown version = %s, want missing: a default nobody confirmed is not protection", status)
 	}
-	if status, _ := rule.Judge(&configfile.Value{}, Params{Cooldown: threeDays, Version: "11.2.0", VersionExact: true}); status != StatusMissing {
+	if status, _ := rule.Judge(&configfile.Value{}, &Params{Cooldown: threeDays, Version: "11.2.0", VersionExact: true}); status != StatusMissing {
 		t.Errorf("pnpm 11 with a three day policy = %s, want missing: the default is only one day", status)
 	}
 }
@@ -124,7 +124,7 @@ func TestMinimumAgeCreditsTheDefaultOnlyFromTheVersionThatHasIt(t *testing.T) {
 func TestMinimumAgeReportsATooSmallValue(t *testing.T) {
 	rule := MinimumAge{Unit: Minutes}
 	value := configfile.Value{Kind: configfile.KindInt, Text: "60", Raw: "60"}
-	status, detail := rule.Judge(&value, Params{Cooldown: threeDays})
+	status, detail := rule.Judge(&value, &Params{Cooldown: threeDays})
 	if status != StatusWrong {
 		t.Fatalf("status = %s, want wrong", status)
 	}
@@ -195,7 +195,7 @@ func TestRuleAppliesTreatsALockfileFloorAsUnknown(t *testing.T) {
 	// A default is not credited against a floor: pnpm 11 waits a day and pnpm 10
 	// does not, and a lockfile cannot tell them apart.
 	status, _ := MinimumAge{Unit: Minutes, Default: day, DefaultSince: "11"}.
-		Judge(&configfile.Value{}, Params{Cooldown: day, Version: "11.0.0"})
+		Judge(&configfile.Value{}, &Params{Cooldown: day, Version: "11.0.0"})
 	if status != StatusMissing {
 		t.Errorf("a floor of 11.0.0 was credited with pnpm 11's default: %s", status)
 	}

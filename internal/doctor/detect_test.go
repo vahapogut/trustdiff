@@ -537,9 +537,9 @@ func stubRan(dir string) bool {
 // the test with the whole list when there is none.
 func findManager(t *testing.T, managers []Manager, id ManagerID, root string) Manager {
 	t.Helper()
-	for _, m := range managers {
-		if m.ID == id && m.Root == root {
-			return m
+	for i := range managers {
+		if m := &managers[i]; m.ID == id && m.Root == root {
+			return *m
 		}
 	}
 	t.Fatalf("no %s at %q among %s", id, root, spellManagers(managers))
@@ -571,8 +571,9 @@ func spellManagers(managers []Manager) string {
 		return "no managers"
 	}
 	lines := make([]string, 0, len(managers))
-	for _, m := range managers {
-		lines = append(lines, spellManager(&m))
+	for i := range managers {
+		m := &managers[i]
+		lines = append(lines, spellManager(m))
 	}
 	return "\n\t" + strings.Join(lines, "\n\t")
 }

@@ -36,8 +36,12 @@ type iniEntry struct {
 	// list is true when the line spelled the key "name[]", which is how npm writes
 	// one item of an array.
 	list bool
-	// line is the 1-based line the assignment is on.
-	line int
+	// line is the 1-based line the assignment is on, and endLine the last line its
+	// value occupies, which is the same line unless indented lines under it carry
+	// more of the value.
+	line, endLine int
+	// more are the continuation lines under the assignment, trimmed, in file order.
+	more []string
 	// sep is everything between the end of the key and the start of the value,
 	// " = " or "=", so a line inserted beside this one is spelled the same way.
 	sep string
@@ -152,9 +156,16 @@ func iniValue(doc *Doc, key Key, matched []iniEntry) Value {
 		return iniListValue(doc, key, entries)
 	}
 	e := entries[0]
-	v := Value{Key: key, Text: iniUnquote(e.raw), Raw: e.raw, Line: e.line, EndLine: e.line, Editable: true}
+	text, raw := iniUnquote(e.raw), e.raw
+	if len(e.more) > 0 {
+		// pip joins a value continued on the lines under it with newlines, so that is
+		// the value a reader of the file gets and the value a rule has to be shown.
+		text = strings.Join(append([]string{text}, e.more...), "\n")
+		raw = strings.Join(append([]string{e.raw}, e.more...), "\n")
+	}
+	v := Value{Key: key, Text: text, Raw: raw, Line: e.line, EndLine: e.endLine, Editable: true}
 	v.Kind = iniKind(v.Text, e.raw)
-	iniRefuseEnv(&v, doc, e.raw)
+	iniRefuseEnv(&v, doc, raw)
 	return v
 }
 
@@ -174,7 +185,7 @@ func iniListValue(doc *Doc, key Key, entries []iniEntry) Value {
 		// A list has no single run of bytes in the file, so Raw is the items as the
 		// file wrote them, in file order, which is what a message has to show.
 		Raw:  strings.Join(raws, ", "),
-		Line: first.line, EndLine: last.line, Editable: true,
+		Line: first.line, EndLine: last.endLine, Editable: true,
 	}
 	if last.line-first.line != len(entries)-1 {
 		v.Editable = false
@@ -250,6 +261,14 @@ func iniScan(doc *Doc) ([]iniEntry, []iniHeader) {
 		if trimmed == "" || strings.HasPrefix(trimmed, ";") || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
+		if last := len(entries) - 1; last >= 0 && iniContinues(doc, &entries[last], line, n) {
+			// The line carries more of the value above it. It is not a key of its own,
+			// whatever a query string in a url on it looks like, and it is not a line an
+			// edit to that key may leave behind.
+			entries[last].more = append(entries[last].more, trimmed)
+			entries[last].endLine = n
+			continue
+		}
 		if name, ok := iniSectionName(trimmed); ok {
 			section = name
 			headers = append(headers, iniHeader{name: name, line: n})
@@ -261,6 +280,23 @@ func iniScan(doc *Doc) ([]iniEntry, []iniHeader) {
 		}
 	}
 	return entries, headers
+}
+
+// iniContinues reports whether a line holds more of the value the assignment above
+// it started. The rule is the one Python's configparser reads a pip.conf with: a
+// line indented past the key it follows belongs to that key's value, which is how
+// a pip.conf lists a second index url.
+//
+// It is asked only of an assignment inside a section, because pip.conf is the file
+// here that has them. npm's own reader knows no continuations at all, so an
+// indented line of an .npmrc is a key npm reads and a key this codec has to leave
+// readable.
+func iniContinues(doc *Doc, prev *iniEntry, line string, n int) bool {
+	if prev.section == "" || prev.endLine != n-1 {
+		return false
+	}
+	indent := Indent(line)
+	return indent != "" && len(indent) > len(Indent(doc.Line(prev.line)))
 }
 
 // iniSectionName reads a "[name]" header off an already trimmed line.
@@ -284,7 +320,7 @@ func iniAssignment(line string, n int) (iniEntry, bool) {
 	if name == "" {
 		return iniEntry{}, false
 	}
-	e := iniEntry{line: n}
+	e := iniEntry{line: n, endLine: n}
 	if strings.HasSuffix(name, "[]") {
 		e.list = true
 		name = strings.TrimSuffix(name, "[]")
@@ -312,12 +348,14 @@ func iniReplace(doc *Doc, key Key, found *iniFound, want Literal) Edit {
 		lines = iniListLines(indent, first.name, first.sep, want.Items)
 	case len(found.entries) == 1 && !first.list:
 		// Only the bytes after the separator change, so the key, its indentation and
-		// the spaces the person put around the "=" all stay exactly as they were.
+		// the spaces the person put around the "=" all stay exactly as they were. The
+		// lines a continued value runs on go with it, because a line left behind would
+		// still be read as part of the value that is no longer there.
 		lines = []string{line[:first.valueAt] + iniSpell(want)}
 	default:
 		lines = []string{indent + first.name + first.sep + iniSpell(want)}
 	}
-	return Edit{Start: first.line, End: last.line, Lines: lines, Description: describe(key, want, false)}
+	return Edit{Start: first.line, End: last.endLine, Lines: lines, Description: describe(key, want, false)}
 }
 
 // iniInsert plans the edit that adds a key the file does not state. A key with no

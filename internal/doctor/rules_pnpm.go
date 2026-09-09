@@ -157,7 +157,7 @@ var pnpmTrustPolicy = &Rule{
 		Key:      configfile.Key{"trustPolicy"},
 		CreateIf: true,
 	}},
-	Desired: EnumSetting{
+	Desired: &EnumSetting{
 		Value:    "no-downgrade",
 		Accepted: []string{"off"},
 		Weaker:   "accepts a release published with weaker protections than the version before it",

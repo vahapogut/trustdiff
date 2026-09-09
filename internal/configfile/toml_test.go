@@ -226,6 +226,21 @@ func TestTOMLRefusesValuesItCannotRewriteOneLineAtATime(t *testing.T) {
 	}
 }
 
+func TestTOMLReportsANumberTheWayTheFileWroteIt(t *testing.T) {
+	// 3.0 decodes to a float64 and used to read back as "3", which is neither what
+	// the file says nor what Value.Text promises, and it sends somebody to a line
+	// that does not hold the number the scorecard printed.
+	doc := NewDoc("bunfig.toml", FormatTOML, []byte("[install]\nage = 3.0\n"))
+	key := Key{"install", "age"}
+	v, err := Get(doc, key)
+	if err != nil {
+		t.Fatalf("Get(%s): %v", key, err)
+	}
+	if v.Text != "3.0" || v.Raw != "3.0" {
+		t.Errorf("Get(%s) = text %q raw %q, want both %q", key, v.Text, v.Raw, "3.0")
+	}
+}
+
 func TestTOMLReportsAFileItCannotParse(t *testing.T) {
 	doc := NewDoc("bunfig.toml", FormatTOML, []byte("[install\nminimumReleaseAge = 4320\n"))
 	if _, err := Get(doc, Key{"install", "minimumReleaseAge"}); err == nil {

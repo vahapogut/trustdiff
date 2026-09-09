@@ -204,14 +204,14 @@ type Params struct {
 // boolean, a value out of a set.
 type Desired interface {
 	// Want is the value to write when the setting is missing or wrong.
-	Want(p Params) configfile.Literal
+	Want(p *Params) configfile.Literal
 	// Judge looks at what the file holds. detail is the sentence the scorecard
 	// prints after the status, in the tool's own voice, for example "3 minutes,
 	// which is 3 days in npm's unit and three minutes here".
-	Judge(v *configfile.Value, p Params) (status Status, detail string)
+	Judge(v *configfile.Value, p *Params) (status Status, detail string)
 	// Describe says what the rule asks for, for the documentation and for a
 	// scorecard line about a setting that is missing.
-	Describe(p Params) string
+	Describe(p *Params) string
 }
 
 // Target is a file a rule's key can live in. A rule lists them in the order it
@@ -322,7 +322,7 @@ func (r *Rule) Applies(m *Manager) (bool, string) {
 type Scanner interface {
 	// Scan reads what it needs under root, which is the directory the run was
 	// pointed at, and reports what it found for this manager.
-	Scan(root string, m *Manager, p Params) ([]Result, error)
+	Scan(root string, m *Manager, p *Params) ([]Result, error)
 }
 
 // Result is one rule evaluated against one manager in one repository.

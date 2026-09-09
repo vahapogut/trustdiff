@@ -32,7 +32,7 @@ type dependabotScanner struct{}
 const dependabotDefaultWait = 3 * 24 * time.Hour
 
 // Scan reads the file and returns one result per update block.
-func (dependabotScanner) Scan(root string, m *Manager, p Params) ([]Result, error) {
+func (dependabotScanner) Scan(root string, m *Manager, p *Params) ([]Result, error) {
 	path, rel := dependabotFile(root, m)
 	if path == "" {
 		return nil, nil
@@ -72,7 +72,7 @@ func (dependabotScanner) Scan(root string, m *Manager, p Params) ([]Result, erro
 // dependabotBlock judges one update block against the cooldown its own ecosystem
 // is entitled to. A repository that waits three days for npm and seven for
 // crates.io says so in its policy, and the block names which one it updates.
-func dependabotBlock(file string, block *yaml.Node, p Params) Result {
+func dependabotBlock(file string, block *yaml.Node, p *Params) Result {
 	name := blockName(block)
 	want := blockCooldown(block, p)
 	res := Result{File: file, Line: lineOf(block), Want: Days.Format(want)}
@@ -119,7 +119,7 @@ func dependabotBlock(file string, block *yaml.Node, p Params) Result {
 }
 
 // blockCooldown is the wait this block's ecosystem is entitled to.
-func blockCooldown(block *yaml.Node, p Params) time.Duration {
+func blockCooldown(block *yaml.Node, p *Params) time.Duration {
 	if eco, ok := dependabotEcosystem(scalarValue(mappingValue(block, "package-ecosystem"))); ok {
 		if cooldown, set := p.Cooldowns[eco]; set && cooldown > 0 {
 			return cooldown

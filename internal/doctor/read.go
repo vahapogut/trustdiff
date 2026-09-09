@@ -38,7 +38,8 @@ func readConfig(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close() //nolint:errcheck // nothing was written, so a close error says nothing a caller could act on
+	// Nothing was written, so a close error says nothing a caller could act on.
+	defer func() { _ = f.Close() }()
 
 	data, err := io.ReadAll(io.LimitReader(f, configLimit+1))
 	if err != nil {
