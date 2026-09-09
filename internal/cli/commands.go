@@ -9,18 +9,6 @@ import (
 	"github.com/vahapogut/trustdiff/internal/version"
 )
 
-func (a *App) newCheckCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "check <ref>...",
-		Short: "Evaluate one or more package versions",
-		Long: `Evaluate package versions given as <ecosystem>:<name>[@<version>], for example
-npm:express@4.19.2, pypi:requests or cargo:serde. Without a version the latest
-non-prerelease version is evaluated and the report says so.`,
-		Args: cobra.MinimumNArgs(1),
-		RunE: notImplemented("check"),
-	}
-}
-
 func (a *App) newDiffCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "diff",
