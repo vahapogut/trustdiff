@@ -97,6 +97,9 @@ The hook is written to the hooks directory of the repository the working
 directory is in. A repository that sets core.hooksPath elsewhere runs the hooks
 in that directory instead, and the file trustdiff writes here is ignored: copy it
 across, or unset core.hooksPath.`,
+		// See newCacheCommand: without these two, a mistyped subcommand exits 0.
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 
 	install := &cobra.Command{

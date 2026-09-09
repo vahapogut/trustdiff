@@ -92,6 +92,21 @@ jobs:
       - name: go vet
         run: go vet ./...
       - name: go test
+        env:
+          # No test here may reach the network: every registry and advisory answer in the
+          # suite comes from a recorded fixture or a local server. Pointing the proxy
+          # variables at a closed port turns an accidental request into an immediate
+          # failure instead of a slow success, so the rule is enforced and not merely
+          # written down. Port 9 is the discard port and nothing listens on it here.
+          # A test did once slip through: it named a command that a later milestone
+          # implemented, and the case went on running the real thing against live
+          # registries until it was noticed by how long it took.
+          HTTP_PROXY: http://127.0.0.1:9
+          HTTPS_PROXY: http://127.0.0.1:9
+          http_proxy: http://127.0.0.1:9
+          https_proxy: http://127.0.0.1:9
+          NO_PROXY: 127.0.0.1,localhost
+          no_proxy: 127.0.0.1,localhost
         run: go test ./...
 
   vulncheck:

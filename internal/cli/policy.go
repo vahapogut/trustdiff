@@ -18,6 +18,9 @@ func (a *App) newPolicyCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "policy",
 		Short: "Create or validate the .trustdiff.yaml policy file",
+		// See newCacheCommand: without these two, a mistyped subcommand exits 0.
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 
 	var output string

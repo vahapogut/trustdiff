@@ -27,7 +27,15 @@ func TestMainExitCodes(t *testing.T) {
 	}{
 		{name: "version prints identity", args: []string{"version"}, wantCode: ExitOK, wantStdout: "trustdiff dev (commit none"},
 		{name: "version json", args: []string{"--format", "json", "version"}, wantCode: ExitOK, wantStdout: `"version": "dev"`},
-		{name: "unimplemented nested command exits 2", args: []string{"cache", "refresh-lists"}, wantCode: ExitUsage, wantStderr: "cache refresh-lists: not implemented"},
+		// This case used to name "cache refresh-lists", which was a placeholder until M4
+		// implemented it. The test then ran the real command, and the real command
+		// downloads the registries' top package lists, so a suite that must never reach
+		// the network spent fifty seconds doing exactly that. No command is a placeholder
+		// any more, and what is worth pinning here is that a usage error under a nested
+		// command still exits 2 rather than being swallowed by the parent.
+		{name: "unknown nested command exits 2", args: []string{"cache", "refresh-everything"}, wantCode: ExitUsage, wantStderr: "unknown command"},
+		{name: "unknown policy subcommand exits 2", args: []string{"policy", "lint"}, wantCode: ExitUsage, wantStderr: "unknown command"},
+		{name: "unknown hook subcommand exits 2", args: []string{"hook", "list"}, wantCode: ExitUsage, wantStderr: "unknown command"},
 		{name: "check requires an argument", args: []string{"check"}, wantCode: ExitUsage, wantStderr: "requires at least 1 arg"},
 		{name: "unknown command", args: []string{"nope"}, wantCode: ExitUsage, wantStderr: "unknown command"},
 		{name: "unknown flag", args: []string{"--bogus", "version"}, wantCode: ExitUsage, wantStderr: "unknown flag"},
@@ -106,7 +114,10 @@ func TestCommandTreeMatchesTheBrief(t *testing.T) {
 			if sub.Name() == "completion" || sub.Name() == "help" {
 				continue
 			}
-			if sub.Runnable() {
+			// A command that groups others has a body of its own, but all it does is
+			// print help and turn a mistyped subcommand into a usage error, so it is
+			// not one of the commands the brief lists.
+			if sub.Runnable() && !sub.HasSubCommands() {
 				got = append(got, name)
 			}
 			walk(name, sub)

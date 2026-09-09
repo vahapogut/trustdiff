@@ -155,10 +155,3 @@ func (a *App) prepare(cmd *cobra.Command) error {
 	o.Log.Debug("starting", "command", cmd.Name(), "version", version.Version, "format", o.Format, "offline", o.Offline)
 	return nil
 }
-
-// notImplemented is the placeholder body for commands that a later milestone fills in.
-func notImplemented(name string) func(*cobra.Command, []string) error {
-	return func(_ *cobra.Command, _ []string) error {
-		return Usagef("%s: not implemented in %s", name, version.Version)
-	}
-}
