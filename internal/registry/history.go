@@ -41,12 +41,13 @@ func Window(list *VersionList, ref model.PackageRef, n int) []model.VersionInfo 
 		return nil
 	}
 	var earlier []model.VersionInfo
-	for _, v := range list.Versions {
+	for i := range list.Versions {
+		v := &list.Versions[i]
 		if v.Ref.Version == ref.Version || v.Prerelease || v.Yanked || v.PublishedAt.IsZero() {
 			continue
 		}
 		if v.PublishedAt.Before(current.PublishedAt) {
-			earlier = append(earlier, v)
+			earlier = append(earlier, *v)
 		}
 	}
 	sort.SliceStable(earlier, func(i, j int) bool { return earlier[i].PublishedAt.After(earlier[j].PublishedAt) })
