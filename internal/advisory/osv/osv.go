@@ -17,30 +17,54 @@
 // batch more than about 3000; the client repeats the request with page_token
 // for those queries until none remains. An ecosystem name OSV does not know
 // fails the whole batch with 400 "invalid ecosystem", so refs of ecosystems
-// OSV lacks (Deno, JSR) are never sent.
+// OSV lacks (Deno, JSR) are never sent: they are absent from the answer, and
+// only a call made of nothing else is an ErrUnsupported error. A caller that
+// mixes ecosystems must therefore test Ecosystem per ref before it reads an
+// absent ref as "no advisories".
 //
-// Ecosystem names on the wire are npm, PyPI and crates.io (PyPI names are
-// matched case-insensitively: Pillow and pillow answered the same). Advisory
-// ids that start with MAL- come from ossf/malicious-packages, the MAL prefix of
-// the OSV schema's id table, and mark a malicious version.
+// Ecosystem names on the wire are npm, PyPI and crates.io. Package names are
+// sent exactly as the ref spells them: npm matches legacy mixed-case names
+// such as JSONStream case-sensitively (jsonstream is another package), while
+// PyPI names are matched case-insensitively (Pillow and pillow answered the
+// same). Advisory ids that start with MAL- come from ossf/malicious-packages,
+// the MAL prefix of the OSV schema's id table, and mark a malicious version.
 //
 // A record's severity[] entries are typed CVSS_V2, CVSS_V3 (a v3.0 or v3.1
 // vector string) or CVSS_V4 (OSV schema, severity[].type). The advisory
-// severity is derived in this order:
+// severity is derived in this order, and SeveritySource records which step
+// decided:
 //
 //  1. database_specific.severity when present and recognized (GHSA records
 //     carry LOW, MODERATE, HIGH or CRITICAL). Score is still the base score of
-//     the record's CVSS_V3 vector when it has one, and 0 otherwise.
+//     the record's CVSS_V3 vector when it has one, and 0 otherwise. GitHub
+//     rates a record on its newest vector, so the label may reflect a CVSS v4
+//     assessment and disagree with the v3 score (GHSA-qw6h-vgh9-j6wx is LOW
+//     with a v3 score of 5.0); SeveritySource is "database_specific".
 //  2. Otherwise the base score computed from the first usable CVSS_V3 vector
 //     with the equations of the CVSS v3.1 specification (see cvss.go), bucketed
-//     with advisory.SeverityFromScore.
-//  3. Otherwise SeverityUnknown with Score 0: a record with only a CVSS_V4
-//     entry (no v4 calculator in v0.1, see docs/checks.md#td010), and records
-//     without severity at all such as RUSTSEC and MAL- ones. Unknown counts as
-//     medium against a policy threshold.
+//     with advisory.SeverityFromScore: a vector that scores 0.0 (no impact) is
+//     SeverityNone, a published rating, not an unknown one. SeveritySource is
+//     "cvss_v3".
+//  3. Otherwise SeverityUnknown with Score 0 and no SeveritySource: a record
+//     with only a CVSS_V4 entry (no v4 calculator in v0.1, see
+//     docs/checks.md#td010), and records without severity at all such as
+//     RUSTSEC and MAL- ones. Unknown counts as medium against a policy
+//     threshold.
 //
 // Summary is the record's summary, or the first line of details when the
 // record has none (some PYSEC records), cut at summaryMaxRunes.
+//
+// Failures stay local to what they touched. A querybatch chunk that fails
+// loses only its own refs, a details request that fails loses only the refs
+// that list that id, and the call returns the refs it did answer together with
+// an *advisory.PartialError naming the rest. A MAL- id whose details request
+// fails for any reason is answered from the batch entry, since the malicious
+// flag is the whole signal and must survive a flaky record. An id the batch
+// listed but the vulns endpoint does not know (404, a record withdrawn between
+// the two requests) is dropped, never reported as an advisory of unknown
+// severity, and an entry without an id is skipped. After maxDetailFailures
+// failed details requests in one call the remaining ids are not requested: an
+// outage is reported once, not once per advisory.
 package osv
 
 import (
@@ -81,13 +105,19 @@ const (
 	// maxPages bounds the pagination loop of one batch so a server that keeps
 	// returning tokens cannot make Advisories run forever.
 	maxPages = 50
+	// maxDetailFailures is how many details requests may fail in one call
+	// before the rest are given up without a request, each with retries of its
+	// own already spent. Three tells an outage from one bad record.
+	maxDetailFailures = 3
 	// summaryMaxRunes bounds a summary derived from details.
 	summaryMaxRunes = 200
 )
 
 // ErrUnsupported is returned (wrapped) when none of the refs belongs to an
 // ecosystem OSV indexes (Deno and JSR have no OSV ecosystem). When only some
-// refs are unsupported they are left out of the answer without an error.
+// refs are unsupported they are left out of the answer without an error, so a
+// caller must check Ecosystem per ref before it treats an absent ref as
+// answered.
 var ErrUnsupported = errors.New("ecosystem not indexed by OSV")
 
 // Option configures a Client.
@@ -178,6 +208,11 @@ type (
 // Refs whose ecosystem OSV lacks are left out; ErrUnsupported is returned only
 // when every ref was unsupported. A ref without a version is answered with
 // every advisory of the package.
+//
+// A failed chunk or details request loses only the refs it concerns (see the
+// package comment): the answered refs come back with an *advisory.PartialError
+// naming the lost ones, and only when no ref could be answered is the cause
+// returned alone. A canceled context ends the call at once.
 func (c *Client) Advisories(ctx context.Context, refs []model.PackageRef) (map[model.PackageRef][]advisory.Advisory, error) {
 	out := make(map[model.PackageRef][]advisory.Advisory)
 	if len(refs) == 0 {
@@ -191,48 +226,125 @@ func (c *Client) Advisories(ctx context.Context, refs []model.PackageRef) (map[m
 		c.log.Debug("osv skipping ecosystems it does not index", "ecosystems", unsupported)
 	}
 
+	lost := &advisory.PartialError{Source: "osv", Refs: map[model.PackageRef]error{}}
+	lose := func(ref model.PackageRef, err error) {
+		if lost.Cause == nil {
+			lost.Cause = err
+		}
+		lost.Refs[ref] = err
+	}
+
 	hits := make(map[model.PackageRef][]batchVuln, len(distinct))
 	for chunk := range slices.Chunk(distinct, MaxQueriesPerBatch) {
-		if err := c.queryChunk(ctx, chunk, hits); err != nil {
+		err := c.queryChunk(ctx, chunk, hits)
+		if err == nil {
+			continue
+		}
+		if ctx.Err() != nil {
 			return nil, err
+		}
+		c.log.Warn("osv querybatch chunk failed", "queries", len(chunk), "error", err)
+		for _, ref := range chunk {
+			// A page may already have been recorded before a later one failed.
+			delete(hits, ref)
+			lose(ref, err)
 		}
 	}
 
-	// One details request per distinct id, in a stable order so a run is
-	// reproducible and the cache is filled the same way every time.
+	details, failedIDs, err := c.details(ctx, hits)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, ref := range distinct {
+		if _, gone := lost.Refs[ref]; gone {
+			continue
+		}
+		vulns := hits[ref]
+		list := make([]advisory.Advisory, 0, len(vulns))
+		for _, v := range vulns {
+			if idErr, failed := failedIDs[v.ID]; failed {
+				lose(ref, idErr)
+				list = nil
+				break
+			}
+			d, ok := details[v.ID]
+			if !ok {
+				// Dropped: an empty id, or a record the vulns endpoint no
+				// longer serves.
+				continue
+			}
+			a := *d
+			a.Aliases = slices.Clone(a.Aliases)
+			list = append(list, a)
+		}
+		if len(list) > 0 {
+			out[ref] = list
+		}
+	}
+	c.log.Debug("osv advisories assembled", "refs", len(distinct), "answered", len(distinct)-len(lost.Refs), "advisories", len(details))
+
+	switch {
+	case len(lost.Refs) == 0:
+		return out, nil
+	case len(lost.Refs) == len(distinct):
+		return nil, lost.Cause
+	default:
+		return out, lost
+	}
+}
+
+// details fetches the record of every distinct id the batch listed, in sorted
+// order so a run is reproducible and the cache is filled the same way every
+// time. It returns the records by id, the ids whose request failed with the
+// error that failed each, and an error only when the context ended. An id that
+// was dropped (empty, or a withdrawn non-MAL record) is in neither map. Once
+// maxDetailFailures requests have failed the remaining ids are not requested:
+// MAL- ids fall back to their batch entry, the others fail with the last error.
+func (c *Client) details(ctx context.Context, hits map[model.PackageRef][]batchVuln) (map[string]*advisory.Advisory, map[string]error, error) {
 	listed := make(map[string]batchVuln)
+	empty := 0
 	for _, vulns := range hits {
 		for _, v := range vulns {
+			if v.ID == "" {
+				empty++
+				continue
+			}
 			if _, ok := listed[v.ID]; !ok {
 				listed[v.ID] = v
 			}
 		}
 	}
+	if empty > 0 {
+		c.log.Warn("osv querybatch listed entries without an id, skipped", "entries", empty)
+	}
 	ids := slices.Sorted(maps.Keys(listed))
 	details := make(map[string]*advisory.Advisory, len(ids))
+	failed := make(map[string]error)
+	var lastErr error
 	for _, id := range ids {
-		a, err := c.detail(ctx, id, listed[id])
-		if err != nil {
-			return nil, err
+		var a *advisory.Advisory
+		var err error
+		switch {
+		case len(failed) < maxDetailFailures:
+			a, err = c.detail(ctx, id, listed[id])
+		case strings.HasPrefix(id, MaliciousPrefix):
+			a = c.fallback(id, listed[id], "not requested after repeated failures")
+		default:
+			err = fmt.Errorf("osv: advisory %s: not requested after %d failed details requests: %w", id, len(failed), lastErr)
 		}
-		details[id] = a
+		switch {
+		case err != nil && ctx.Err() != nil:
+			return nil, nil, err
+		case err != nil:
+			c.log.Warn("osv advisory details failed", "id", id, "error", err)
+			failed[id] = err
+			lastErr = err
+		case a != nil:
+			details[id] = a
+		}
 	}
-	c.log.Debug("osv advisories assembled", "refs", len(distinct), "advisories", len(ids))
-
-	for _, ref := range distinct {
-		vulns := hits[ref]
-		if len(vulns) == 0 {
-			continue
-		}
-		list := make([]advisory.Advisory, 0, len(vulns))
-		for _, v := range vulns {
-			a := *details[v.ID]
-			a.Aliases = slices.Clone(a.Aliases)
-			list = append(list, a)
-		}
-		out[ref] = list
-	}
-	return out, nil
+	return details, failed, nil
 }
 
 // planQueries returns the distinct refs OSV can answer, in first-seen order,
@@ -312,28 +424,45 @@ func (c *Client) queryChunk(ctx context.Context, chunk []model.PackageRef, hits 
 	return nil
 }
 
-// detail fetches one advisory record. An id the batch listed but the vulns
-// endpoint does not know (a record withdrawn between the two requests) is
-// reported and answered from the batch entry alone, so a malicious-package
-// listing is never silently dropped.
+// detail fetches one advisory record. A nil advisory with a nil error means
+// the id is dropped: the vulns endpoint does not know it (a record withdrawn
+// between the two requests). A MAL- id is never dropped or failed: whatever
+// went wrong, it is answered from the batch entry alone, because the
+// malicious flag it carries is the whole signal. A canceled context is the
+// one error a MAL- id passes on, so the call can stop.
 func (c *Client) detail(ctx context.Context, id string, listed batchVuln) (*advisory.Advisory, error) {
+	malicious := strings.HasPrefix(id, MaliciousPrefix)
 	u := c.base + "/vulns/" + url.PathEscape(id)
 	resp, err := c.http.Get(ctx, u, httpcache.Request{Accept: acceptJSON, TTL: TTL})
 	if err != nil {
-		return nil, fmt.Errorf("osv: advisory %s: %w", id, err)
+		err = fmt.Errorf("osv: advisory %s: %w", id, err)
+		if malicious && ctx.Err() == nil {
+			return c.fallback(id, listed, err.Error()), nil
+		}
+		return nil, err
 	}
 	switch resp.StatusCode {
 	case http.StatusOK:
 	case http.StatusNotFound:
-		c.log.Warn("advisory listed by querybatch but not found", "id", id)
-		a := c.toAdvisory(id, &vulnRecord{Modified: listed.Modified})
-		return &a, nil
+		if malicious {
+			return c.fallback(id, listed, "listed by querybatch but not found"), nil
+		}
+		c.log.Warn("advisory listed by querybatch but not found, dropped", "id", id)
+		return nil, nil
 	default:
-		return nil, fmt.Errorf("osv: advisory %s: unexpected status %d", id, resp.StatusCode)
+		err := fmt.Errorf("osv: advisory %s: unexpected status %d", id, resp.StatusCode)
+		if malicious {
+			return c.fallback(id, listed, err.Error()), nil
+		}
+		return nil, err
 	}
 	var rec vulnRecord
 	if err := json.Unmarshal(resp.Body, &rec); err != nil {
-		return nil, fmt.Errorf("osv: advisory %s: decoding response: %w", id, err)
+		err = fmt.Errorf("osv: advisory %s: decoding response: %w", id, err)
+		if malicious {
+			return c.fallback(id, listed, err.Error()), nil
+		}
+		return nil, err
 	}
 	if rec.Modified == "" {
 		rec.Modified = listed.Modified
@@ -341,6 +470,14 @@ func (c *Client) detail(ctx context.Context, id string, listed batchVuln) (*advi
 	a := c.toAdvisory(id, &rec)
 	c.log.Debug("osv advisory", "id", id, "severity", a.Severity, "score", a.Score, "malicious", a.Malicious, "from_cache", resp.FromCache)
 	return &a, nil
+}
+
+// fallback builds a MAL- advisory from its batch entry alone, logging why the
+// record itself was not used.
+func (c *Client) fallback(id string, listed batchVuln, reason string) *advisory.Advisory {
+	c.log.Warn("malicious-package advisory answered from the batch entry", "id", id, "reason", reason)
+	a := c.toAdvisory(id, &vulnRecord{Modified: listed.Modified})
+	return &a
 }
 
 // toAdvisory maps one record onto advisory.Advisory; id is the id the batch
@@ -355,24 +492,28 @@ func (c *Client) toAdvisory(id string, rec *vulnRecord) advisory.Advisory {
 		Modified:  c.parseTime(id, "modified", rec.Modified),
 		URL:       advisoryPageURL + id,
 	}
-	a.Severity, a.Score = c.severity(id, rec)
+	a.Severity, a.Score, a.SeveritySource = c.severity(id, rec)
 	return a
 }
 
 // severity applies the order documented in the package comment: the database
-// label, then the computed CVSS v3 base score, then unknown.
-func (c *Client) severity(id string, rec *vulnRecord) (advisory.Severity, float64) {
+// label, then the computed CVSS v3 base score, then unknown. The third value
+// names the step that decided (advisory.SeveritySourceLabel or
+// SeveritySourceCVSS3) and is empty for unknown.
+func (c *Client) severity(id string, rec *vulnRecord) (advisory.Severity, float64, string) {
 	score, hasScore := c.cvss3Score(id, rec.Severity)
 	if label := rec.databaseSeverity(); label != "" {
 		if sev, err := advisory.ParseSeverity(label); err == nil && sev != advisory.SeverityUnknown {
-			return sev, score
+			return sev, score, advisory.SeveritySourceLabel
 		}
 		c.log.Debug("unrecognized database_specific.severity", "id", id, "severity", label)
 	}
 	if hasScore {
-		return advisory.SeverityFromScore(score), score
+		// A vector that scores 0.0 is the FIRST rating None, a published
+		// rating and not a missing one.
+		return advisory.SeverityFromScore(score), score, advisory.SeveritySourceCVSS3
 	}
-	return advisory.SeverityUnknown, 0
+	return advisory.SeverityUnknown, 0, ""
 }
 
 // cvss3Score computes the base score of the first CVSS_V3 entry whose vector
@@ -439,7 +580,10 @@ func (c *Client) parseTime(id, field, value string) time.Time {
 	return t
 }
 
-// Ecosystem maps an ecosystem to the OSV ecosystem name, or "" when OSV has none.
+// Ecosystem maps an ecosystem to the OSV ecosystem name, or "" when OSV has
+// none. It is the support test a caller applies per ref: Advisories leaves a
+// ref with an empty Ecosystem out of its answer without an error unless every
+// ref was one.
 func Ecosystem(eco model.Ecosystem) string {
 	switch eco {
 	case model.NPM:

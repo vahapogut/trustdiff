@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -74,6 +75,13 @@ func newFixtureServer(t *testing.T) *fixtureServer {
 		fs.details[id] = fixture(t, name)
 	}
 	fs.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A details request is counted whether or not it is made to fail, so
+		// a test can see how many an outage costs.
+		if r.Method == http.MethodGet && strings.HasPrefix(r.URL.EscapedPath(), "/vulns/") {
+			fs.mu.Lock()
+			fs.gets = append(fs.gets, strings.TrimPrefix(r.URL.EscapedPath(), "/vulns/"))
+			fs.mu.Unlock()
+		}
 		fs.mu.Lock()
 		failPath, failCode := fs.failPath, fs.failCode
 		fs.mu.Unlock()
@@ -87,9 +95,6 @@ func newFixtureServer(t *testing.T) *fixtureServer {
 			fs.serveBatch(t, w, r)
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.EscapedPath(), "/vulns/"):
 			id := strings.TrimPrefix(r.URL.EscapedPath(), "/vulns/")
-			fs.mu.Lock()
-			fs.gets = append(fs.gets, id)
-			fs.mu.Unlock()
 			if body, ok := fs.details[id]; ok {
 				_, _ = w.Write(body)
 				return
@@ -202,6 +207,13 @@ func fixture(t *testing.T, name string) []byte {
 // Retries are off so a failing endpoint does not slow the test down.
 func newClient(t *testing.T, fs *fixtureServer, dir string, offline bool) *Client {
 	t.Helper()
+	return newClientAt(t, fs, dir, offline, nil)
+}
+
+// newClientAt is newClient with a clock for the cache TTLs; nil means the wall
+// clock.
+func newClientAt(t *testing.T, fs *fixtureServer, dir string, offline bool, now func() time.Time) *Client {
+	t.Helper()
 	u, err := url.Parse(fs.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -212,6 +224,7 @@ func newClient(t *testing.T, fs *fixtureServer, dir string, offline bool) *Clien
 		UserAgent: "trustdiff-test",
 		Retries:   -1,
 		HostRPS:   map[string]float64{u.Host: 1000},
+		Now:       now,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -336,37 +349,40 @@ func TestAdvisoriesRecorded(t *testing.T) {
 	})
 	// A GHSA record about the same malicious package is not MAL- and keeps its label and score.
 	assertAdvisory(t, find(t, flatmap, "GHSA-9x64-5r7x-2q53"), &advisory.Advisory{
-		ID:        "GHSA-9x64-5r7x-2q53",
-		Summary:   "Malicious Package in flatmap-stream",
-		Severity:  advisory.SeverityCritical,
-		Score:     9.8,
-		Published: ts(t, "2020-09-01T21:21:32Z"),
-		Modified:  ts(t, "2021-10-01T13:30:04Z"),
-		URL:       "https://osv.dev/vulnerability/GHSA-9x64-5r7x-2q53",
+		ID:             "GHSA-9x64-5r7x-2q53",
+		Summary:        "Malicious Package in flatmap-stream",
+		Severity:       advisory.SeverityCritical,
+		Score:          9.8,
+		SeveritySource: advisory.SeveritySourceLabel,
+		Published:      ts(t, "2020-09-01T21:21:32Z"),
+		Modified:       ts(t, "2021-10-01T13:30:04Z"),
+		URL:            "https://osv.dev/vulnerability/GHSA-9x64-5r7x-2q53",
 	})
 
 	express := got[in[1]]
 	assertAdvisory(t, find(t, express, "GHSA-rv95-896h-c2vc"), &advisory.Advisory{
-		ID:        "GHSA-rv95-896h-c2vc",
-		Aliases:   []string{"CVE-2024-29041"},
-		Summary:   "Express.js Open Redirect in malformed URLs",
-		Severity:  advisory.SeverityMedium, // database_specific.severity MODERATE
-		Score:     6.1,                     // CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N
-		Published: ts(t, "2024-03-25T19:40:26Z"),
-		Modified:  ts(t, "2026-02-04T02:13:10.821360Z"),
-		URL:       "https://osv.dev/vulnerability/GHSA-rv95-896h-c2vc",
+		ID:             "GHSA-rv95-896h-c2vc",
+		Aliases:        []string{"CVE-2024-29041"},
+		Summary:        "Express.js Open Redirect in malformed URLs",
+		Severity:       advisory.SeverityMedium, // database_specific.severity MODERATE
+		Score:          6.1,                     // CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N
+		SeveritySource: advisory.SeveritySourceLabel,
+		Published:      ts(t, "2024-03-25T19:40:26Z"),
+		Modified:       ts(t, "2026-02-04T02:13:10.821360Z"),
+		URL:            "https://osv.dev/vulnerability/GHSA-rv95-896h-c2vc",
 	})
-	// The label decides the bucket and the v3 vector the score even when a v4 vector is present too.
-	if a := find(t, express, "GHSA-qw6h-vgh9-j6wx"); a.Severity != advisory.SeverityLow || a.Score != 5.0 {
-		t.Errorf("GHSA-qw6h-vgh9-j6wx: severity %s score %v, want low 5.0", a.Severity, a.Score)
+	// The label decides the bucket and the v3 vector the score even when a v4
+	// vector is present too, and the source says the label won.
+	if a := find(t, express, "GHSA-qw6h-vgh9-j6wx"); a.Severity != advisory.SeverityLow || a.Score != 5.0 || a.SeveritySource != advisory.SeveritySourceLabel {
+		t.Errorf("GHSA-qw6h-vgh9-j6wx: severity %s score %v source %q, want low 5.0 from the label", a.Severity, a.Score, a.SeveritySource)
 	}
 
 	requests := got[in[2]]
 	// PYSEC records carry no label: the score comes from the vector and the
 	// summary, when missing, from the first line of the details, bounded.
-	if a := find(t, requests, "PYSEC-2026-2275"); a.Severity != advisory.SeverityMedium || a.Score != 5.5 ||
+	if a := find(t, requests, "PYSEC-2026-2275"); a.Severity != advisory.SeverityMedium || a.Score != 5.5 || a.SeveritySource != advisory.SeveritySourceCVSS3 ||
 		!strings.HasPrefix(a.Summary, "Requests is a HTTP library.") || utf8.RuneCountInString(a.Summary) != summaryMaxRunes {
-		t.Errorf("PYSEC-2026-2275: severity %s score %v summary %q (%d runes)", a.Severity, a.Score, a.Summary, utf8.RuneCountInString(a.Summary))
+		t.Errorf("PYSEC-2026-2275: severity %s score %v source %q summary %q (%d runes)", a.Severity, a.Score, a.SeveritySource, a.Summary, utf8.RuneCountInString(a.Summary))
 	}
 	if a := find(t, requests, "PYSEC-2026-1872"); a.Severity != advisory.SeverityMedium || a.Score != 5.3 ||
 		!reflect.DeepEqual(a.Aliases, []string{"CVE-2024-47081", "GHSA-9hjg-9r4m-mvj7"}) {
@@ -410,7 +426,7 @@ func TestToAdvisory(t *testing.T) {
 			name: "GHSA label with a v3.1 vector", id: "GHSA-rv95-896h-c2vc", fixture: "vuln-GHSA-rv95-896h-c2vc.json",
 			want: advisory.Advisory{
 				ID: "GHSA-rv95-896h-c2vc", Aliases: []string{"CVE-2024-29041"}, Summary: "Express.js Open Redirect in malformed URLs",
-				Severity: advisory.SeverityMedium, Score: 6.1,
+				Severity: advisory.SeverityMedium, Score: 6.1, SeveritySource: advisory.SeveritySourceLabel,
 				Published: ts(t, "2024-03-25T19:40:26Z"), Modified: ts(t, "2026-02-04T02:13:10.821360Z"), URL: advisoryPageURL + "GHSA-rv95-896h-c2vc",
 			},
 		},
@@ -418,7 +434,7 @@ func TestToAdvisory(t *testing.T) {
 			name: "GHSA label with only a CVSS_V4 entry keeps the label and no score", id: "GHSA-fjxv-7rqg-78g4", fixture: "vuln-GHSA-fjxv-7rqg-78g4.json",
 			want: advisory.Advisory{
 				ID: "GHSA-fjxv-7rqg-78g4", Aliases: []string{"CVE-2025-7783"}, Summary: "form-data uses unsafe random function in form-data for choosing boundary",
-				Severity: advisory.SeverityCritical, Score: 0,
+				Severity: advisory.SeverityCritical, Score: 0, SeveritySource: advisory.SeveritySourceLabel,
 				Published: ts(t, "2025-07-21T19:04:54Z"), Modified: ts(t, "2026-07-16T03:59:27.270440328Z"), URL: advisoryPageURL + "GHSA-fjxv-7rqg-78g4",
 			},
 		},
@@ -435,7 +451,7 @@ func TestToAdvisory(t *testing.T) {
 			want: advisory.Advisory{
 				ID: "PYSEC-2026-1873", Aliases: []string{"CVE-2024-35195", "GHSA-9wx4-h78v-vm56"},
 				Summary:  "Requests `Session` object does not verify requests after making first request with verify=False",
-				Severity: advisory.SeverityMedium, Score: 5.6, // CVSS:3.1/AV:L/AC:H/PR:H/UI:R/S:U/C:H/I:H/A:N
+				Severity: advisory.SeverityMedium, Score: 5.6, SeveritySource: advisory.SeveritySourceCVSS3, // CVSS:3.1/AV:L/AC:H/PR:H/UI:R/S:U/C:H/I:H/A:N
 				Published: ts(t, "2026-07-07T11:45:42.890131Z"), Modified: ts(t, "2026-07-07T17:46:36.762141019Z"), URL: advisoryPageURL + "PYSEC-2026-1873",
 			},
 		},
@@ -447,12 +463,12 @@ func TestToAdvisory(t *testing.T) {
 		{
 			name: "a v3.0 vector is scored like a v3.1 one", id: "TEST-2",
 			record: `{"id":"TEST-2","severity":[{"type":"CVSS_V3","score":"CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}]}`,
-			want:   advisory.Advisory{ID: "TEST-2", Severity: advisory.SeverityCritical, Score: 9.8, URL: advisoryPageURL + "TEST-2"},
+			want:   advisory.Advisory{ID: "TEST-2", Severity: advisory.SeverityCritical, Score: 9.8, SeveritySource: advisory.SeveritySourceCVSS3, URL: advisoryPageURL + "TEST-2"},
 		},
 		{
 			name: "a v3 vector after a v2 one", id: "TEST-3",
 			record: `{"id":"TEST-3","severity":[{"type":"CVSS_V2","score":"AV:N/AC:L/Au:N/C:P/I:P/A:P"},{"type":"CVSS_V3","score":"CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"}]}`,
-			want:   advisory.Advisory{ID: "TEST-3", Severity: advisory.SeverityHigh, Score: 7.5, URL: advisoryPageURL + "TEST-3"},
+			want:   advisory.Advisory{ID: "TEST-3", Severity: advisory.SeverityHigh, Score: 7.5, SeveritySource: advisory.SeveritySourceCVSS3, URL: advisoryPageURL + "TEST-3"},
 		},
 		{
 			name: "only a v2 vector is unknown", id: "TEST-4",
@@ -462,17 +478,17 @@ func TestToAdvisory(t *testing.T) {
 		{
 			name: "an unrecognized label falls back to the vector", id: "TEST-5",
 			record: `{"id":"TEST-5","database_specific":{"severity":"IMPORTANT"},"severity":[{"type":"CVSS_V3","score":"CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N"}]}`,
-			want:   advisory.Advisory{ID: "TEST-5", Severity: advisory.SeverityLow, Score: 3.1, URL: advisoryPageURL + "TEST-5"},
+			want:   advisory.Advisory{ID: "TEST-5", Severity: advisory.SeverityLow, Score: 3.1, SeveritySource: advisory.SeveritySourceCVSS3, URL: advisoryPageURL + "TEST-5"},
 		},
 		{
 			name: "a label that is not a string is ignored", id: "TEST-6",
 			record: `{"id":"TEST-6","database_specific":{"severity":{"level":"HIGH"}},"severity":[{"type":"CVSS_V3","score":"CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}]}`,
-			want:   advisory.Advisory{ID: "TEST-6", Severity: advisory.SeverityCritical, Score: 9.8, URL: advisoryPageURL + "TEST-6"},
+			want:   advisory.Advisory{ID: "TEST-6", Severity: advisory.SeverityCritical, Score: 9.8, SeveritySource: advisory.SeveritySourceCVSS3, URL: advisoryPageURL + "TEST-6"},
 		},
 		{
 			name: "a malformed vector is skipped for a usable one", id: "TEST-7",
 			record: `{"id":"TEST-7","severity":[{"type":"CVSS_V3","score":"CVSS:3.1/bogus"},{"type":"CVSS_V3","score":"CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"}]}`,
-			want:   advisory.Advisory{ID: "TEST-7", Severity: advisory.SeverityHigh, Score: 7.5, URL: advisoryPageURL + "TEST-7"},
+			want:   advisory.Advisory{ID: "TEST-7", Severity: advisory.SeverityHigh, Score: 7.5, SeveritySource: advisory.SeveritySourceCVSS3, URL: advisoryPageURL + "TEST-7"},
 		},
 		{
 			name: "only a malformed vector is unknown", id: "TEST-8",
@@ -482,17 +498,29 @@ func TestToAdvisory(t *testing.T) {
 		{
 			name: "a label with a malformed vector keeps the label", id: "TEST-9",
 			record: `{"id":"TEST-9","database_specific":{"severity":"HIGH"},"severity":[{"type":"CVSS_V3","score":"nope"}]}`,
-			want:   advisory.Advisory{ID: "TEST-9", Severity: advisory.SeverityHigh, URL: advisoryPageURL + "TEST-9"},
+			want:   advisory.Advisory{ID: "TEST-9", Severity: advisory.SeverityHigh, SeveritySource: advisory.SeveritySourceLabel, URL: advisoryPageURL + "TEST-9"},
 		},
 		{
 			name: "GHSA spellings of the label", id: "TEST-10",
 			record: `{"id":"TEST-10","database_specific":{"severity":" moderate "}}`,
-			want:   advisory.Advisory{ID: "TEST-10", Severity: advisory.SeverityMedium, URL: advisoryPageURL + "TEST-10"},
+			want:   advisory.Advisory{ID: "TEST-10", Severity: advisory.SeverityMedium, SeveritySource: advisory.SeveritySourceLabel, URL: advisoryPageURL + "TEST-10"},
 		},
 		{
 			name: "a MAL id is malicious even with a label", id: "MAL-2099-1",
 			record: `{"id":"MAL-2099-1","database_specific":{"severity":"CRITICAL"}}`,
-			want:   advisory.Advisory{ID: "MAL-2099-1", Severity: advisory.SeverityCritical, Malicious: true, URL: advisoryPageURL + "MAL-2099-1"},
+			want:   advisory.Advisory{ID: "MAL-2099-1", Severity: advisory.SeverityCritical, SeveritySource: advisory.SeveritySourceLabel, Malicious: true, URL: advisoryPageURL + "MAL-2099-1"},
+		},
+		{
+			// FIRST rates a base score of 0.0 as None: a published rating, not a
+			// missing one, so it must not count as medium.
+			name: "a vector without impact scores None", id: "TEST-14",
+			record: `{"id":"TEST-14","severity":[{"type":"CVSS_V3","score":"CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N"}]}`,
+			want:   advisory.Advisory{ID: "TEST-14", Severity: advisory.SeverityNone, Score: 0, SeveritySource: advisory.SeveritySourceCVSS3, URL: advisoryPageURL + "TEST-14"},
+		},
+		{
+			name: "a label wins over a vector without impact", id: "TEST-15",
+			record: `{"id":"TEST-15","database_specific":{"severity":"LOW"},"severity":[{"type":"CVSS_V3","score":"CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N"}]}`,
+			want:   advisory.Advisory{ID: "TEST-15", Severity: advisory.SeverityLow, Score: 0, SeveritySource: advisory.SeveritySourceLabel, URL: advisoryPageURL + "TEST-15"},
 		},
 		{
 			name: "summary falls back to the first non-empty line of details", id: "TEST-11",
@@ -802,28 +830,196 @@ func TestAdvisoriesOffline(t *testing.T) {
 	}
 }
 
-func TestAdvisoriesDetailNotFound(t *testing.T) {
+// TestAdvisoriesDetailFallbacks covers a batch entry whose record cannot be
+// used: a MAL- id is answered from the entry whatever went wrong, any other
+// id the vulns endpoint does not know is dropped rather than reported with an
+// unknown severity, and an entry without an id is skipped without a request.
+func TestAdvisoriesDetailFallbacks(t *testing.T) {
+	t.Parallel()
+	const modified = "2026-09-09T10:00:00Z"
+	fromEntry := func(id string) *advisory.Advisory {
+		return &advisory.Advisory{ID: id, Severity: advisory.SeverityUnknown, Malicious: true, Modified: ts(t, modified), URL: advisoryPageURL + id}
+	}
+	tests := []struct {
+		name     string
+		vulns    []batchVuln
+		failCode int
+		want     []string
+		wantGets []string
+		wantAdv  *advisory.Advisory
+	}{
+		{
+			name:     "MAL id not found",
+			vulns:    []batchVuln{{ID: "MAL-2099-1", Modified: modified}},
+			want:     []string{"MAL-2099-1"},
+			wantGets: []string{"MAL-2099-1"},
+			wantAdv:  fromEntry("MAL-2099-1"),
+		},
+		{
+			name:     "MAL id details fail",
+			vulns:    []batchVuln{{ID: "MAL-2099-1", Modified: modified}},
+			failCode: http.StatusServiceUnavailable,
+			want:     []string{"MAL-2099-1"},
+			wantGets: []string{"MAL-2099-1"},
+			wantAdv:  fromEntry("MAL-2099-1"),
+		},
+		{
+			name:     "other id not found is dropped",
+			vulns:    []batchVuln{{ID: "GHSA-gone-0000-0000", Modified: modified}, {ID: "GHSA-rv95-896h-c2vc", Modified: modified}},
+			want:     []string{"GHSA-rv95-896h-c2vc"},
+			wantGets: []string{"GHSA-gone-0000-0000", "GHSA-rv95-896h-c2vc"},
+		},
+		{
+			name:     "only a not found id leaves the ref without advisories",
+			vulns:    []batchVuln{{ID: "GHSA-gone-0000-0000", Modified: modified}},
+			wantGets: []string{"GHSA-gone-0000-0000"},
+		},
+		{
+			name:     "empty id is skipped",
+			vulns:    []batchVuln{{ID: "", Modified: modified}, {ID: "GHSA-rv95-896h-c2vc", Modified: modified}},
+			want:     []string{"GHSA-rv95-896h-c2vc"},
+			wantGets: []string{"GHSA-rv95-896h-c2vc"},
+		},
+		{
+			name:  "only an empty id",
+			vulns: []batchVuln{{ID: "", Modified: modified}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			fs := newFixtureServer(t)
+			fs.answer(func(_ batchRequest) batchResponse {
+				return batchResponse{Results: []batchResult{{Vulns: tt.vulns}}}
+			})
+			if tt.failCode != 0 {
+				fs.fail("/vulns/", tt.failCode)
+			}
+			c := newClient(t, fs, t.TempDir(), false)
+			in := refs(t, "npm:gone@1.0.0")
+
+			got, err := c.Advisories(context.Background(), in)
+			if err != nil {
+				t.Fatalf("Advisories: %v", err)
+			}
+			list, present := got[in[0]]
+			if present != (len(tt.want) > 0) || !slices.Equal(ids(list), tt.want) {
+				t.Errorf("advisories = %v (present %v), want %v", ids(list), present, tt.want)
+			}
+			if tt.wantAdv != nil && len(list) > 0 {
+				assertAdvisory(t, &list[0], tt.wantAdv)
+			}
+			if gets := fs.getIDs(); !slices.Equal(gets, tt.wantGets) {
+				t.Errorf("details requests = %v, want %v", gets, tt.wantGets)
+			}
+		})
+	}
+}
+
+// TestAdvisoriesPartialFailure shows a failing details request losing only
+// the refs that list the id: the others are answered, and the error names the
+// lost ref while still unwrapping to the cause.
+func TestAdvisoriesPartialFailure(t *testing.T) {
 	t.Parallel()
 	fs := newFixtureServer(t)
-	fs.answer(func(_ batchRequest) batchResponse {
-		return batchResponse{Results: []batchResult{{Vulns: []batchVuln{{ID: "MAL-2099-1", Modified: "2026-09-09T10:00:00Z"}}}}}
-	})
+	// GHSA-rv95-896h-c2vc is listed for express alone.
+	fs.fail("/vulns/GHSA-rv95-896h-c2vc", http.StatusServiceUnavailable)
 	c := newClient(t, fs, t.TempDir(), false)
-	in := refs(t, "npm:gone@1.0.0")
+	in := refs(t, "npm:flatmap-stream@0.1.1", "npm:express@4.17.1", "pypi:requests@2.31.0")
 
 	got, err := c.Advisories(context.Background(), in)
-	if err != nil {
-		t.Fatalf("Advisories: %v", err)
+	var pe *advisory.PartialError
+	if !errors.As(err, &pe) {
+		t.Fatalf("Advisories error = %v, want a *advisory.PartialError", err)
 	}
-	if len(got[in[0]]) != 1 {
-		t.Fatalf("got %v, want the listed advisory from the batch entry alone", got)
+	if len(pe.Refs) != 1 || pe.Refs[in[1]] == nil {
+		t.Errorf("PartialError.Refs = %v, want express alone", pe.Refs)
 	}
-	assertAdvisory(t, &got[in[0]][0], &advisory.Advisory{
-		ID: "MAL-2099-1", Severity: advisory.SeverityUnknown, Malicious: true,
-		Modified: ts(t, "2026-09-09T10:00:00Z"), URL: advisoryPageURL + "MAL-2099-1",
+	var se *httpcache.StatusError
+	if !errors.As(err, &se) || se.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("error %v does not unwrap to the 503", err)
+	}
+	if !strings.Contains(err.Error(), "npm:express@4.17.1") || !strings.HasPrefix(err.Error(), "osv: ") {
+		t.Errorf("error %q does not name the lost ref with the package prefix", err)
+	}
+	if _, ok := got[in[1]]; ok {
+		t.Errorf("express was answered although its advisory failed: %v", got[in[1]])
+	}
+	if gotIDs := ids(got[in[0]]); !reflect.DeepEqual(gotIDs, flatmapStreamIDs) {
+		t.Errorf("flatmap-stream ids = %v, want %v", gotIDs, flatmapStreamIDs)
+	}
+	if gotIDs := ids(got[in[2]]); !reflect.DeepEqual(gotIDs, requestsIDs) {
+		t.Errorf("requests ids = %v, want %v", gotIDs, requestsIDs)
+	}
+}
+
+// TestAdvisoriesChunkFailureIsLocal shows a failing querybatch chunk losing
+// only its own refs.
+func TestAdvisoriesChunkFailureIsLocal(t *testing.T) {
+	t.Parallel()
+	fs := newFixtureServer(t)
+	fs.answer(func(req batchRequest) batchResponse {
+		if len(req.Queries) == 1 {
+			// The second chunk: a malformed answer with no results.
+			return batchResponse{}
+		}
+		res := batchResponse{Results: make([]batchResult, len(req.Queries))}
+		for i := range res.Results {
+			res.Results[i] = vulnsOf("GHSA-rv95-896h-c2vc")
+		}
+		return res
 	})
-	if gets := fs.getIDs(); !reflect.DeepEqual(gets, []string{"MAL-2099-1"}) {
-		t.Errorf("details requests = %v", gets)
+	c := newClient(t, fs, t.TempDir(), false)
+	in := make([]model.PackageRef, 0, MaxQueriesPerBatch+1)
+	for i := range MaxQueriesPerBatch + 1 {
+		in = append(in, model.PackageRef{Ecosystem: model.NPM, Name: fmt.Sprintf("pkg-%04d", i), Version: "1.0.0"})
+	}
+
+	got, err := c.Advisories(context.Background(), in)
+	var pe *advisory.PartialError
+	if !errors.As(err, &pe) {
+		t.Fatalf("Advisories error = %v, want a *advisory.PartialError", err)
+	}
+	last := in[MaxQueriesPerBatch]
+	if len(pe.Refs) != 1 || pe.Refs[last] == nil || !strings.Contains(pe.Refs[last].Error(), "0 results") {
+		t.Errorf("PartialError.Refs = %v, want the last ref with the result count error", pe.Refs)
+	}
+	if len(got) != MaxQueriesPerBatch {
+		t.Errorf("Advisories answered %d refs, want %d", len(got), MaxQueriesPerBatch)
+	}
+	if gotIDs := ids(got[in[0]]); !reflect.DeepEqual(gotIDs, []string{"GHSA-rv95-896h-c2vc"}) {
+		t.Errorf("first ref ids = %v", gotIDs)
+	}
+}
+
+// TestCacheTTLs pins the six-hour lifetime of querybatch and vulns answers
+// (brief section 11) with a settable clock. The duration is spelled out rather
+// than taken from the constant, so a wrong constant fails here.
+func TestCacheTTLs(t *testing.T) {
+	t.Parallel()
+	fs := newFixtureServer(t)
+	start := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	now := start
+	c := newClientAt(t, fs, t.TempDir(), false, func() time.Time { return now })
+	in := refs(t, "npm:flatmap-stream@0.1.1", "npm:express@4.17.1", "pypi:requests@2.31.0")
+	distinctIDs := len(flatmapStreamIDs) + len(expressIDs) + len(requestsIDs)
+	steps := []struct {
+		name                string
+		at                  time.Duration
+		wantPosts, wantGets int
+	}{
+		{"first call", 0, 1, distinctIDs},
+		{"just under six hours", 6*time.Hour - time.Second, 1, distinctIDs},
+		{"just over six hours", 6*time.Hour + time.Second, 2, 2 * distinctIDs},
+	}
+	for _, step := range steps {
+		now = start.Add(step.at)
+		if _, err := c.Advisories(context.Background(), in); err != nil {
+			t.Fatalf("%s: Advisories: %v", step.name, err)
+		}
+		if posts, gets := fs.postCount(), len(fs.getIDs()); posts != step.wantPosts || gets != step.wantGets {
+			t.Errorf("%s: posts %d gets %d, want %d and %d", step.name, posts, gets, step.wantPosts, step.wantGets)
+		}
 	}
 }
 
@@ -869,9 +1065,13 @@ func TestAdvisoriesServerErrors(t *testing.T) {
 		path       string
 		code       int
 		wantMethod string
+		// wantGets is how many details requests an outage costs: none when
+		// the batch failed, maxDetailFailures when the details endpoint is
+		// down, after which the remaining ids are given up without a request.
+		wantGets int
 	}{
-		{"querybatch fails", "/querybatch", http.StatusInternalServerError, http.MethodPost},
-		{"details fail", "/vulns/", http.StatusServiceUnavailable, http.MethodGet},
+		{"querybatch fails", "/querybatch", http.StatusInternalServerError, http.MethodPost, 0},
+		{"details fail", "/vulns/", http.StatusServiceUnavailable, http.MethodGet, maxDetailFailures},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -879,7 +1079,7 @@ func TestAdvisoriesServerErrors(t *testing.T) {
 			fs := newFixtureServer(t)
 			fs.fail(tt.path, tt.code)
 			c := newClient(t, fs, t.TempDir(), false)
-			_, err := c.Advisories(context.Background(), refs(t, "npm:flatmap-stream@0.1.1", "npm:express@4.17.1", "pypi:requests@2.31.0"))
+			got, err := c.Advisories(context.Background(), refs(t, "npm:flatmap-stream@0.1.1", "npm:express@4.17.1", "pypi:requests@2.31.0"))
 			var se *httpcache.StatusError
 			if !errors.As(err, &se) {
 				t.Fatalf("Advisories error = %v, want a StatusError", err)
@@ -889,6 +1089,14 @@ func TestAdvisoriesServerErrors(t *testing.T) {
 			}
 			if !strings.HasPrefix(err.Error(), "osv: ") {
 				t.Errorf("error %q is not prefixed with the package name", err)
+			}
+			// Every ref lost: the cause comes back alone, not as a partial answer.
+			var pe *advisory.PartialError
+			if got != nil || errors.As(err, &pe) {
+				t.Errorf("Advisories = %v, %v; want no map and no PartialError when nothing was answered", got, err)
+			}
+			if gets := fs.getIDs(); len(gets) != tt.wantGets {
+				t.Errorf("details requests = %v, want %d", gets, tt.wantGets)
 			}
 		})
 	}

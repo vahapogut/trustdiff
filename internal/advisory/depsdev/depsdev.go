@@ -11,15 +11,22 @@
 //	POST https://api.deps.dev/v3alpha/findingsbatch  (up to 5000 requests[]{versionKey or packageKey})
 //	GET  https://api.deps.dev/v3alpha/systems/<SYSTEM>/packages/<name>:similarlyNamedPackages
 //
-// Both batch endpoints answer responses[] in request order, each carrying the
-// echoed request, and may paginate through nextPageToken and pageToken. A
-// version deps.dev has never seen is a 200 whose response carries only the
-// echoed request. deps.dev canonicalizes names on its side (PyPI names to the
-// PEP 503 form; npm names are matched case-sensitively) and echoes the
-// canonical spelling for a request that collapses onto an earlier one, so refs
-// are sent as model.NormalizeName spells them and answers are matched by the
-// echoed key first and by position second. A scoped npm name in a path needs
-// its slash percent-encoded; an unencoded one is a 404.
+// Both batch endpoints answer responses[] in request order, one response per
+// request, each carrying the echoed request, and may paginate through
+// nextPageToken and pageToken. A version deps.dev has never seen is a 200
+// whose response carries only the echoed request. deps.dev canonicalizes
+// names on its side: PyPI names to the PEP 503 form, so Requests and requests
+// are one version, while npm names are matched case-sensitively, so JSONStream
+// and jsonstream are two packages (verified 2026-09-09, both recorded in
+// testdata). For a request that collapsed onto an earlier one it echoes that
+// earlier request's uncanonicalized spelling ([Requests, requests] got two
+// responses in order, both echoing Requests), so the echo cannot tell such
+// requests apart. Refs are therefore sent exactly as the caller spells them,
+// and answers are matched by position whenever a chunk got one response per
+// request; the echo places responses only when the counts differ, and a
+// response that cannot be placed, or a ref left without one, is an error
+// rather than a "not found". A scoped npm name in a path needs its slash
+// percent-encoded; an unencoded one is a 404.
 //
 // Batch answers are cached for six hours and similarly named packages for a
 // day, all through internal/httpcache.
@@ -148,9 +155,11 @@ func New(h *httpcache.Client, opts ...Option) *Client {
 
 // Versions returns version facts for every ref deps.dev indexes, through
 // versionbatch in chunks of BatchSize. A ref deps.dev has never seen, and a ref
-// without a version, is present with Found false. Refs of ecosystems deps.dev
-// does not index are absent; ErrUnsupported is returned only when every ref
-// was one of them. A cold cache in offline mode is httpcache.ErrOffline, wrapped.
+// without a version, is present with Found false; Found false is never the
+// result of a missing or misplaced response, which is an error instead (see
+// the package comment). Refs of ecosystems deps.dev does not index are absent;
+// ErrUnsupported is returned only when every ref was one of them. A cold cache
+// in offline mode is httpcache.ErrOffline, wrapped.
 func (c *Client) Versions(ctx context.Context, refs []model.PackageRef) (map[model.PackageRef]VersionFacts, error) {
 	plan, versionless, err := planBatch(refs, false)
 	if err != nil {
@@ -168,15 +177,15 @@ func (c *Client) Versions(ctx context.Context, refs []model.PackageRef) (map[mod
 		if err != nil {
 			return nil, err
 		}
+		at := ch.attribution("versionbatch", len(responses))
 		for i, raw := range responses {
 			var vr versionResponse
 			if err := json.Unmarshal(raw, &vr); err != nil {
 				return nil, fmt.Errorf("depsdev: decoding versionbatch response %d: %w", i, err)
 			}
-			ref, ok := ch.resolve(vr.Request, i, len(responses))
-			if !ok {
-				c.log.Warn("deps.dev versionbatch answer matches no request", "request", vr.Request.key())
-				continue
+			ref, err := c.resolve(at, i, vr.Request)
+			if err != nil {
+				return nil, err
 			}
 			if vr.Version == nil {
 				// An unknown version: only the echoed request came back, and
@@ -184,6 +193,9 @@ func (c *Client) Versions(ctx context.Context, refs []model.PackageRef) (map[mod
 				continue
 			}
 			out[ref] = c.facts(ref, vr.Version)
+		}
+		if err := at.complete(); err != nil {
+			return nil, err
 		}
 	}
 	return out, nil
@@ -195,7 +207,8 @@ func (c *Client) Versions(ctx context.Context, refs []model.PackageRef) (map[mod
 // asked as a package and gets the package-scoped findings. Refs with no
 // findings are absent from the map; refs of ecosystems deps.dev does not index
 // are skipped, and ErrUnsupported is returned only when every ref was one of
-// them. A cold cache in offline mode is httpcache.ErrOffline, wrapped.
+// them. A missing or misplaced response is an error, as in Versions. A cold
+// cache in offline mode is httpcache.ErrOffline, wrapped.
 func (c *Client) Findings(ctx context.Context, refs []model.PackageRef) (map[model.PackageRef][]Finding, error) {
 	plan, _, err := planBatch(refs, true)
 	if err != nil {
@@ -207,19 +220,22 @@ func (c *Client) Findings(ctx context.Context, refs []model.PackageRef) (map[mod
 		if err != nil {
 			return nil, err
 		}
+		at := ch.attribution("findingsbatch", len(responses))
 		for i, raw := range responses {
 			var fr findingsResponse
 			if err := json.Unmarshal(raw, &fr); err != nil {
 				return nil, fmt.Errorf("depsdev: decoding findingsbatch response %d: %w", i, err)
 			}
-			ref, ok := ch.resolve(fr.Request, i, len(responses))
-			if !ok {
-				c.log.Warn("deps.dev findingsbatch answer matches no request", "request", fr.Request.key())
-				continue
+			ref, err := c.resolve(at, i, fr.Request)
+			if err != nil {
+				return nil, err
 			}
 			if findings := c.findingsOf(ref, fr.Findings); len(findings) > 0 {
 				out[ref] = findings
 			}
+		}
+		if err := at.complete(); err != nil {
+			return nil, err
 		}
 	}
 	return out, nil
@@ -480,18 +496,57 @@ type chunk struct {
 
 func (ch chunk) items() []batchItem { return ch.plan.items[ch.start:ch.end] }
 
-// resolve maps one response back to its ref: by the echoed request when it
-// names a key of this chunk, otherwise by position when the chunk got exactly
-// one response per request. total is the number of responses the chunk got
-// across all pages.
-func (ch chunk) resolve(echo batchItem, pos, total int) (model.PackageRef, bool) {
-	if i, ok := ch.plan.byKey[echo.key()]; ok && i >= ch.start && i < ch.end {
-		return ch.plan.refs[i], true
+// attribution is the way back from one chunk's responses to its refs, and the
+// record of which refs got one. endpoint names the call in errors; total is
+// the number of responses the chunk got across all pages.
+type attribution struct {
+	ch       chunk
+	endpoint string
+	total    int
+	answered []bool
+}
+
+func (ch chunk) attribution(endpoint string, total int) *attribution {
+	return &attribution{ch: ch, endpoint: endpoint, total: total, answered: make([]bool, ch.end-ch.start)}
+}
+
+// resolve maps the response at pos back to its ref and marks the ref answered.
+// deps.dev answers in request order, and the echoed request of a request that
+// collapsed onto an earlier one repeats that earlier spelling (see the package
+// comment), so when the chunk got exactly one response per request the
+// position decides and an echo naming another ref of the chunk is only logged.
+// When the counts differ the echo is the only way back, and a response it
+// cannot place is an error rather than a guess.
+func (c *Client) resolve(at *attribution, pos int, echo batchItem) (model.PackageRef, error) {
+	ch := at.ch
+	n := ch.end - ch.start
+	i, keyed := ch.plan.byKey[echo.key()]
+	keyed = keyed && i >= ch.start && i < ch.end
+	var local int
+	switch {
+	case at.total == n:
+		local = pos
+		if keyed && i != ch.start+pos {
+			c.log.Warn("deps.dev response echoes another request of the batch, kept by position", "endpoint", at.endpoint, "position", pos, "sent", ch.plan.items[ch.start+pos], "echoed", echo)
+		}
+	case keyed:
+		local = i - ch.start
+	default:
+		return model.PackageRef{}, fmt.Errorf("depsdev: %s of %d requests: %d responses, response %d (%s) names no request", at.endpoint, n, at.total, pos, echo)
 	}
-	if total == ch.end-ch.start && pos < total {
-		return ch.plan.refs[ch.start+pos], true
+	at.answered[local] = true
+	return ch.plan.refs[ch.start+local], nil
+}
+
+// complete returns an error when a ref of the chunk got no response, naming
+// the first one left out, so a short answer is never read as "not found".
+func (at *attribution) complete() error {
+	for i, ok := range at.answered {
+		if !ok {
+			return fmt.Errorf("depsdev: %s of %d requests: %d responses, none for %s", at.endpoint, len(at.answered), at.total, at.ch.plan.refs[at.ch.start+i])
+		}
 	}
-	return model.PackageRef{}, false
+	return nil
 }
 
 // Wire types, verified 2026-09-09 against https://docs.deps.dev/api/v3alpha/
@@ -537,6 +592,19 @@ func (it batchItem) key() string {
 		return "p\x00" + it.PackageKey.System + "\x00" + it.PackageKey.Name
 	default:
 		return ""
+	}
+}
+
+// String renders the item for logs and errors: SYSTEM/name@version for a
+// version key, SYSTEM/name for a package key, "(none)" for an empty echo.
+func (it batchItem) String() string {
+	switch {
+	case it.VersionKey != nil:
+		return it.VersionKey.System + "/" + it.VersionKey.Name + "@" + it.VersionKey.Version
+	case it.PackageKey != nil:
+		return it.PackageKey.System + "/" + it.PackageKey.Name
+	default:
+		return "(none)"
 	}
 }
 

@@ -31,3 +31,15 @@ the record script rewrites lines in that form.)
   neighbors. similar-express and similar-types-node show that a popular and a
   scoped name return an empty list; similar-not-found is the plain-text 404 for
   a name deps.dev has never indexed.
+* versionbatch-jsonstream (body versionbatch-jsonstream-request.json): the two
+  npm packages JSONStream and jsonstream at 1.3.5. deps.dev matches npm names
+  case-sensitively: the mixed-case one is dominictarr's package, published
+  2018-10-14, and the lowercase one comes back as the echoed request alone.
+  A ref's spelling must therefore reach the wire unchanged.
+* versionbatch-collapse (body versionbatch-collapse-request.json): two
+  spellings of one PyPI version, Requests and requests 2.32.3. deps.dev
+  canonicalizes the name on its side and answers both requests, in order, but
+  echoes the first spelling for both, so only the position tells the two
+  responses apart.
+- `versionbatch-jsonstream.json`: POST https://api.deps.dev/v3alpha/versionbatch (HTTP 200, 1415 bytes, recorded 2026-09-09)
+- `versionbatch-collapse.json`: POST https://api.deps.dev/v3alpha/versionbatch (HTTP 200, 2444 bytes, recorded 2026-09-09)

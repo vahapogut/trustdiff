@@ -42,10 +42,13 @@ var batchFixtures = map[string]string{
 const unknownVersion = "0.0.0-unknown"
 
 // server serves the recorded fixtures and remembers every request it got, so
-// tests can assert on paths, bodies and request counts. respond, when set,
-// replaces the fixture answer of the batch endpoints.
+// tests can assert on paths, bodies and request counts. A batch request is
+// answered the way deps.dev answers it: one response per request, in request
+// order, taken from the recorded batch by the echoed request. respond, when
+// set, replaces the fixture answer of the batch endpoints.
 type server struct {
 	*httptest.Server
+	t       *testing.T
 	mu      sync.Mutex
 	paths   []string
 	batches map[string][]batchRequest
@@ -58,7 +61,7 @@ func newServer(t *testing.T) *server {
 	for _, file := range []string{"versionbatch.json", "findingsbatch.json", "similar-jost.json", "similar-express.json", "similar-types-node.json", "similar-not-found.json"} {
 		fixtures[file] = fixture(t, file)
 	}
-	s := &server{batches: map[string][]batchRequest{}}
+	s := &server{t: t, batches: map[string][]batchRequest{}}
 	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.EscapedPath()
 		s.mu.Lock()
@@ -112,7 +115,40 @@ func (s *server) servePost(w http.ResponseWriter, r *http.Request, endpoint stri
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	_, _ = w.Write(fixtures[file])
+	_, _ = w.Write(s.selectResponses(fixtures[file], req))
+}
+
+// selectResponses answers a batch request from a recorded batch: the recorded
+// response of each request, in request order, as deps.dev answers. A request
+// the recording does not cover fails the test and gets an echo-only response,
+// so a typo in a test cannot pass as a version deps.dev does not know.
+func (s *server) selectResponses(recorded []byte, req batchRequest) []byte {
+	var doc batchPage
+	if err := json.Unmarshal(recorded, &doc); err != nil {
+		s.t.Errorf("decoding the recorded batch: %v", err)
+		return page(nil, "")
+	}
+	byKey := make(map[string]json.RawMessage, len(doc.Responses))
+	for _, raw := range doc.Responses {
+		var r struct {
+			Request batchItem `json:"request"`
+		}
+		if err := json.Unmarshal(raw, &r); err != nil {
+			s.t.Errorf("decoding a recorded response: %v", err)
+			continue
+		}
+		byKey[r.Request.key()] = raw
+	}
+	out := make([]json.RawMessage, 0, len(req.Requests))
+	for _, it := range req.Requests {
+		raw, ok := byKey[it.key()]
+		if !ok {
+			s.t.Errorf("no recorded response for %s", it)
+			raw, _ = json.Marshal(map[string]batchItem{"request": it})
+		}
+		out = append(out, raw)
+	}
+	return page(out, "")
 }
 
 // requests returns the recorded bodies sent to a batch endpoint.
@@ -127,6 +163,19 @@ func (s *server) count() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.paths)
+}
+
+// countOf returns how many times a "METHOD /path" line was requested.
+func (s *server) countOf(line string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, p := range s.paths {
+		if p == line {
+			n++
+		}
+	}
+	return n
 }
 
 // seen reports whether a "METHOD /path" line was requested.
@@ -150,6 +199,13 @@ func fixture(t *testing.T, name string) []byte {
 // Retries are off so an error answer fails fast.
 func newClient(t *testing.T, s *server, dir string, offline bool) *Client {
 	t.Helper()
+	return newClientAt(t, s, dir, offline, nil, nil)
+}
+
+// newClientAt is newClient with a clock for the cache TTLs (nil means the wall
+// clock) and a logger (nil discards).
+func newClientAt(t *testing.T, s *server, dir string, offline bool, now func() time.Time, log *slog.Logger) *Client {
+	t.Helper()
 	u, err := url.Parse(s.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -162,11 +218,15 @@ func newClient(t *testing.T, s *server, dir string, offline bool) *Client {
 		// The shared client allows 10 requests per second per host with a burst
 		// of one; tests should not wait for that.
 		HostRPS: map[string]float64{u.Host: 1000},
+		Now:     now,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(h, WithBaseURL(s.URL+"/"), WithLogger(slog.New(slog.DiscardHandler)))
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	return New(h, WithBaseURL(s.URL+"/"), WithLogger(log))
 }
 
 func ref(s string) model.PackageRef { return model.MustParseRef(s) }
@@ -537,25 +597,32 @@ func TestVersionsAlignment(t *testing.T) {
 		return out
 	}
 
+	inOrder := map[model.PackageRef]VersionFacts{refs[0]: published(1), refs[1]: published(2), refs[2]: published(3), refs[3]: published(4)}
+
 	tests := []struct {
 		name  string
 		shape func([]json.RawMessage) []json.RawMessage
 		want  map[model.PackageRef]VersionFacts
+		// wantErr is a fragment of the error a short or misplaced answer must
+		// produce instead of a map with Found false entries.
+		wantErr string
+		// wantWarn is a fragment of the warning logged when an echo names
+		// another request of the batch.
+		wantWarn string
 	}{
 		{
-			name: "reversed with echoed requests",
+			name: "in order with echoed requests",
 			shape: func(a []json.RawMessage) []json.RawMessage {
-				slices.Reverse(a)
 				return a
 			},
-			want: map[model.PackageRef]VersionFacts{refs[0]: published(1), refs[1]: published(2), refs[2]: published(3), refs[3]: published(4)},
+			want: inOrder,
 		},
 		{
 			name: "in order without echoed requests",
 			shape: func(a []json.RawMessage) []json.RawMessage {
 				return rewrite(a, func(_ int, r *versionResponse) { r.Request = batchItem{} })
 			},
-			want: map[model.PackageRef]VersionFacts{refs[0]: published(1), refs[1]: published(2), refs[2]: published(3), refs[3]: published(4)},
+			want: inOrder,
 		},
 		{
 			name: "echo spelled differently",
@@ -564,23 +631,40 @@ func TestVersionsAlignment(t *testing.T) {
 					r.Request.VersionKey.Name = strings.ToUpper(r.Request.VersionKey.Name)
 				})
 			},
-			want: map[model.PackageRef]VersionFacts{refs[0]: published(1), refs[1]: published(2), refs[2]: published(3), refs[3]: published(4)},
+			want: inOrder,
 		},
 		{
-			// Fewer answers than requests and nothing to match on: no guess.
+			// One response per request, so the position decides even when the
+			// echo names another request: deps.dev echoes the first spelling of
+			// a collapsed request, which is exactly this shape. The echo is
+			// only reported.
+			name: "echo names another request of the batch",
+			shape: func(a []json.RawMessage) []json.RawMessage {
+				return rewrite(a, func(_ int, r *versionResponse) {
+					r.Request.VersionKey.Name = "pkg1"
+					r.Request.VersionKey.Version = "1.0.1"
+				})
+			},
+			want:     inOrder,
+			wantWarn: "echoes another request",
+		},
+		{
+			// Fewer answers than requests and nothing to match on: an error,
+			// never a guess and never Found false.
 			name: "short without echoed requests",
 			shape: func(a []json.RawMessage) []json.RawMessage {
 				return rewrite(a[:3], func(_ int, r *versionResponse) { r.Request = batchItem{} })
 			},
-			want: map[model.PackageRef]VersionFacts{refs[0]: {}, refs[1]: {}, refs[2]: {}, refs[3]: {}},
+			wantErr: "versionbatch of 4 requests: 3 responses",
 		},
 		{
-			// Fewer answers, but the echo still identifies them.
+			// Fewer answers, placed by their echo, but two refs got none: still
+			// an error, since Found false would be read as "not indexed".
 			name: "short with echoed requests",
 			shape: func(a []json.RawMessage) []json.RawMessage {
 				return a[1:3]
 			},
-			want: map[model.PackageRef]VersionFacts{refs[0]: {}, refs[1]: published(2), refs[2]: published(3), refs[3]: {}},
+			wantErr: "versionbatch of 4 requests: 2 responses, none for npm:pkg1@1.0.1",
 		},
 	}
 	for _, tt := range tests {
@@ -589,45 +673,161 @@ func TestVersionsAlignment(t *testing.T) {
 			s.respond = func(_ string, req batchRequest) (int, []byte) {
 				return http.StatusOK, page(tt.shape(generated(req.Requests)), "")
 			}
-			c := newClient(t, s, t.TempDir(), false)
+			var logged strings.Builder
+			c := newClientAt(t, s, t.TempDir(), false, nil, slog.New(slog.NewTextHandler(&logged, nil)))
 			got, err := c.Versions(context.Background(), refs)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("Versions = %+v, %v; want an error mentioning %q", got, err, tt.wantErr)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("Versions: %v", err)
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("\n got %+v\nwant %+v", got, tt.want)
 			}
+			if warned := strings.Contains(logged.String(), "echoes another request"); warned != (tt.wantWarn != "") {
+				t.Errorf("warning logged = %v, want %v; log:\n%s", warned, tt.wantWarn != "", logged.String())
+			}
 		})
 	}
 }
 
-func TestFindingsAlignment(t *testing.T) {
+// TestVersionsCollapsedRequests replays the recorded answer to two spellings
+// of one PyPI version: deps.dev answered both, in order, and echoed the first
+// spelling for both, so only the position tells the responses apart.
+func TestVersionsCollapsedRequests(t *testing.T) {
 	s := newServer(t)
-	s.respond = func(_ string, req batchRequest) (int, []byte) {
-		// Answer in reverse order; each answer names its version in the finding
-		// so a wrong match shows.
-		out := make([]json.RawMessage, 0, len(req.Requests))
-		for i := len(req.Requests) - 1; i >= 0; i-- {
-			it := req.Requests[i]
-			r := findingsResponse{Request: it, Findings: &findingsDoc{
-				RequestedVersion: &versionFindingsDoc{Findings: []findingDoc{{Type: "DEPRECATED", Risk: "RISK_MEDIUM", DeprecatedContext: &deprecatedContext{Reason: it.VersionKey.Version}}}},
-			}}
-			b, _ := json.Marshal(r)
-			out = append(out, b)
-		}
-		return http.StatusOK, page(out, "")
+	s.respond = func(_ string, _ batchRequest) (int, []byte) {
+		return http.StatusOK, fixture(t, "versionbatch-collapse.json")
 	}
 	c := newClient(t, s, t.TempDir(), false)
-	refs := generatedRefs(3)
-	got, err := c.Findings(context.Background(), refs)
+	// Built by hand: ParseRef would fold Requests to the PEP 503 form.
+	refs := []model.PackageRef{
+		{Ecosystem: model.PyPI, Name: "Requests", Version: "2.32.3"},
+		{Ecosystem: model.PyPI, Name: "requests", Version: "2.32.3"},
+	}
+	got, err := c.Versions(context.Background(), refs)
 	if err != nil {
-		t.Fatalf("Findings: %v", err)
+		t.Fatalf("Versions: %v", err)
+	}
+	want := VersionFacts{
+		Found:        true,
+		PublishedAt:  ts(t, "2024-05-29T15:37:47Z"),
+		AdvisoryKeys: []string{"GHSA-9hjg-9r4m-mvj7", "GHSA-gc5v-m9x4-r6x2", "PYSEC-2026-1872", "PYSEC-2026-2275"},
+		CooldownEnd:  ts(t, "2024-06-03T15:37:47Z"),
 	}
 	for _, r := range refs {
-		want := []Finding{{Type: "DEPRECATED", Risk: "RISK_MEDIUM", Detail: r.Version}}
-		if !slices.Equal(got[r], want) {
-			t.Errorf("%s: got %+v, want %+v", r, got[r], want)
+		if facts := got[r]; !reflect.DeepEqual(facts, want) {
+			t.Errorf("%s:\n got %+v\nwant %+v", r, facts, want)
 		}
+	}
+	bodies := s.requests("versionbatch")
+	if len(bodies) != 1 || len(bodies[0].Requests) != 2 || bodies[0].Requests[0].VersionKey.Name != "Requests" || bodies[0].Requests[1].VersionKey.Name != "requests" {
+		t.Errorf("versionbatch bodies = %d, want one carrying both spellings as given", len(bodies))
+	}
+}
+
+// TestVersionsCaseSensitiveNames replays the recorded answer for JSONStream
+// and jsonstream, two npm packages: the name a ref carries reaches the wire
+// unchanged, and the mixed-case one is the package deps.dev knows.
+func TestVersionsCaseSensitiveNames(t *testing.T) {
+	s := newServer(t)
+	s.respond = func(_ string, _ batchRequest) (int, []byte) {
+		return http.StatusOK, fixture(t, "versionbatch-jsonstream.json")
+	}
+	c := newClient(t, s, t.TempDir(), false)
+	upper, err := model.ParseRef("npm:JSONStream@1.3.5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lower := ref("npm:jsonstream@1.3.5")
+	got, err := c.Versions(context.Background(), []model.PackageRef{upper, lower})
+	if err != nil {
+		t.Fatalf("Versions: %v", err)
+	}
+	want := VersionFacts{Found: true, PublishedAt: ts(t, "2018-10-14T01:24:01Z"), CooldownEnd: ts(t, "2018-10-29T01:24:01Z")}
+	if facts := got[upper]; !reflect.DeepEqual(facts, want) {
+		t.Errorf("%s:\n got %+v\nwant %+v", upper, facts, want)
+	}
+	if facts := got[lower]; facts.Found {
+		t.Errorf("%s: Found with %+v, want the echo-only answer", lower, facts)
+	}
+	bodies := s.requests("versionbatch")
+	if len(bodies) != 1 {
+		t.Fatalf("versionbatch requests = %d, want 1", len(bodies))
+	}
+	wantSent := []batchItem{
+		{VersionKey: &versionKey{System: "NPM", Name: "JSONStream", Version: "1.3.5"}},
+		{VersionKey: &versionKey{System: "NPM", Name: "jsonstream", Version: "1.3.5"}},
+	}
+	if !reflect.DeepEqual(bodies[0].Requests, wantSent) {
+		t.Errorf("versionbatch body:\n got %s\nwant %s", itemsJSON(bodies[0].Requests), itemsJSON(wantSent))
+	}
+}
+
+func TestFindingsAlignment(t *testing.T) {
+	// Each answer names its version in the finding so a wrong match shows.
+	answer := func(it batchItem, echo bool) json.RawMessage {
+		r := findingsResponse{Findings: &findingsDoc{
+			RequestedVersion: &versionFindingsDoc{Findings: []findingDoc{{Type: "DEPRECATED", Risk: "RISK_MEDIUM", DeprecatedContext: &deprecatedContext{Reason: it.VersionKey.Version}}}},
+		}}
+		if echo {
+			r.Request = it
+		}
+		b, _ := json.Marshal(r)
+		return b
+	}
+	tests := []struct {
+		name    string
+		shape   func(items []batchItem) []json.RawMessage
+		wantErr string
+	}{
+		{
+			name: "in order without echoed requests",
+			shape: func(items []batchItem) []json.RawMessage {
+				out := make([]json.RawMessage, 0, len(items))
+				for _, it := range items {
+					out = append(out, answer(it, false))
+				}
+				return out
+			},
+		},
+		{
+			name: "short with echoed requests",
+			shape: func(items []batchItem) []json.RawMessage {
+				return []json.RawMessage{answer(items[1], true)}
+			},
+			wantErr: "findingsbatch of 3 requests: 1 responses, none for npm:pkg1@1.0.1",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newServer(t)
+			s.respond = func(_ string, req batchRequest) (int, []byte) {
+				return http.StatusOK, page(tt.shape(req.Requests), "")
+			}
+			c := newClient(t, s, t.TempDir(), false)
+			refs := generatedRefs(3)
+			got, err := c.Findings(context.Background(), refs)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("Findings = %+v, %v; want an error mentioning %q", got, err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Findings: %v", err)
+			}
+			for _, r := range refs {
+				want := []Finding{{Type: "DEPRECATED", Risk: "RISK_MEDIUM", Detail: r.Version}}
+				if !slices.Equal(got[r], want) {
+					t.Errorf("%s: got %+v, want %+v", r, got[r], want)
+				}
+			}
+		})
 	}
 }
 
@@ -816,6 +1016,56 @@ func TestCacheAndOffline(t *testing.T) {
 	}
 	if n := s.count(); n != warm {
 		t.Errorf("offline clients made %d requests", n-warm)
+	}
+}
+
+// TestCacheTTLs pins the documented lifetimes with a settable clock: batch
+// answers six hours, similarly named packages a day. The durations are spelled
+// out rather than taken from the constants, so a wrong constant fails here.
+func TestCacheTTLs(t *testing.T) {
+	s := newServer(t)
+	ctx := context.Background()
+	start := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	now := start
+	c := newClientAt(t, s, t.TempDir(), false, func() time.Time { return now }, nil)
+	vrefs := []model.PackageRef{ref("npm:express@4.19.2")}
+	frefs := []model.PackageRef{ref("npm:request@2.88.2")}
+	call := func() {
+		t.Helper()
+		if _, err := c.Versions(ctx, vrefs); err != nil {
+			t.Fatalf("Versions: %v", err)
+		}
+		if _, err := c.Findings(ctx, frefs); err != nil {
+			t.Fatalf("Findings: %v", err)
+		}
+		if _, err := c.SimilarNames(ctx, model.NPM, "jost"); err != nil {
+			t.Fatalf("SimilarNames: %v", err)
+		}
+	}
+	const (
+		versions = "POST /versionbatch"
+		findings = "POST /findingsbatch"
+		similar  = "GET /systems/NPM/packages/jost:similarlyNamedPackages"
+	)
+	steps := []struct {
+		name                                    string
+		at                                      time.Duration
+		wantVersions, wantFindings, wantSimilar int
+	}{
+		{"first call", 0, 1, 1, 1},
+		{"just under six hours", 6*time.Hour - time.Second, 1, 1, 1},
+		{"just over six hours", 6*time.Hour + time.Second, 2, 2, 1},
+		{"just under a day", 24*time.Hour - time.Second, 3, 3, 1},
+		{"just over a day", 24*time.Hour + time.Second, 3, 3, 2},
+	}
+	for _, step := range steps {
+		now = start.Add(step.at)
+		call()
+		got := []int{s.countOf(versions), s.countOf(findings), s.countOf(similar)}
+		want := []int{step.wantVersions, step.wantFindings, step.wantSimilar}
+		if !slices.Equal(got, want) {
+			t.Errorf("%s: requests (versionbatch, findingsbatch, similar) = %v, want %v", step.name, got, want)
+		}
 	}
 }
 
