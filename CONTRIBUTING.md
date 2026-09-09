@@ -158,11 +158,28 @@ A check is one file under `internal/checks/`, its test file, one section in `doc
 
 ## Adding a lockfile parser
 
-A parser is one package under `internal/lockfile/<name>/` implementing the `Parser` interface, with real lockfiles as fixtures and their attribution; the walkthrough arrives with the lockfile model in v0.2.0.
+A parser is one package under `internal/lockfile/<name>/` implementing the `Parser` interface in `internal/lockfile/lockfile.go`, with real lockfiles as fixtures and a `testdata/README.md` recording where each one came from and under which license.
+
+1. Write `internal/lockfile/<name>/<name>.go` with `Name`, `Detect` and `Parse`, and register the parser from `init`. The package doc comment says which format versions it reads, how it decides `Direct`, and how it places an entry on a line. [ADR 0002](docs/adr/0002-lockfile-parsers.md) says why these are written here rather than taken from a library.
+2. Read only what `lockfile.Entry` holds. An entry the parser cannot make sense of is dropped with `Drop` and a reason, never a failure of the whole file: a lockfile that half parses is still worth evaluating.
+3. Give every entry a line. `LineIndex` turns a byte offset into a line for the formats whose decoder reports one, and `TableFinder` places a TOML table by a header confirmed against the name it declares.
+4. Decide where an entry comes from with `RegistryHosts` rather than by the shape of a URL. A private registry is recognized by the share of the file's downloads it carries, which is what a repointed entry cannot fake.
+5. Test against a real lockfile of a real project, plus a small file of your own for the edge cases. Assert the entry count, the direct dependencies, the sources and at least one line number.
+6. Add the format to the list in `README.md` and a line under `Unreleased` in `CHANGELOG.md`, and commit as `feat(lockfile): <name>`.
 
 ## Adding a doctor rule
 
-A rule is one row in the rules table under `internal/doctor/`, carrying the date on which its key, unit and minimum version were verified against the package manager's documentation; the walkthrough arrives with `doctor` in v0.3.0.
+A rule is one entry in a `rules_<manager>.go` file under `internal/doctor/`, one section in `docs/doctor.md`, one line in the changelog and one commit.
+
+1. **Read the documentation first, and write down the date.** Every rule carries `Docs` and `Verified`, and a test fails when either is missing. These settings are new and they move: two have changed their key name, one changed its default, and one accepts a duration string only from a later minor release. A row copied from memory or from a blog post is a row that will eventually tell somebody to write a key their package manager rejects.
+2. Pick the id and the name. Ids are `DR` plus three digits, grouped ten per manager and never reused; the name is lower-case words joined by hyphens and is the key a policy file turns the rule off with.
+3. Add the entry and register it from `init`. Fill in `Since`, and `Until` when a newer key replaced this one, so that a project is judged by the key its own version reads.
+4. Choose a `Desired`. `MinimumAge` for a wait, with the `Unit` this manager counts in; `BoolSetting` for a switch; `EnumSetting` for a value out of a set; `Advice` for a question that has no right answer a tool can check. Give `MinimumAge` and `BoolSetting` the manager's own default and the version it arrived in, so a project that is already protected is not told to write anything.
+5. Set `Fixable` only when writing the value is safe and unambiguous. Which packages may run a build script, which scanner to trust, whether to turn hardened mode on: those are decisions, and a rule that writes one is a rule people turn off.
+6. Add the unit if the manager counts in one nothing else uses. A `Unit` is a name, a parser and a formatter, and its parser refuses the other managers' spellings on purpose: accepting `3d` where a number of minutes belongs would call a value correct that the manager itself rejects.
+7. Test it in `internal/doctor`: the value that is right, the value that is present and too small, the unit confusion if the manager has a neighbour that counts differently, and the version boundary. A fix test asserts the file comes out byte for byte the same except the line that changed, and that a second run writes nothing.
+8. Document it in `docs/doctor.md`: the table row, and a note under it when the setting has a catch worth knowing, such as the file it is read from not being the one everybody expects.
+9. Add a line under `Unreleased` in `CHANGELOG.md` and commit as `feat(doctor): DRNNN name`.
 
 ## License
 

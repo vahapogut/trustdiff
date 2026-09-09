@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-09
+
+The hardening scorecard. `doctor` reads the settings a repository's package managers already support, says which are set, which are missing and which are set to something that does not do what the person who wrote it expected, and writes the ones it can.
+
+### Added
+
+- `doctor [<path>]` walks a repository, finds every package manager by lockfile, manifest and `packageManager` field, and prints a scorecard per manager. A version comes from the files a repository commits first, and a package manager on the machine is asked only when those cannot answer, with a fixed argument list, no shell, a three second timeout and a working directory outside the repository, so a repository-controlled binary is never what runs. `--offline` asks nothing.
+- 29 rules across npm, pnpm, Yarn, Bun, Deno, uv, pip, Poetry, Cargo, Dependabot, Renovate and GitHub Actions workflows, each carrying the documentation page it was read from and the date it was read. [docs/doctor.md](docs/doctor.md) documents every one with its file, key, unit and minimum version.
+- The judgment is unit aware, which is what the command is for. The same three days is `3` for npm, `4320` for pnpm and Yarn, `259200` for Bun, `P3D` for Deno and pip and `"3 days"` for uv and Renovate, and each is a valid number in every one of those files. A `minimumReleaseAge` of 10080 in `bunfig.toml` is reported as 168 minutes, with the sentence that says 10080 is a week in the unit pnpm and Yarn count in.
+- The wait a rule asks for is the cooldown the policy already states, per ecosystem, so a project that waits three days for npm and seven for crates.io is told to configure each where it belongs. A manager whose own default already waits long enough is reported as set, and only from the version that default arrived in.
+- A rule is judged by the key the detected version reads: pnpm 11 is never told to write `onlyBuiltDependencies`, which it removed, and pnpm 10 is never told to write `allowBuilds`, which it does not have. A version nobody could determine is treated as a current release, and the scorecard says so on the line.
+- `--fix` writes the settings that can be written, after printing the change as a unified diff and copying the file to `<file>.trustdiff-backup-<timestamp>`. It replaces the lines that hold the value and inserts nothing else, so comments, key order, indentation and line endings survive, and a second run writes nothing. A value inside a YAML anchor, a flow mapping or a multi-line string is reported and left alone. [docs/adr/0003-config-edits.md](docs/adr/0003-config-edits.md) records why nothing is ever re-serialized.
+- `--ci` exits 1 on anything missing or wrong at or above `doctor.ci_min_severity`, and refuses to run with `--fix`: a job that repairs its own checkout hides the problem instead of reporting it.
+- `--user` also reports the configuration of the machine, for the managers the repository uses. Those files are never written.
+- The GitHub Actions rule reports every `uses:` reference that is not pinned to a full commit sha, one line per file when a file is clean. A local action and a container image need none, the SLSA generator is reported as pinned by design when it carries a full version tag, and a policy list allows a project's own references to stay on a tag.
+- The policy file gains an optional `doctor:` section: `ci_min_severity`, a level or `off` per rule, and `pin_exceptions`. A rule name it does not know is an error naming the line and the closest names.
+- `--format json` writes the document `schema/doctor.v1.json` describes, and `--format markdown` a table for a pull request comment.
+- `internal/textdiff`, a line-based unified diff ported from the Go standard library with its BSD notice, so a preview needs no `git` on the machine and does not depend on the user's own diff configuration.
+
 ### Fixed
 
 - `diff --base-file <file> <file>` no longer asks for a git repository. Two files named on the command line are compared wherever they are, which is what a release archive tried out in a download directory and a build comparing two files it fetched both need.
@@ -74,7 +93,8 @@ Project skeleton, published as a prerelease so that the release pipeline (checks
 - Continuous integration: lint, tests on Linux, macOS and Windows with Go 1.26 and 1.27, `govulncheck`, `gosec`, a binary size gate and a direct dependency budget gate.
 - Signed releases: reproducible builds for Linux, macOS and Windows on amd64 and arm64, `checksums.txt`, an SBOM, cosign keyless signatures and GitHub build provenance. `SECURITY.md` explains how to verify a download.
 
-[Unreleased]: https://github.com/vahapogut/trustdiff/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/vahapogut/trustdiff/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/vahapogut/trustdiff/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/vahapogut/trustdiff/releases/tag/v0.2.0
 [0.1.0]: https://github.com/vahapogut/trustdiff/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/vahapogut/trustdiff/releases/tag/v0.0.1

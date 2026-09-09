@@ -243,17 +243,38 @@ trustdiff diff --base "$BASE_SHA" --format sarif > trustdiff.sarif
 
 A note on what the gate compares against: the previous version of a package is the release before the one you are getting, and separately the version your project actually had. Upgrading across several releases makes those differ, and `diff` uses both, so a postinstall script that arrived two releases ago is still reported as new to your project.
 
-### 3. Auditing a monorepo (0.3.0)
+### 3. Auditing a repository's own settings
 
-The `doctor` command arrives in 0.3.0. It will walk a repository, detect every package manager by lockfile, manifest and `packageManager` field, and print a scorecard of the native hardening settings: cooldown and install-script blocking on, off, or set with the wrong unit (npm counts days, pnpm and Yarn minutes, Bun seconds, uv, Deno and pip take ISO 8601 durations), with `doctor --fix` writing version-correct configuration with a diff preview and backups and `doctor --ci` exiting non-zero on drift:
+Your package managers already have the settings that would have stopped most of this, and almost nobody has them on. `doctor` walks a repository, finds every package manager by its lockfile, manifest and `packageManager` field, and says which hardening settings are set, which are missing, and which are set to something that does not do what the person who wrote it expected:
 
 ```sh
 trustdiff doctor
+```
+
+```
+bun 1.4.2  (version from the packageManager field of apps/native/package.json, apps/native)
+  wrong           DR030 bun-minimum-release-age  apps/native/bunfig.toml:3
+      10080 is 168 minutes, and the policy asks for 3 days (259200 here). 10080 is 1 week in
+      minutes, the unit pnpm and Yarn count in
+  advice          DR031 bun-security-scanner  apps/native/bunfig.toml
+
+pnpm 11.2.0  (version from the packageManager field of apps/web/package.json, apps/web)
+  wrong           DR010 pnpm-minimum-release-age  apps/web/pnpm-workspace.yaml:5
+      60 is 1 hour, and the policy asks for 3 days (4320 here)
+  set             DR011 pnpm-strict-dep-builds  apps/web/pnpm-workspace.yaml
+      not set, and this version defaults to true
+```
+
+The units are the point. The same three days is `3` for npm, `4320` for pnpm and Yarn, `259200` for Bun, `P3D` for Deno and pip and `"3 days"` for uv and Renovate, and every one of those is a valid number in every one of those files. A setting can be present, believed in, and worth nothing.
+
+```sh
 trustdiff doctor --fix
 trustdiff doctor --ci
 ```
 
-Today `trustdiff doctor` exits with code 2 and prints `trustdiff: doctor: not implemented in <version>`.
+`--fix` writes the settings it can, after printing the change and copying the file beside itself. It replaces the lines that hold the value and nothing else, so comments, key order and indentation survive, and a second run changes nothing. A setting whose right answer is a judgment, such as which packages may run a build script, is reported and never written. `--ci` exits 1 on anything missing or wrong at or above the level your policy sets.
+
+The wait it recommends is the cooldown your own policy already states, per ecosystem, so a project that waits three days for npm and seven for crates.io is told to configure each where it belongs. [docs/doctor.md](docs/doctor.md) has every rule with its file, key, unit, minimum version and the date its documentation was last read.
 
 ## Checks
 
