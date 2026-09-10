@@ -67,6 +67,22 @@ jobs:
             -o "$RUNNER_TEMP/bin/trustdiff" ./cmd/trustdiff
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
+      - name: Make sure ffmpeg is there, because vhs encodes the GIF with it
+        # vhs shells out to ffmpeg and does not check for it: with ffmpeg missing it
+        # prints "Creating docs/demo.gif..." and then the publish hint, exits 0, and
+        # writes no file. That is what three runs on 2026-09-09 and two on 2026-09-10
+        # looked like from the outside, and the 300 milliseconds between those two
+        # lines is the tell, since encoding twenty seconds of terminal takes longer.
+        run: |
+          if command -v ffmpeg >/dev/null 2>&1; then
+            ffmpeg -version | head -1
+          else
+            echo "ffmpeg is not on this runner image; installing it"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ffmpeg
+            ffmpeg -version | head -1
+          fi
+
       - name: Record docs/demo.tape
         uses: charmbracelet/vhs-action@f6d7db07a432fcd3b06772628d36a57f96d95dcf # v2.1.1
         with:
