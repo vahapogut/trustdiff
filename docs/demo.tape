@@ -9,7 +9,8 @@
 # cause was the vhs version, not the tape: v0.12.0, released 2026-09-09, prints that
 # it is creating the GIF, exits 0 and writes nothing on an ubuntu-24.04 runner,
 # whatever the tape contains. v0.11.0 records the same tape without complaint. The
-# workflow pins it and says so.
+# workflow pins it and says so, and it is reported upstream as
+# charmbracelet/vhs#787.
 #
 # Three other things were changed along the way and none of them was the cause. They
 # are kept because each is an improvement on its own, and listed here so nobody

@@ -105,8 +105,10 @@ jobs:
           path: docs/demo.tape
           # v0.11.0 rather than v0.12.0. v0.12.0 shipped on 2026-09-09, the day this
           # job first failed, and on this runner it prints that it is creating the
-          # GIF, exits 0 and writes no file, whatever the tape contains. The tape no
-          # longer needs anything v0.12.0 added, so it runs on the release before it.
+          # GIF, exits 0 and writes no file, whatever the tape contains. Reported
+          # upstream as charmbracelet/vhs#787, with the two runs that differ only in
+          # this line. Raise the pin when that is fixed; the tape needs nothing
+          # v0.12.0 added, so there is no hurry.
           version: v0.11.0
 
       - name: Put the recording where the rest of this job expects it
