@@ -4,10 +4,14 @@
 #
 # The trustdiff binary must be on PATH. Local run: vhs docs/demo.tape
 #
-# Known limitation, seen on the runner three times on 2026-09-09: the second card is
-# long enough to outgrow the recorded screen, and the wait for the summary line times
-# out. Give the terminal more rows, or record a shorter second command, before wiring
-# the resulting GIF back into the README.
+# The second card is the long one. flatmap-stream is gone from the registry, so every
+# history check reports itself as skipped and the card is around thirty lines: three
+# blocking findings with their evidence, one informational line, ten skips and the
+# summary. Wait+Screen matches the visible screen, so the rows have to hold all of it
+# or the summary line is never on screen to match. That is what failed three times on
+# 2026-09-09 with Rows 36. The waits are also given the same 300s the warm-up gets,
+# because the npm downloads API answers 429 to shared CI addresses often enough that
+# a recorded run can be slow even against a warm cache.
 
 Output docs/demo.gif
 
@@ -16,7 +20,7 @@ Require trustdiff
 Set Shell bash
 Set FontSize 16
 Set Columns 100
-Set Rows 36
+Set Rows 48
 Set Padding 20
 Set TypingSpeed 40ms
 
@@ -40,7 +44,7 @@ Type "trustdiff check npm:express@4.19.2 pypi:requests cargo:serde"
 Sleep 500ms
 Enter
 # The summary line is the last thing the report prints.
-Wait+Screen@120s /Exit code/
+Wait+Screen@300s /Exit code/
 Sleep 5s
 
 Type "clear"
@@ -51,5 +55,5 @@ Sleep 500ms
 Type "trustdiff check npm:flatmap-stream@0.1.1"
 Sleep 500ms
 Enter
-Wait+Screen@120s /Exit code/
+Wait+Screen@300s /Exit code/
 Sleep 6s
