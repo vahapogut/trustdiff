@@ -211,7 +211,8 @@ type Params struct {
 // Each kind of setting has one implementation: a minimum age with a unit, a
 // boolean, a value out of a set.
 type Desired interface {
-	// Want is the value to write when the setting is missing or wrong.
+	// Want is the value to write when the file does not state the setting at all,
+	// which is the only case --fix writes.
 	Want(p *Params) configfile.Literal
 	// Judge looks at what the file holds. detail is the sentence the scorecard
 	// prints after the status, in the tool's own voice, for example "3 minutes,
@@ -265,7 +266,7 @@ type Rule struct {
 	// needs it, because what it judges is every uses: line of every workflow file
 	// rather than one setting with one value.
 	Scan Scanner
-	// Level is how much a missing or wrong setting matters, before the policy is
+	// Level is how much a setting that is not doing its job matters, before the policy is
 	// applied.
 	Level model.Level
 	// Docs is the page the row was verified against.

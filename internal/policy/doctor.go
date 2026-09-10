@@ -13,7 +13,7 @@ import (
 	"github.com/vahapogut/trustdiff/internal/model"
 )
 
-// DefaultDoctorCIMinSeverity is the level a missing or wrong setting has to reach
+// DefaultDoctorCIMinSeverity is the level a setting that is not doing its job has to reach
 // for "doctor --ci" to exit 1 when the policy does not say. It is warn, because the
 // settings doctor reads are the ones a project meant to have and mostly does not,
 // and a team that wants a stricter or a softer gate writes ci_min_severity.
@@ -33,7 +33,7 @@ var doctorRuleName = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // disagreed with one of them wants. Nil fields were not written and keep their
 // default, like everywhere else in the file.
 type DoctorConfig struct {
-	// CIMinSeverity is the lowest level a missing or wrong setting has to reach for
+	// CIMinSeverity is the lowest level a setting that is not doing its job has to reach for
 	// "doctor --ci" to exit 1.
 	CIMinSeverity *model.Level `yaml:"ci_min_severity,omitempty"`
 	// Rules is the level each named rule is reported at, off to turn it off. The
@@ -222,7 +222,7 @@ func (d *DoctorConfig) validate() []error {
 // rule the policy spoke about, the level --ci fails at, and the references allowed
 // to stay on a tag.
 type DoctorSettings struct {
-	// CIMinSeverity is the lowest level a missing or wrong setting has to reach for
+	// CIMinSeverity is the lowest level a setting that is not doing its job has to reach for
 	// "doctor --ci" to exit 1.
 	CIMinSeverity model.Level
 	// Levels is the level of each rule the policy named. A rule that is absent from

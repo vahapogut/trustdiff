@@ -27,7 +27,7 @@ type Options struct {
 	// Levels overrides a rule's default level by rule name. model.LevelOff turns
 	// the rule off, which is how a project silences a row it has decided against.
 	Levels map[string]model.Level
-	// Fix writes the settings that are missing or wrong, where the rule can be
+	// Fix writes the settings the files do not state, where the rule can be
 	// written and the file allows it.
 	Fix bool
 	// Backup writes a timestamped copy of every file before changing it. It is on

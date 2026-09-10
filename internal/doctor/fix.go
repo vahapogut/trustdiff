@@ -15,7 +15,7 @@ import (
 // mode it already has.
 const newFileMode os.FileMode = 0o600
 
-// applyFixes writes the settings that are missing or wrong, one file at a time,
+// applyFixes writes the settings the files do not state, one file at a time,
 // and records what it changed on each result.
 //
 // Three things it will not do, all of them deliberate. It never touches a rule

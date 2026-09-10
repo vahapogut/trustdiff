@@ -37,7 +37,7 @@ so comments, key order and indentation survive, and running it twice changes
 nothing the second time. A setting whose right answer is a judgment, such as which
 packages may run a build script, is reported and never written.
 
---ci exits 1 when anything is missing or wrong at or above the level the policy's
+--ci exits 1 on any setting that is not doing its job at or above the level the policy's
 doctor section sets, which defaults to warn.
 
 Nothing here reaches the network. A package manager on this machine is asked for
@@ -47,7 +47,7 @@ its version only when the repository's own files cannot say, and never with
 		RunE: a.runDoctor,
 	}
 	cmd.Flags().Bool("fix", false, "write the recommended settings, with a diff preview and backups")
-	cmd.Flags().Bool("ci", false, "exit 1 when any setting is missing or wrong at or above the policy severity")
+	cmd.Flags().Bool("ci", false, "exit 1 when any setting is missing, weak, wrong or unreadable at or above the policy severity")
 	cmd.Flags().Bool("user", false, "also report user-level configuration files")
 	return cmd
 }
