@@ -441,10 +441,14 @@ workflow.
 
 ### 8.2 Publish the first version by hand
 
-Done on 2026-09-10: `@trustdiff/bun-scanner@0.4.0` is public. It was packed from
-the working tree rather than from the `v0.4.0` tag, so its README is a few commits
-newer than the tag's. Every later version comes from the workflow, which packs the
-tag's own checkout, so this is the only version that can differ.
+Done on 2026-09-10: 0.4.0 went out this way, and it is the only version that ever
+will. It was packed from the working tree rather than from the `v0.4.0` tag, so its
+README was a few commits newer than the tag's; every later version comes from the
+workflow, which packs the tag's own checkout.
+
+0.4.1 followed the same day through the workflow, which staged it, and through an
+approval, which made it public. That is the whole chain exercised end to end, so
+the next scanner release needs nothing from this section.
 
 Trusted publishing cannot create a package that does not exist yet. npm/cli issue
 8544, "Allow publishing initial version with OIDC", was still open on 2026-09-10,
