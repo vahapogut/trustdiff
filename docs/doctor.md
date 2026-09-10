@@ -116,7 +116,7 @@ releases.
 | DR023 | Yarn | `enableHardenedMode` | `.yarnrc.yml` | boolean | | info |
 | DR030 | Bun | `[install] minimumReleaseAge` | `bunfig.toml` | seconds | 1.3 | warn |
 | DR031 | Bun | `[install.security] scanner` | `bunfig.toml` | package name | 1.3 | info |
-| DR040 | Deno | `minimumDependencyAge` | `deno.json` | ISO 8601 | 2.6 | warn |
+| DR040 | Deno | `minimumDependencyAge` | `deno.json` | ISO 8601, minutes or a cutoff | 2.6 | warn |
 | DR041 | Deno | `lock.frozen` | `deno.json` | boolean | | warn |
 | DR042 | Deno | `lock` | `deno.json` | boolean or object | | warn |
 | DR050 | uv | `exclude-newer` | `pyproject.toml`, `uv.toml` | words | 0.9.17 | warn |
@@ -167,9 +167,13 @@ written by a fix, because turning a lockfile back on changes what the next insta
 resolves.
 
 **Deno takes several spellings**: an ISO 8601 duration, a bare number of minutes, an
-absolute date, an RFC 3339 timestamp, or an object with an `age` and an `exclude`
-list. The fix writes the ISO 8601 form, which cannot be misread as another manager's
-unit. Deno 2.9 waits a day even with the key absent.
+absolute date, an RFC 3339 timestamp, `0` to turn the wait off, or an object with an
+`age` and an `exclude` list. All of them are read as written, so a project that used
+Deno's own minutes is told how long it waits rather than that it wrote the wrong
+unit. A cutoff is a point in time where the policy asks for a length of one, so the
+two are compared through the clock the run started on: what a cutoff buys today is
+at least today minus the cutoff. The fix writes the ISO 8601 form, which cannot be
+misread as another manager's unit. Deno 2.9 waits a day even with the key absent.
 
 **uv measures upload time, not release date**, and resolves the duration into
 `uv.lock` when the lock is written. The relative form arrived in 0.9.17; before that
