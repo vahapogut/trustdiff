@@ -196,6 +196,32 @@ func AppliesTo(c Check, eco model.Ecosystem) bool {
 	return false
 }
 
+// LockfileCheck is a check whose whole subject is the lockfile entry. It reads
+// Subject.Lock, the subject's ref and its policy settings, and nothing a registry,
+// OSV or deps.dev supplies, so the runner runs it even for a subject it could load
+// nothing for.
+//
+// That is not a nicety. The one answer that stops every other check, a package the
+// registry has never heard of, is the case these checks exist for: a git or a URL
+// dependency is a name no registry answers, and neither is a name that was never
+// published. Skipping them there means the gate says nothing about exactly the
+// entries it was added to catch.
+//
+// It is an optional interface rather than a method on Check so that a check says
+// nothing unless it means it, and a check that says nothing is taken to need the
+// loaded data.
+type LockfileCheck interface {
+	Check
+	// ReadsLockOnly reports that this check needs no loaded data.
+	ReadsLockOnly() bool
+}
+
+// readsLockOnly reports whether a check can run against the lockfile entry alone.
+func readsLockOnly(c Check) bool {
+	lc, ok := c.(LockfileCheck)
+	return ok && lc.ReadsLockOnly()
+}
+
 var (
 	registryMu sync.Mutex
 	registered = map[string]Check{}

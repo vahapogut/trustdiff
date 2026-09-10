@@ -368,6 +368,12 @@ func TestCheckUnknownPackageIsSkipped(t *testing.T) {
 				t.Fatal("no skipped checks recorded")
 			}
 			for _, sk := range s.Skipped {
+				// The lockfile checks run whatever the registry answered, which is
+				// the point of them, and skip with their own reason for a ref named
+				// on the command line, which brings no entry for them to judge.
+				if lockfileChecks[sk.Check] {
+					continue
+				}
 				if !strings.Contains(sk.Reason, "not found in the registry") || strings.Contains(sk.Reason, "unavailable") {
 					t.Errorf("%s skipped with %q, want the registry's not-found answer", sk.Check, sk.Reason)
 				}

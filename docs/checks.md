@@ -540,7 +540,7 @@ npm:plain-crypto-js@4.2.1  BLOCK
 
 ## TD013 exotic-source
 
-**Detects.** A lockfile entry that does not come from the ecosystem's registry: a git repository, a tarball or archive URL, a directory on the machine, or an origin the file does not state. Default `block`, every ecosystem. It reads the lockfile entry rather than the registry, so it is skipped for a ref named on the command line, which has none. A private registry or a mirror is not exotic: the parsers recognize it by the share of the file's downloads it carries and record the entry as a registry install.
+**Detects.** A lockfile entry that does not come from the ecosystem's registry: a git repository, a tarball or archive URL, a directory on the machine, or an origin the file does not state. Default `block`, every ecosystem. It reads the lockfile entry rather than the registry, so it is skipped for a ref named on the command line, which has none, and for the same reason it still runs for a package the registry does not know, where every other check is skipped. That case is the one it exists for: a git dependency is a name no registry answers. A private registry or a mirror is not exotic: the parsers recognize it by the share of the file's downloads it carries and record the entry as a registry install.
 
 Two of the four sources are reported at `info` whatever level the policy sets for the check. A `path` entry is a directory on the machine, which is what a monorepo writes for its own packages: ripgrep 14.1.1 has ten of them and Superset twenty five, and failing a gate on unmodified upstream code is how a check gets turned off. An `unknown` entry is usually an npm bundled dependency, whose bytes ship inside the archive of the package that carries them and are covered by that package's hash. Both stay in the report, because an entry that does not come from the registry is worth seeing in a diff and the `source` key says which it is. An allow entry takes them out of the report altogether.
 
@@ -583,7 +583,7 @@ allow:
 - `missing-hash`: the entry records no integrity hash. A git entry pinned to a full commit is not reported, because the commit is the hash.
 - `plain-http`: the entry is resolved over `http://`, so the download is neither confidential nor authenticated whatever the hash says.
 
-Like TD013 it reads the lockfile entry and is skipped for a ref named on the command line.
+Like TD013 it reads the lockfile entry and is skipped for a ref named on the command line, and like TD013 it still runs for a package the registry does not know, so an entry nothing guards is reported whether or not the package was ever published.
 
 **Why it matters.** The hash is what makes a lockfile a lock. Without it, an install repeats the resolution rather than the result: a registry that serves different bytes for the same version, a compromised mirror, or a proxy in between changes what you get and nothing notices. Plain http makes that trivial for anyone on the path.
 

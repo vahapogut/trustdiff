@@ -10,8 +10,10 @@ import (
 )
 
 // cargoLock is a second format, so a scan proves it reads whatever a parser is
-// registered for rather than only the one format a test happens to write. The
-// fake loader does not serve crates.io, so its entry is reported as skipped.
+// registered for rather than only the one format a test happens to write. The fake
+// loader does not serve crates.io, so every check that reads a data source is
+// skipped for it; the two that read the entry alone still judge it, and find nothing
+// to report in a registry install that carries a checksum.
 const cargoLock = `version = 3
 
 [[package]]
@@ -58,6 +60,21 @@ func scanFixture(t *testing.T) string {
 }
 
 // writeFile puts content at a path relative to dir, creating directories.
+// readRegressionFixture reads a file under testdata/regressions, which is where the
+// scenario of each review finding is pinned so it cannot come back. Call it before a
+// test changes directory: the path is relative to this package, and scanFixture moves
+// the working directory away from it.
+func readRegressionFixture(t *testing.T, elem ...string) string {
+	t.Helper()
+	parts := append([]string{"..", "..", "testdata", "regressions"}, elem...)
+	// #nosec G304 -- a fixture of this repository.
+	data, err := os.ReadFile(filepath.Join(parts...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
 func writeFile(t *testing.T, dir, rel, content string) {
 	t.Helper()
 	path := filepath.Join(dir, filepath.FromSlash(rel))
@@ -322,6 +339,42 @@ func TestScanNamesTheFormatsItReads(t *testing.T) {
 	for _, format := range []string{"Cargo.lock", "package-lock.json", "pnpm-lock.yaml", "uv.lock"} {
 		if !strings.Contains(stderr, format) {
 			t.Errorf("the message does not name %s:\n%s", format, stderr)
+		}
+	}
+}
+
+// TestScanJudgesTheLockfileEntryOfAnUnknownPackage pins finding F1 of
+// docs/review-2026-09-10.md. A package the registry does not know must still be judged
+// by the checks that read the lockfile entry and nothing else, because a pull request
+// adding a git dependency, or any name that was never published, is the case those
+// checks exist for. Before the fix the registry's "not found" skipped every check,
+// including the two whose whole subject is the entry, and the run exited 0.
+func TestScanJudgesTheLockfileEntryOfAnUnknownPackage(t *testing.T) {
+	lock := readRegressionFixture(t, "f1-unknown-package-git-source", "package-lock.json")
+	dir := scanFixture(t)
+	writeFile(t, dir, "package-lock.json", lock)
+
+	code, stdout, stderr := run(t, "--format", "json", "scan")
+	if code != ExitFindings {
+		t.Fatalf("exit = %d, want %d (stderr: %s)", code, ExitFindings, stderr)
+	}
+	rep := decodeReport(t, stdout)
+	s := subjectFor(t, &rep, "npm:trustdiff-fixture-exotic@1.0.0")
+
+	levels := map[string]string{}
+	for _, f := range s.Findings {
+		levels[f.ID] = f.Level.String()
+	}
+	if levels["TD013"] != "block" {
+		t.Errorf("TD013 = %q, want block: a git dependency is what exotic-source exists to report", levels["TD013"])
+	}
+	if levels["TD014"] != "warn" {
+		t.Errorf("TD014 = %q, want warn: the entry pins a branch rather than a commit, so nothing guards it", levels["TD014"])
+	}
+	// Every other check still reports the registry's answer, which is what it is.
+	for _, sk := range s.Skipped {
+		if sk.Check == "TD013" || sk.Check == "TD014" {
+			t.Errorf("%s was skipped: %s", sk.Check, sk.Reason)
 		}
 	}
 }

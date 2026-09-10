@@ -277,10 +277,10 @@ func (rn *run) evaluate(ctx context.Context, in *Input, res *resolution) Outcome
 	}
 	applicable := rn.applicable(s)
 	if res.skip != "" {
-		return skipAll(&out, applicable, res.skip, res.unavailable)
+		return rn.skipAll(ctx, &out, s, applicable, res.skip, res.unavailable)
 	}
 	if reason := rn.load(ctx, s); reason != "" {
-		return skipAll(&out, applicable, reason, false)
+		return rn.skipAll(ctx, &out, s, applicable, reason, false)
 	}
 	rn.loadBase(ctx, s, in.BaseVersion)
 
@@ -291,41 +291,63 @@ func (rn *run) evaluate(ctx context.Context, in *Input, res *resolution) Outcome
 			out.Subject.Skipped = append(out.Subject.Skipped, model.Skipped{Check: c.ID(), Reason: "excluded by cooldown_exclude"})
 			continue
 		}
-		result, unfinished := rn.runCheck(ctx, c, s)
-		if result.Skipped != nil {
-			skipped := *result.Skipped
-			// The report schema wants the TD id, whatever the check wrote.
-			skipped.Check = c.ID()
-			out.Subject.Skipped = append(out.Subject.Skipped, skipped)
-			if unfinished || namesOutage(skipped.Reason, outages) {
-				out.Unavailable = true
-			}
-			continue
-		}
-		out.Subject.Evaluated = append(out.Subject.Evaluated, c.ID())
-		if len(result.Findings) == 0 {
-			continue
-		}
-		if entry, ok := rn.policy.Allowed(c.Name(), s.Ref, rn.now); ok {
-			rn.log.Debug("findings suppressed by allow entry",
-				"check", c.ID(), "ref", s.Ref.String(), "findings", len(result.Findings),
-				"package", entry.Package.String(), "reason", entry.Reason, "expires", entry.Expires.String())
-			continue
-		}
-		out.Subject.Findings = append(out.Subject.Findings, result.Findings...)
+		rn.runOne(ctx, &out, s, c, outages)
 	}
 	finish(&out.Subject)
 	return out
 }
 
-// skipAll marks every applicable check skipped with one reason, for a subject
-// nothing can be evaluated for. The outcome counts as unavailable only when the
-// reason is an outage and a check was actually skipped for it.
-func skipAll(out *Outcome, applicable []Check, reason string, unavailable bool) Outcome {
-	for _, c := range applicable {
-		out.Subject.Skipped = append(out.Subject.Skipped, model.Skipped{Check: c.ID(), Reason: reason})
+// runOne runs one check and files what it returned. It is a method rather than the
+// body of that loop because the skip path runs the lockfile checks through it too,
+// and a check has to be filed the same way wherever it ran.
+func (rn *run) runOne(ctx context.Context, out *Outcome, s *Subject, c Check, outages []string) {
+	result, unfinished := rn.runCheck(ctx, c, s)
+	if result.Skipped != nil {
+		skipped := *result.Skipped
+		// The report schema wants the TD id, whatever the check wrote.
+		skipped.Check = c.ID()
+		out.Subject.Skipped = append(out.Subject.Skipped, skipped)
+		if unfinished || namesOutage(skipped.Reason, outages) {
+			out.Unavailable = true
+		}
+		return
 	}
-	out.Unavailable = unavailable && len(applicable) > 0
+	out.Subject.Evaluated = append(out.Subject.Evaluated, c.ID())
+	if len(result.Findings) == 0 {
+		return
+	}
+	if entry, ok := rn.policy.Allowed(c.Name(), s.Ref, rn.now); ok {
+		rn.log.Debug("findings suppressed by allow entry",
+			"check", c.ID(), "ref", s.Ref.String(), "findings", len(result.Findings),
+			"package", entry.Package.String(), "reason", entry.Reason, "expires", entry.Expires.String())
+		return
+	}
+	out.Subject.Findings = append(out.Subject.Findings, result.Findings...)
+}
+
+// skipAll marks with one reason every applicable check that needed the data the
+// subject could not be given, and runs the ones that did not need it.
+//
+// Nothing could be loaded, so there are no outage reasons to match a skip against
+// and no findings can be suppressed by anything but an allow entry, but a check
+// that reads the lockfile entry alone has everything it ever had. Running it here
+// is the whole point of LockfileCheck: a package the registry does not know is
+// exactly what exotic-source and integrity-missing exist to report.
+//
+// The outcome counts as unavailable only when the reason is an outage and a check
+// was actually skipped for it, so a subject whose applicable checks all ran is not
+// reported as missing data.
+func (rn *run) skipAll(ctx context.Context, out *Outcome, s *Subject, applicable []Check, reason string, unavailable bool) Outcome {
+	skipped := 0
+	for _, c := range applicable {
+		if readsLockOnly(c) {
+			rn.runOne(ctx, out, s, c, nil)
+			continue
+		}
+		out.Subject.Skipped = append(out.Subject.Skipped, model.Skipped{Check: c.ID(), Reason: reason})
+		skipped++
+	}
+	out.Unavailable = unavailable && skipped > 0
 	finish(&out.Subject)
 	return *out
 }

@@ -63,6 +63,11 @@ func (integrityMissing) Name() string { return "integrity-missing" }
 // Ecosystems implements Check; nil means every ecosystem.
 func (integrityMissing) Ecosystems() []model.Ecosystem { return nil }
 
+// ReadsLockOnly implements LockfileCheck. The entry is the whole evidence here, so
+// an entry nothing guards is reported whether or not the registry has ever heard of
+// the package.
+func (integrityMissing) ReadsLockOnly() bool { return true }
+
 // Run implements Check.
 func (c integrityMissing) Run(_ context.Context, s *Subject) Result {
 	if s.Lock == nil {

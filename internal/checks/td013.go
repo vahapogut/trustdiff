@@ -62,6 +62,11 @@ func (exoticSource) Name() string { return "exotic-source" }
 // Ecosystems implements Check; nil means every ecosystem.
 func (exoticSource) Ecosystems() []model.Ecosystem { return nil }
 
+// ReadsLockOnly implements LockfileCheck. The entry is the whole evidence here, so
+// this runs for a package the registry does not know, which is the case it exists
+// for: a git or a URL dependency is a name no registry answers.
+func (exoticSource) ReadsLockOnly() bool { return true }
+
 // Run implements Check.
 func (c exoticSource) Run(_ context.Context, s *Subject) Result {
 	if s.Lock == nil {
