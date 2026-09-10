@@ -182,16 +182,24 @@ jobs:
         # What ships is what the README promises ships. A stray file here is how
         # a package starts carrying something nobody reviewed, and the "files"
         # array in package.json is easy to widen by accident.
+        #
+        # The real tarball is packed and listed rather than asking npm to describe
+        # it. "npm pack --dry-run --json" changed shape between npm 11 and npm 12,
+        # and an assertion that reads a report is only ever as stable as the report:
+        # when the shape moved, this step failed with a TypeError about a field that
+        # no longer existed, which says nothing about the package. A tar listing is
+        # the artifact itself and does not move.
         run: |
+          tmp=$(mktemp -d)
+          npm pack --pack-destination "${tmp}" >/dev/null
+          tgz=$(find "${tmp}" -name '*.tgz' -type f)
+          if [ -z "${tgz}" ]; then
+            echo "::error::npm pack wrote no tarball"
+            exit 1
+          fi
           want="LICENSE README.md package.json src/index.ts"
-          got=$(npm pack --dry-run --json | node --eval '
-            let raw = "";
-            process.stdin.on("data", (d) => { raw += d; });
-            process.stdin.on("end", () => {
-              const files = JSON.parse(raw)[0].files.map((f) => f.path).sort();
-              console.log(files.join(" "));
-            });
-          ')
+          got=$(tar -tzf "${tgz}" | sed 's|^package/||' | grep -v '/$' | sort | xargs)
+          rm -rf "${tmp}"
           echo "tarball: ${got}"
           if [ "${got}" != "${want}" ]; then
             echo "::error::the tarball holds '${got}', and this package ships '${want}'"
