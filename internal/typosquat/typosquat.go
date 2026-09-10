@@ -83,6 +83,13 @@ var commonWords = map[string]bool{"dev": true, "utils": true, "cli": true, "js":
 // a target shorter than four characters, so the fuzzy rules would add false
 // positives and no recall. The structural rules (separator, scope, affix,
 // confusable, common-word) are exact and apply at every length.
+//
+// For a popular name that carries a scope, the edit-distance rule counts the bare
+// half: a scope is shared by every package inside it, so it is not the part being
+// imitated. See Threshold, which reads the same half for the same reason. The
+// transposition rule counts the whole spelling, because it needs no budget at all:
+// it swaps two runes and asks whether the result is a popular name, so a shared
+// scope cannot pay for anything there.
 const minFuzzyLength = 4
 
 // Canonical returns the spelling names are compared in: model.NormalizeName, then
@@ -115,6 +122,34 @@ func stripSeparators(s string) string {
 // scoped reports whether an npm name carries a scope (@scope/name).
 func scoped(s string) bool {
 	return strings.HasPrefix(s, "@") && strings.Contains(s, "/")
+}
+
+// scopeSplit returns the rune index of the "/" that ends a scope, or -1 for a name
+// that carries none. npm's own documentation is the grammar: "scopes are preceded
+// by an @ symbol and followed by a slash, e.g. @somescope/somepackagename", and "A
+// scope follows the usual rules for package names (URL-safe characters, no leading
+// dots or underscores)", so a scope holds no slash of its own and the first one
+// ends it (https://docs.npmjs.com/cli/v11/using-npm/scope and
+// https://docs.npmjs.com/cli/v11/configuring-npm/package-json, read 2026-09-10).
+func scopeSplit(runes []rune) int {
+	if len(runes) == 0 || runes[0] != '@' {
+		return -1
+	}
+	for i, r := range runes {
+		if r == '/' {
+			return i
+		}
+	}
+	return -1
+}
+
+// bareName is the package's own name without its scope: the whole of an unscoped
+// name, and what follows the "/" of a scoped one.
+func bareName(runes []rune) []rune {
+	if cut := scopeSplit(runes); cut >= 0 {
+		return runes[cut+1:]
+	}
+	return runes
 }
 
 // flattenScope writes @scope/name as scope-name, the spelling a squatter uses

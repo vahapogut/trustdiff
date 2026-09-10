@@ -1,12 +1,24 @@
 package typosquat
 
-import "unicode/utf8"
-
 // Threshold is the edit distance below which a name is a suspect of a popular
 // name: 1 for popular names shorter than 10 characters, 2 otherwise. The popular
-// name decides, since it is the one being imitated.
+// name decides, since it is the one being imitated, and for a scoped name only its
+// bare half counts.
+//
+// The scope is left out because it is shared by every package inside it, so it
+// costs a squatter nothing to copy and must not buy one a looser budget.
+// "@loaders.gl/" is twelve runes on its own: while the whole spelling decided, the
+// pair cleared ten runes on the scope alone, every package in that scope was
+// within two edits of every other, and @loaders.gl/wms was reported as a suspect
+// of @loaders.gl/gis.
 func Threshold(popular string) int {
-	if utf8.RuneCountInString(popular) < 10 {
+	return thresholdRunes(len(bareName([]rune(popular))))
+}
+
+// thresholdRunes is Threshold for a bare name already counted, so the scan over
+// the popular names counts each one once.
+func thresholdRunes(bare int) int {
+	if bare < 10 {
 		return 1
 	}
 	return 2

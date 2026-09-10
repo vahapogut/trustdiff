@@ -21,7 +21,9 @@ import (
 // swaps, npm scope confusion, py, python, js and node affixes, digit and letter
 // confusables and common-word insertions. A name that is itself popular is never
 // a suspect, and the fuzzy rules leave popular names shorter than four
-// characters alone.
+// characters alone, counting the bare half of a scoped name: a scope is shared by
+// every package inside it, so it is not the part a squatter imitates and it buys
+// no imitator a looser budget.
 //
 // As a cross-check, deps.dev's similarly named packages are consulted through the
 // Loader: a neighbor that is much more popular (it is in the popular list, or its

@@ -236,3 +236,54 @@ func BenchmarkSuspect(b *testing.B) {
 		Suspect(model.NPM, "left-pad-utilz", set)
 	}
 }
+
+// TestSuspectScopedNames is the one question finding F8 of docs/review-2026-09-10.md
+// turned on: which part of a scoped name a squatter is imitating. The scope is not
+// it, because every package inside a scope carries the same one, so it must not buy
+// an imitator a looser edit budget. It must still cost its own edits when it is the
+// part that was misspelled, and the recall corpus cannot say so: testdata/typosquats.csv
+// holds no scoped row at all, so these pairs are the only proof either way.
+func TestSuspectScopedNames(t *testing.T) {
+	tests := []struct {
+		what  string
+		input string
+		want  string
+	}{
+		// Real names of the Superset lockfile, which TestPrecision measures whole.
+		// The scope carried each pair past the ten-rune line, so the limit was two
+		// edits and the shared prefix cost nothing.
+		{"a three-letter bare name is not a suspect of another", "@loaders.gl/wms", ""},
+		{"nor is a fourth one in the same scope", "@loaders.gl/zip", ""},
+		{"two edits apart inside one scope is not close", "@types/d3-cloud", ""},
+		{"nor is a four-letter bare name two edits from another", "@types/rison", ""},
+		// The other side of the same rule: a misspelled scope on an otherwise exact
+		// name is still what it looks like, and a short scope is not exempt.
+		{"a substituted rune in a short scope", "@vuo/reactivity", "@vue/reactivity"},
+		{"a swapped pair in a short scope", "@veu/reactivity", "@vue/reactivity"},
+		{"a two-rune scope", "@mx/devkit", "@nx/devkit"},
+		{"a swap that spans the scope of a long name", "@uve/server-renderer", "@vue/server-renderer"},
+		{"a swap inside the scope of a short name", "@typse/node", "@types/node"},
+		// Writing the scope as a prefix, or dropping the @, is the same package
+		// spelled to look like it.
+		{"the scope written with a dash", "@types-node", "@types/node"},
+		{"the scope written without its @", "types/node", "@types/node"},
+	}
+	set, ok := Embedded().Popular(model.NPM)
+	if !ok {
+		t.Fatal("no embedded list for npm")
+	}
+	for _, tt := range tests {
+		t.Run(tt.what, func(t *testing.T) {
+			got, ok := Suspect(model.NPM, Canonical(model.NPM, tt.input), set)
+			if tt.want == "" {
+				if ok {
+					t.Errorf("Suspect(%q) = %+v, want no match", tt.input, got)
+				}
+				return
+			}
+			if !ok || got.Neighbor != tt.want {
+				t.Errorf("Suspect(%q) = %+v, %v; want neighbor %q", tt.input, got, ok, tt.want)
+			}
+		})
+	}
+}

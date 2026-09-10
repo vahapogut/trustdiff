@@ -35,7 +35,11 @@ type Match struct {
 // The transposition and edit-distance rules skip popular names shorter than
 // minFuzzyLength runes: two- and three-letter names are all within one edit of
 // each other, so xo is not a suspect of ox nor np of pn. The exact rules still
-// apply to them (ox-utils is a common-word match for ox).
+// apply to them (ox-utils is a common-word match for ox). For a scoped popular
+// name the length that counts, and the edit budget it buys, are read from the bare
+// half alone: a scope is not the part a squatter imitates, and while the whole
+// spelling decided, every package inside a long scope was two edits from every
+// other one in it.
 func Suspect(eco model.Ecosystem, name string, popular *Set) (Match, bool) {
 	c := Canonical(eco, name)
 	if c == "" || popular.Len() == 0 || popular.hasCanonical(c) {
@@ -97,10 +101,15 @@ func Suspect(eco model.Ecosystem, name string, popular *Set) (Match, bool) {
 
 	var d distancer
 	for i, neighbor := range popular.names {
-		if len(popular.runes[i]) < minFuzzyLength {
+		// Only the bare half of the popular name decides the length and the limit,
+		// because a scope is shared by every package inside it. The distance is
+		// still measured over the whole spelling, so a misspelled scope on an
+		// otherwise exact name costs its edits like any other.
+		bare := len(bareName(popular.runes[i]))
+		if bare < minFuzzyLength {
 			continue
 		}
-		limit := Threshold(neighbor)
+		limit := thresholdRunes(bare)
 		if absDiff(len(runes), len(popular.runes[i])) > limit {
 			continue
 		}
