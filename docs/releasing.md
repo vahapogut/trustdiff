@@ -374,11 +374,23 @@ to ignore red releases. A version that is staged but not yet approved is not on 
 registry, so re-running the job for the same tag tries to stage it twice; approve or
 reject the staged version first.
 
-Three things have to be done once, by a person, before any of that can work. None
-can be scripted, and all three were confirmed against npm's own documentation on
-2026-09-10.
+Three things have to be done once before any of that can work. One command does the
+two that can be scripted and checks the third:
+
+```sh
+npm login
+sh scripts/publish-scanner.sh
+```
+
+It is safe to run twice. It stops with a link if the organisation does not exist,
+leaves an already published version alone, and leaves an already configured trusted
+publisher alone. It handles no credential of its own: npm asks for the one time
+password in its own prompt. The three steps, and why each is what it is, were
+confirmed against npm's own documentation on 2026-09-10.
 
 ### 8.1 Manual: create the npm organisation
+
+This is the one step nothing can do for you.
 
 The scope has to exist and it cannot be a personal one. npm gives every account the
 scope matching its own name, so `vahapogut` owns `@vahapogut` and nothing else;
@@ -397,7 +409,7 @@ If the name `trustdiff` turns out to be taken, the fallbacks are
 `bunfig.toml` example in the root README, and the tarball assertion in the publish
 workflow.
 
-### 8.2 Manual: publish the first version by hand
+### 8.2 Publish the first version by hand
 
 Trusted publishing cannot create a package that does not exist yet. npm/cli issue
 8544, "Allow publishing initial version with OIDC", was still open on 2026-09-10,
@@ -426,7 +438,7 @@ make.
 This first version goes out without a provenance attestation. Every version after it
 gets one, because every version after it comes from the workflow.
 
-### 8.3 Manual: add the trusted publisher
+### 8.3 Add the trusted publisher
 
 With the package on the registry, point it at the workflow that may publish it:
 
