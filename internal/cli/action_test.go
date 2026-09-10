@@ -2,6 +2,7 @@ package cli
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -185,6 +186,61 @@ func TestREADMEPinsTheActionAtACommit(t *testing.T) {
 		// pinned uses: in this repository's own workflows carries the tag beside it.
 		if !strings.Contains(rest, "# v") {
 			t.Errorf("the example pins %s with no trailing # vX.Y.Z comment, so nothing says which release it is", ref)
+		}
+	}
+}
+
+// The binary carries other people's code and data, and MIT, BSD and Apache all
+// ask that their notices travel with a binary distribution. THIRD_PARTY_NOTICES
+// is what travels, and it is only worth having while it is complete: a tenth
+// module linked in without an entry is the failure mode, and it is silent.
+// Finding F23 of docs/review-2026-09-10.md.
+//
+// The list comes from "go list -deps" over the command, so it is what is in the
+// artifact rather than what go.mod requires: the documentation tooling that
+// reaches go.sum as a test dependency is not linked and is not listed.
+func TestThirdPartyNoticesNameEveryLinkedModule(t *testing.T) {
+	out, err := exec.CommandContext(t.Context(), "go", "list", "-deps",
+		"-f", "{{if .Module}}{{.Module.Path}} {{.Module.Version}}{{end}}", "../../cmd/trustdiff").Output()
+	if err != nil {
+		t.Skipf("go list did not run: %v", err)
+	}
+	notices := string(repoFile(t, "THIRD_PARTY_NOTICES"))
+
+	seen := map[string]bool{}
+	for _, line := range strings.Split(string(out), "\n") {
+		mod, version, ok := strings.Cut(strings.TrimSpace(line), " ")
+		if !ok || mod == "github.com/vahapogut/trustdiff" || seen[mod] {
+			continue
+		}
+		seen[mod] = true
+		if !strings.Contains(notices, mod) {
+			t.Errorf("%s is linked into the binary and THIRD_PARTY_NOTICES does not name it", mod)
+			continue
+		}
+		// The version matters: a license can change between releases, and an
+		// entry that names an older one is a notice for code that is not there.
+		if !strings.Contains(notices, mod+"** "+version) {
+			t.Errorf("THIRD_PARTY_NOTICES names %s at another version than the linked %s", mod, version)
+		}
+	}
+	if len(seen) == 0 {
+		t.Fatal("go list reported no modules; the command or the flags changed")
+	}
+	// The vendored diff and the three embedded lists are the other half.
+	for _, must := range []string{"internal/textdiff/diff.go", "npm.txt", "pypi.txt", "cargo.txt", "CC BY 4.0"} {
+		if !strings.Contains(notices, must) {
+			t.Errorf("THIRD_PARTY_NOTICES does not mention %s", must)
+		}
+	}
+}
+
+// The notices only travel if the archive carries them.
+func TestReleaseArchivesCarryTheNotices(t *testing.T) {
+	config := string(repoFile(t, ".goreleaser.yaml"))
+	for _, must := range []string{"src: LICENSE", "src: README.md", "src: THIRD_PARTY_NOTICES"} {
+		if !strings.Contains(config, must) {
+			t.Errorf(".goreleaser.yaml does not pack %s into the archives", strings.TrimPrefix(must, "src: "))
 		}
 	}
 }

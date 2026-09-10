@@ -70,6 +70,12 @@ archives:
       - src: README.md
         info:
           mtime: "{{ .CommitDate }}"
+      # The binary carries other people's code and data, and several of those
+      # licenses ask that their notices travel with it. LICENSE above is this
+      # project's own and covers none of them.
+      - src: THIRD_PARTY_NOTICES
+        info:
+          mtime: "{{ .CommitDate }}"
 
 checksum:
   name_template: checksums.txt

@@ -93,7 +93,8 @@ Pushing the tag starts one job. It needs no input and no approval.
    - builds six binaries (linux, darwin and windows on amd64 and arm64) with
      `CGO_ENABLED=0`, `-trimpath` and the version, commit and commit date linked
      in;
-   - packs six archives, each carrying `LICENSE` and `README.md`;
+   - packs six archives, each carrying `LICENSE`, `README.md` and
+     `THIRD_PARTY_NOTICES`;
    - writes `checksums.txt` over all of them;
    - writes one SPDX SBOM per archive with syft, with no network enrichment;
    - signs `checksums.txt` with keyless cosign and writes

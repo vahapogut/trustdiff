@@ -108,7 +108,11 @@ This tool exists because dependencies are dangerous, so it has almost none. Stan
 | `golang.org/x/time` | Per-host rate limiting |
 | `golang.org/x/mod` | Semantic version parsing |
 
-Nothing else, including other `golang.org/x/*` packages: concurrency limits use a buffered channel, not `x/sync`. `CGO_ENABLED=0` always, no sqlite, caches are plain files, and third-party Go code is never vendored or copied in.
+Nothing else, including other `golang.org/x/*` packages: concurrency limits use a buffered channel, not `x/sync`. `CGO_ENABLED=0` always, no sqlite, and caches are plain files.
+
+One piece of third-party Go code is copied in, and it is the exception that says what the rule is. `internal/textdiff/diff.go` is the Go standard library's own `internal/diff`, the anchored diff `go test` uses to say why a golden file did not match. It is copied because the alternative is shelling out to a `git` that need not be installed on the machine running the check, which would make the output depend on the reader's own diff settings. It is a standard library package, so no module could be added for it, and it carries its upstream copyright header and its license beside it as `LICENSE-go`. Anything else of the same shape needs the same discussion a module needs, and lands in `THIRD_PARTY_NOTICES` the same way.
+
+That file is the other half of this: every module linked into the binary, the vendored diff, and the three embedded name lists are listed there with their licenses, and it ships inside every release archive. A tenth module means an entry there, which `internal/cli` `TestThirdPartyNoticesNameEveryLinkedModule` will insist on.
 
 If you believe a change needs another module, stop and ask in an issue before writing code. Give a one-paragraph justification and the module's profile: who maintains it, how big it is, how it is released and signed. An accepted module gets an ADR. A pull request that adds a module without that discussion will be asked to remove it.
 
