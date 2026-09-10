@@ -52,6 +52,19 @@ type DetectOptions struct {
 	// from reading a file, and the caller, not this package, decides whether a scan
 	// is allowed to do it.
 	RunBinaries bool
+	// BinaryTimeout bounds each version command. Zero is binaryTimeout, the three
+	// seconds a real run gives one. A negative value means no limit of this
+	// package's own, so the command is bounded by the caller's context alone.
+	//
+	// That last case exists for the tests. A test that runs a stub and then asserts
+	// on what it printed is really asserting that a process started, ran and exited
+	// inside three seconds on whatever machine the suite happens to be on, which is
+	// a claim about the machine and not about this package: under a full parallel
+	// suite on Windows, spawning a .cmd through cmd.exe has taken longer than that
+	// and failed a test that was right about everything it meant to check. With no
+	// limit here the answer depends on the process finishing, and a stub that truly
+	// hangs is caught by go test's own timeout, where a hang belongs.
+	BinaryTimeout time.Duration
 }
 
 // prunedDirs are the directory names the walk never descends into. They hold
@@ -806,7 +819,7 @@ func (d *detector) binaryVersion(ctx context.Context, m *Manager) (version, sour
 	spelled := strings.Join(argv, " ")
 	result, asked := d.probed[m.ID]
 	if !asked {
-		printed, err := runVersionCommand(ctx, argv)
+		printed, err := runVersionCommand(ctx, argv, d.opts.BinaryTimeout)
 		result = probe{version: printed, err: err}
 		d.probed[m.ID] = result
 		switch {
@@ -823,14 +836,21 @@ func (d *detector) binaryVersion(ctx context.Context, m *Manager) (version, sour
 }
 
 // runVersionCommand runs one of the fixed commands in versionArgv and returns the
-// version out of its first line.
-func runVersionCommand(ctx context.Context, argv []string) (string, error) {
+// version out of its first line. timeout is DetectOptions.BinaryTimeout: zero for
+// the default, negative for no limit beyond the context that was passed in.
+func runVersionCommand(ctx context.Context, argv []string, timeout time.Duration) (string, error) {
 	exe, err := exec.LookPath(argv[0])
 	if err != nil {
 		return "", fmt.Errorf("%s is not on PATH", argv[0])
 	}
-	ctx, cancel := context.WithTimeout(ctx, binaryTimeout)
-	defer cancel()
+	if timeout == 0 {
+		timeout = binaryTimeout
+	}
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 
 	// #nosec G204 -- the argument list is one of the constant lists in versionArgv
 	// and no part of it is built from anything the repository holds, the executable
@@ -845,7 +865,10 @@ func runVersionCommand(ctx context.Context, argv []string) (string, error) {
 	out, err := cmd.Output()
 	if err != nil {
 		if ctx.Err() != nil {
-			return "", fmt.Errorf("it did not answer within %s", binaryTimeout)
+			if timeout > 0 {
+				return "", fmt.Errorf("it did not answer within %s", timeout)
+			}
+			return "", fmt.Errorf("it did not answer: %w", ctx.Err())
 		}
 		return "", err
 	}

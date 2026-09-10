@@ -397,13 +397,24 @@ func TestDetectStopsWhenCanceled(t *testing.T) {
 // The stub is a program written by this test into a directory of its own that is
 // put at the front of PATH, so nothing installed on the machine running the test
 // decides the answer and nothing reaches the network.
+//
+// BinaryTimeout is negative, which means no limit of the package's own. With the
+// three second default this test also asserted that a process starts, runs and
+// exits inside three seconds on whatever machine the suite is on, and under a full
+// parallel run on Windows, where a .cmd is spawned through cmd.exe, that has not
+// been true. What this test means to check is which source Detect prefers, so the
+// clock comes out of it; a stub that really hangs is caught by go test's own
+// timeout, which is where a hang belongs.
 func TestDetectAsksTheBinaryLast(t *testing.T) {
 	stubs := stubManagerOnPath(t, "cargo", "cargo 1.99.0 (0000000 2026-01-01)")
 
 	// Cargo.toml with no Cargo.lock beside it: the manager is certain and its
 	// version is stated nowhere in the repository.
 	root := writeDetectFixture(t, map[string]string{"Cargo.toml": "[package]\nname = \"rs\"\n"})
-	managers, notes, err := Detect(context.Background(), root, DetectOptions{RunBinaries: true})
+	managers, notes, err := Detect(context.Background(), root, DetectOptions{
+		RunBinaries:   true,
+		BinaryTimeout: noBinaryTimeout,
+	})
 	if err != nil {
 		t.Fatalf("Detect: %v", err)
 	}
@@ -526,6 +537,11 @@ func stubManagerOnPath(t *testing.T, name, prints string) string {
 
 // stubRanName is the file a stub writes beside itself when it runs.
 const stubRanName = "ran.txt"
+
+// noBinaryTimeout is the DetectOptions value that leaves a version command bounded
+// by the context alone. Any negative duration does it; this one is spelled out so
+// that a reader of a test does not have to look up what -1 means.
+const noBinaryTimeout = -1
 
 // ran reports whether the stub in a directory was run.
 func stubRan(dir string) bool {

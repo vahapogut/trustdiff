@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- A `doctor` detection test no longer asserts how fast the machine running it is. `TestDetectAsksTheBinaryLast` writes a stub package manager onto `PATH` and reads back what it printed, and every version command was bounded by the same three seconds a real run gives one. Under a full parallel suite on Windows, where a stub is a `.cmd` spawned through `cmd.exe`, that has taken longer, and the test failed with nothing wrong in the code it covers. `DetectOptions` now carries `BinaryTimeout`: zero is the three seconds, and a negative value leaves the command bounded by the caller's context alone, which is what the test asks for. A stub that truly hangs is caught by `go test`'s own timeout, where a hang belongs.
+
 ## [0.5.0] - 2026-09-11
 
 The P1 and P2 sections of an independent review of 0.4.0, closed in order, with the
