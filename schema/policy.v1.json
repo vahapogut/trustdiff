@@ -103,7 +103,8 @@
         "low-usage",
         "exotic-source",
         "integrity-missing",
-        "version-anomaly"
+        "version-anomaly",
+        "lockfile-entry-changed"
       ]
     },
     "plainCheck": {
@@ -164,7 +165,8 @@
         "low-usage": { "$ref": "#/definitions/lowUsageCheck" },
         "exotic-source": { "$ref": "#/definitions/plainCheck" },
         "integrity-missing": { "$ref": "#/definitions/plainCheck" },
-        "version-anomaly": { "$ref": "#/definitions/plainCheck" }
+        "version-anomaly": { "$ref": "#/definitions/plainCheck" },
+        "lockfile-entry-changed": { "$ref": "#/definitions/plainCheck" }
       }
     },
     "override": {

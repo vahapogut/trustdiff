@@ -98,8 +98,10 @@ npm:demo-crypto-helper@1.0.2  WARN  (testdata/demo-repo/head/package-lock.json:3
   skipped TD010: osv unavailable: ...
   skipped TD012: downloads unavailable: ...
   skipped TD015: no earlier release of npm:demo-crypto-helper to compare 1.0.2 with
+  skipped TD016: no entry in the base lockfile to compare with: the entry is new, or the
+    run compared against no base
 
-1 subject, 0 block, 2 warn, 0 info, 9 skipped checks. Exit code 0 (no blocking findings).
+1 subject, 0 block, 2 warn, 0 info, 10 skipped checks. Exit code 0 (no blocking findings).
 ```
 
 Three of the skipped lines are shortened above. Their reasons name OSV, deps.dev
@@ -127,7 +129,7 @@ into two annotations on the added lockfile line.
 request:
 
 ```
-## trustdiff: 1 subject, 0 block, 2 warn, 0 info, 9 skipped checks
+## trustdiff: 1 subject, 0 block, 2 warn, 0 info, 10 skipped checks
 
 | Package | Level | Check | Finding | Location |
 | --- | --- | --- | --- | --- |

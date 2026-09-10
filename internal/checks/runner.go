@@ -42,8 +42,12 @@ type Input struct {
 	Direct   bool
 	// Lock is the lockfile entry the subject came from, nil for a ref named on
 	// the command line. The runner puts it on Subject.Lock, where the checks that
-	// judge the lockfile rather than the registry (TD013, TD014) read it.
+	// judge the lockfile rather than the registry (TD013, TD014, TD016) read it.
 	Lock *lockfile.Entry
+	// BaseLock is the entry the base lockfile held for the same package, set by
+	// diff for an entry whose version did not move and nil everywhere else. The
+	// runner puts it on Subject.BaseLock, where TD016 compares the two.
+	BaseLock *lockfile.Entry
 	// BaseVersion is the version the base lockfile locked, when diff evaluates an
 	// entry whose version moved. It is the version the project actually had,
 	// which is not always the release the registry calls previous: upgrading
@@ -268,6 +272,7 @@ func (rn *run) evaluate(ctx context.Context, in *Input, res *resolution) Outcome
 		Location:       in.Location,
 		Direct:         in.Direct,
 		Lock:           in.Lock,
+		BaseLock:       in.BaseLock,
 		Now:            rn.now,
 		Settings:       rn.policy.Effective(res.ref.Ecosystem),
 		ResolvedLatest: res.latest,

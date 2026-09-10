@@ -33,6 +33,7 @@ checks:
   exotic-source: block
   integrity-missing: warn
   version-anomaly: info
+  lockfile-entry-changed: block
 allow:
   - check: install-script-present
     package: "npm:esbuild"
@@ -70,8 +71,8 @@ func TestDefaultMatchesTheBrief(t *testing.T) {
 	if got := []string{d.CooldownExclude[0].String(), d.CooldownExclude[1].String()}; !slices.Equal(got, []string{"npm:@myorg/*", "pypi:myorg-*"}) {
 		t.Errorf("CooldownExclude = %v", got)
 	}
-	if len(d.Checks) != 15 {
-		t.Errorf("len(Checks) = %d, want 15", len(d.Checks))
+	if len(d.Checks) != 16 {
+		t.Errorf("len(Checks) = %d, want 16", len(d.Checks))
 	}
 	wantLevels := map[string]model.Level{
 		"young-version":             model.LevelWarn,
@@ -89,6 +90,7 @@ func TestDefaultMatchesTheBrief(t *testing.T) {
 		"exotic-source":             model.LevelBlock,
 		"integrity-missing":         model.LevelWarn,
 		"version-anomaly":           model.LevelInfo,
+		"lockfile-entry-changed":    model.LevelBlock,
 	}
 	for name, want := range wantLevels {
 		cfg, ok := d.Checks[name]
@@ -119,7 +121,7 @@ func TestDefaultMatchesTheBrief(t *testing.T) {
 	if got := time.Duration(d.Ecosystems[model.Cargo].Cooldown); got != 7*day {
 		t.Errorf("Ecosystems[cargo].Cooldown = %v, want 7d", got)
 	}
-	if got := CheckNames(); len(got) != 15 || got[0] != "young-version" || got[14] != "version-anomaly" {
+	if got := CheckNames(); len(got) != 16 || got[0] != "young-version" || got[15] != "lockfile-entry-changed" {
 		t.Errorf("CheckNames() = %v", got)
 	}
 }
@@ -142,8 +144,8 @@ func TestParseMinimalUsesDefaults(t *testing.T) {
 		if s.Cooldown != DefaultCooldown || s.PreviousVersionsWindow != DefaultPreviousVersionsWindow || s.OnDataUnavailable != DefaultOnDataUnavailable {
 			t.Errorf("Effective(%s) = %+v, want the built-in defaults", eco, s)
 		}
-		if len(s.Checks) != 15 {
-			t.Errorf("Effective(%s) has %d checks, want 15", eco, len(s.Checks))
+		if len(s.Checks) != 16 {
+			t.Errorf("Effective(%s) has %d checks, want 16", eco, len(s.Checks))
 		}
 		for _, name := range CheckNames() {
 			want, _ := DefaultCheck(name)
@@ -166,7 +168,7 @@ func TestParseMinimalUsesDefaults(t *testing.T) {
 func TestNilPolicyBehavesLikeDefaults(t *testing.T) {
 	var p *Policy
 	s := p.Effective(model.Cargo)
-	if s.Cooldown != DefaultCooldown || len(s.Checks) != 15 {
+	if s.Cooldown != DefaultCooldown || len(s.Checks) != 16 {
 		t.Fatalf("nil Effective = %+v", s)
 	}
 	if p.CooldownExcluded(model.MustParseRef("cargo:serde")) {

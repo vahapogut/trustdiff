@@ -172,8 +172,11 @@ func diffPlan(comparisons []*comparison, against string) (inputs []checks.Input,
 		for i := range c.changes.Changed {
 			in := inputFor(c.path, c.ecosystem, &c.changes.Changed[i].Head)
 			// The version the project had until this change, which the checks
-			// compare against as well as the release before the new one.
+			// compare against as well as the release before the new one, and the
+			// base entry itself: a change that keeps the version and moves the
+			// hash, the source or the location is invisible in the version alone.
 			in.BaseVersion = c.changes.Changed[i].Base.Ref.Version
+			in.BaseLock = baseEntry(c.ecosystem, &c.changes.Changed[i].Base)
 			inputs = append(inputs, in)
 		}
 		if note := removedNote(c.path, c.changes.Removed); note != "" {

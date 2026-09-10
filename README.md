@@ -218,6 +218,10 @@ $ trustdiff --format json check cargo:serde@1.0.210
         {
           "check": "TD014",
           "reason": "no lockfile entry for cargo:serde@1.0.210: the ref was named directly, not read from a lockfile"
+        },
+        {
+          "check": "TD016",
+          "reason": "no lockfile entry for cargo:serde@1.0.210: the ref was named directly, not read from a lockfile"
         }
       ],
       "findings": [
@@ -365,6 +369,7 @@ Every check has a stable id, a name used in the policy file, a default level and
 | [TD013](docs/checks.md#td013-exotic-source) | `exotic-source` | lockfile entry from git, a tarball or a local path | block | all |
 | [TD014](docs/checks.md#td014-integrity-missing) | `integrity-missing` | lockfile entry without a hash, or over plain http | warn | all |
 | [TD015](docs/checks.md#td015-version-anomaly) | `version-anomaly` | version number jumps past the package's cadence or is published out of order | info | all |
+| [TD016](docs/checks.md#td016-lockfile-entry-changed) | `lockfile-entry-changed` | same version, another integrity hash, source or resolved location | block | all |
 
 An expired `allow` entry produces a warning of its own, [TD000](docs/checks.md#td000-expired-allow). Any check whose data is missing reports skipped with the reason, never a pass.
 

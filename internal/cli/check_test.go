@@ -94,9 +94,10 @@ func (f *fakeLoader) Downloads(context.Context, model.Ecosystem, string) (int64,
 	return 100000, nil
 }
 
-// lockfileChecks judge the lockfile entry rather than a data source, so they skip
-// with their own reason for a ref named on the command line.
-var lockfileChecks = map[string]bool{"TD013": true, "TD014": true}
+// lockfileChecks judge the lockfile entry rather than a data source, so they run
+// whatever the registry answered and skip with their own reason for a ref named on
+// the command line, which brings no entry for them to judge.
+var lockfileChecks = map[string]bool{"TD013": true, "TD014": true, "TD016": true}
 
 // maliciousRef is the ref the fake loader answers a malicious-package advisory
 // for, the way OSV answers for a release a registry has taken down.

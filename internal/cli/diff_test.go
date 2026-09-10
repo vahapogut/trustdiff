@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vahapogut/trustdiff/internal/model"
 	"github.com/vahapogut/trustdiff/internal/report"
 )
 
@@ -781,5 +782,54 @@ func TestDiffOutsideARepository(t *testing.T) {
 	code, stdout, stderr := run(t, "diff", "--base", "HEAD")
 	if code != ExitUsage || !strings.Contains(stderr, "not a git repository") {
 		t.Fatalf("exit = %d, stderr = %q\n%s", code, stderr, stdout)
+	}
+}
+
+// TestDiffReportsASameVersionIntegritySwap pins finding F2 of
+// docs/review-2026-09-10.md. A published release is immutable, so one version under
+// two hashes means the lockfile was written against bytes that were not the release.
+// gitdiff classified the entry as changed all along; nothing downstream ever saw the
+// base entry, so every check passed and the run exited 0.
+func TestDiffReportsASameVersionIntegritySwap(t *testing.T) {
+	base := readRegressionFixture(t, "f2-lockfile-entry-changed", "base", "package-lock.json")
+	head := readRegressionFixture(t, "f2-lockfile-entry-changed", "head", "package-lock.json")
+	useFakeLoader(t)
+	dir := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(dir))
+	writeFile(t, dir, "base/package-lock.json", base)
+	writeFile(t, dir, "head/package-lock.json", head)
+	chdir(t, dir)
+
+	code, stdout, stderr := run(t, "--format", "json", "diff",
+		"--base-file", "base/package-lock.json", "head/package-lock.json")
+	if code != ExitFindings {
+		t.Fatalf("exit = %d, want %d (stderr %q)\n%s", code, ExitFindings, stderr, stdout)
+	}
+	rep := decodeReport(t, stdout)
+	s := subjectFor(t, &rep, "npm:trustdiff-fixture-lib@1.0.0")
+
+	var found *model.Finding
+	for i := range s.Findings {
+		if s.Findings[i].ID == "TD016" {
+			found = &s.Findings[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("no TD016 finding; the report carried %d findings for the changed entry", len(s.Findings))
+	}
+	if found.Level != model.LevelBlock {
+		t.Errorf("level = %s, want block", found.Level)
+	}
+	if found.Name != "lockfile-entry-changed" {
+		t.Errorf("name = %q, want lockfile-entry-changed", found.Name)
+	}
+	if got := found.Evidence["signal"]; got != "integrity-changed" {
+		t.Errorf("signal = %v, want integrity-changed", got)
+	}
+	if got := found.Evidence["base_integrity"]; got != "sha512-Zm9ydGhlbGli" {
+		t.Errorf("base_integrity = %v, want the hash the base file recorded", got)
+	}
+	if got := found.Evidence["integrity"]; got != "sha512-YXR0YWNrZXJ0YXJiYWxs" {
+		t.Errorf("integrity = %v, want the hash the head file records", got)
 	}
 }

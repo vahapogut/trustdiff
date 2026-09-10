@@ -27,7 +27,7 @@ const (
 	demoPolicy   = "testdata/demo-repo/.trustdiff.yaml"
 	demoCache    = "testdata/demo-repo/cache"
 	demoLine     = 32
-	demoSkipped  = 9
+	demoSkipped  = 10
 	demoSubjects = 1
 )
 

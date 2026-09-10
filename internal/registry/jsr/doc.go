@@ -127,6 +127,8 @@
 //	TD013  yes    reads the lockfile entry only; skipped for a ref named on the command line
 //	TD014  yes    the same, lockfile only
 //	TD015  yes    the version list with publish times, ordered as semantic versions
+//	TD016  yes    the two lockfile entries only; skipped for a ref named on the command
+//	              line and for an entry the base lockfile did not hold
 //
 // The two facts behind the TD009 and TD010 rows, both verified 2026-09-09 against
 // the live services rather than assumed:

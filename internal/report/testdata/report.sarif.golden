@@ -184,6 +184,17 @@
                 "text": "Either the step from the previous release is far beyond the package's own cadence, or the version sorts below a release of its own line that was published earlier. Both are how a mistaken or a hostile upload tends to look from outside."
               },
               "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td015-version-anomaly"
+            },
+            {
+              "id": "TD016",
+              "name": "lockfile-entry-changed",
+              "shortDescription": {
+                "text": "A lockfile entry that changed without its version changing: another integrity hash, another source, or another resolved location."
+              },
+              "fullDescription": {
+                "text": "A published release is immutable on every registry this tool reads, so one version under two hashes means the file was written against bytes that were not that release. Four signals: integrity-changed, integrity-removed, source-changed and resolved-changed. Only the two sides of a diff can be compared, so an added entry and a scan report the check as skipped. An entry that moved onto the registry, and a directory that moved to another directory, are reported at info: the first is a project that stopped vendoring a dependency and the second is a workspace being rearranged. A registry entry's resolved location is not compared at all, because moving a project to a mirror rewrites every one of them without changing what is installed."
+              },
+              "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td016-lockfile-entry-changed"
             }
           ]
         }

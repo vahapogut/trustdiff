@@ -675,3 +675,36 @@ allow:
     package: "npm:example"
     reason: "renumbered the 1.x line after the 2.0 release was withdrawn"
 ```
+
+## TD016 lockfile-entry-changed
+
+**Detects.** A lockfile entry that changed without its version changing: another integrity hash, another source, or another resolved location. Default `block`, every ecosystem. Four signals, one finding:
+
+- `integrity-changed`: the entry records another hash for the version it already locked.
+- `integrity-removed`: the hash that guarded the version is gone.
+- `source-changed`: the same version now installs from somewhere else, a registry install becoming a git or a URL one.
+- `resolved-changed`: the same version resolves from another location, for an entry that is not a registry install.
+
+It reads the two lockfile entries and nothing else, so it needs both sides of a diff. A ref named on the command line has no entry, an added entry has no base entry, and `scan` reads one file with nothing to compare it to; each of those is reported as skipped with which case it was. A version that moved is not its business and produces no finding: that is what every other check is about.
+
+Two moves are stated rather than judged and never rise above `info`, whatever the policy sets: an entry that moved onto the registry, which is what a project does when it stops vendoring a dependency, and a directory that moved to another directory, which is a workspace being rearranged.
+
+A registry entry's resolved location is not compared at all. It names the mirror the artifact was fetched through, and moving a project to a mirror rewrites every one of them without changing a byte of what is installed.
+
+Two integrity strings that share no algorithm are a re-encoding, not a change. npm moved its lockfiles from sha1 to sha512, and a file rewritten by a newer installer carries the same artifact under the stronger one; only a shared algorithm with different digests is two different artifacts under one version.
+
+**Why it matters.** Keep `lodash` at 4.17.21 and swap its `integrity` for the hash of another tarball, and until this check existed every other check agreed the version was fine, because it was. The version is the one thing that did not move, and every other check is about a version. A registry cannot serve two artifacts for one release, so the second hash did not come from the registry.
+
+An allow entry for `exotic-source` does not silence this. That entry says a git dependency is deliberate; it says nothing about that dependency being repointed at another repository afterwards.
+
+**Evidence.** `signal`, and the pair the signal is about: `base_integrity` and `integrity`, `base_source` and `source`, or `base_resolved` and `resolved`. `lockfile` names the file and line the head entry sits on.
+
+**Fix or allow.** Find out why the hash moved. If the lockfile was regenerated against a private mirror that repackages what it serves, the mirror is the thing to look at, because a mirror that changes the bytes is not a mirror. If the change is deliberate, an allow entry with a reason and an expiry:
+
+```yaml
+allow:
+  - check: lockfile-entry-changed
+    package: "npm:internal-fork"
+    reason: "vendored fork republished under the same version while the upstream fix lands"
+    expires: 2027-01-01
+```

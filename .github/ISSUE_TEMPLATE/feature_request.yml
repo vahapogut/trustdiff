@@ -46,6 +46,7 @@ body:
         - TD013 exotic-source
         - TD014 integrity-missing
         - TD015 version-anomaly
+        - TD016 lockfile-entry-changed
     validations:
       required: true
   - type: textarea

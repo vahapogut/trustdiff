@@ -129,6 +129,18 @@ func (a *App) writeNotes(lines []string) error {
 // inputFor turns one lockfile entry into a subject to evaluate. path is the
 // lockfile as the report should name it, slash separated. The entry is copied,
 // so the input owns the entry the checks read.
+// baseEntry copies the base side of a changed pair so the input owns it, filling in
+// the ecosystem the file states when the entry left it empty. It does for the base
+// entry what inputFor does for the head one, so the check that compares the two
+// reads one shape.
+func baseEntry(eco model.Ecosystem, e *lockfile.Entry) *lockfile.Entry {
+	entry := *e
+	if entry.Ref.Ecosystem == "" {
+		entry.Ref.Ecosystem = eco
+	}
+	return &entry
+}
+
 func inputFor(path string, eco model.Ecosystem, e *lockfile.Entry) checks.Input {
 	entry := *e
 	if entry.Ref.Ecosystem == "" {
