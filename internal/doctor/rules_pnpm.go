@@ -8,7 +8,19 @@ import (
 )
 
 // pnpm's settings, read against https://pnpm.io/settings and
-// https://pnpm.io/supply-chain-security on 2026-09-09.
+// https://pnpm.io/supply-chain-security on 2026-09-09, and the version each
+// default arrived in re-read on 2026-09-10 against the 11.0 release notes.
+//
+// A settings page prints the default the current release has, with no version
+// beside it, so the page alone cannot say when that default arrived. pnpm 11
+// flipped six of them at once, and https://pnpm.io/blog/releases/11.0 is where
+// that is written down: minimumReleaseAge to 1440, minimumReleaseAgeStrict to
+// false, blockExoticSubdeps to true, strictDepBuilds to true,
+// optimisticRepeatInstall to true and verifyDepsBeforeRun to install. Two of those
+// are rules here, DR011 and DR014, and both carry DefaultSince "11" for that
+// reason. Reading "Default: true" off the page as a default the setting always had
+// would tell a pnpm 10 project it is protected by something that release does not
+// do, which is the one mistake a scorecard cannot afford.
 //
 // Two facts shape every rule here. The settings live in pnpm-workspace.yaml, not
 // in .npmrc: pnpm reads only authentication and registry settings from an .npmrc,
@@ -134,12 +146,12 @@ var pnpmBlockExoticSubdeps = &Rule{
 		Key:      configfile.Key{"blockExoticSubdeps"},
 		CreateIf: true,
 	}},
-	Desired:  BoolSetting{On: true, Defaulted: true, Default: true},
+	Desired:  BoolSetting{On: true, Defaulted: true, Default: true, DefaultSince: "11"},
 	Level:    model.LevelInfo,
 	Docs:     "https://pnpm.io/settings/dependency-resolution",
-	Verified: "2026-09-09",
+	Verified: "2026-09-10",
 	Fixable:  true,
-	Note:     "On by default since it arrived. The rule is here for a project that turned it off.",
+	Note:     "Off by default when it arrived in 10.26 and on by default since 11. A pnpm 10 project has to write it.",
 }
 
 // trustPolicy is pnpm's own version of the trust-downgrade check: it refuses a

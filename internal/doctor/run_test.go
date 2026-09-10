@@ -349,3 +349,43 @@ func TestAValueTheManagerCannotReadIsWrong(t *testing.T) {
 		t.Errorf("bun minimumReleaseAge = %s (%s), want wrong: Bun counts seconds and will not read that", got.Status, got.Detail)
 	}
 }
+
+// pnpm 11 flipped several defaults to the safe value at once. A rule that credits
+// one of them without saying which version it arrived in tells a pnpm 10 project
+// it is protected by a default that release does not have, which is the one
+// mistake a scorecard must never make: the reader closes it and does nothing.
+//
+// The flip is listed in pnpm's own release notes for 11.0, read 2026-09-10:
+// minimumReleaseAge to 1440, minimumReleaseAgeStrict to false, blockExoticSubdeps
+// to true, strictDepBuilds to true, optimisticRepeatInstall to true and
+// verifyDepsBeforeRun to install. The settings pages print the current default
+// with no version beside it, so the pages alone cannot be read for this.
+func TestPnpmDefaultsAreCreditedOnlyToTheVersionThatHasThem(t *testing.T) {
+	tests := []struct {
+		version string
+		want    Status
+	}{
+		{version: "10.26.0", want: StatusMissing},
+		{version: "11.2.0", want: StatusSet},
+	}
+	for _, tt := range tests {
+		t.Run("pnpm "+tt.version, func(t *testing.T) {
+			root := t.TempDir()
+			write(t, root, "pnpm-workspace.yaml", "packages:\n  - \"apps/*\"\n")
+			managers := []Manager{{
+				ID: PNPM, Root: ".", Version: tt.version, VersionExact: true,
+				VersionSource: "the packageManager field", Files: []string{"pnpm-workspace.yaml"},
+			}}
+			card, err := Evaluate(root, managers, Options{Params: Params{Cooldown: threeDays, Version: tt.version, Now: fixedNow()}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, id := range []string{"DR011", "DR014"} {
+				got := resultFor(t, card, id)
+				if got.Status != tt.want {
+					t.Errorf("%s on pnpm %s = %s (%s), want %s", id, tt.version, got.Status, got.Detail, tt.want)
+				}
+			}
+		})
+	}
+}
