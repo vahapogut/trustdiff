@@ -1,16 +1,9 @@
 # Records docs/demo.gif from docs/demo.tape with vhs and commits the result back.
 #
-# This has never produced a GIF. What is known, after five runs across two days:
-# the tape itself is fine now, every command executes and every Wait matches the
-# screen, and ffmpeg is installed by the step below because the runner image does
-# not carry it. vhs still prints "Creating docs/demo.gif..." and then its publish
-# hint about 200 milliseconds later, exits 0, and leaves no file anywhere under
-# the workspace or the runner temp, which the locate step checks and reports.
-# Two hundred milliseconds is far too short to encode twenty seconds of terminal,
-# so the encode is not happening rather than failing loudly. The next thing to
-# look at is whether the headless renderer vhs drives has frames to give ffmpeg
-# at all. Tracked as an issue on the repository; the README's text demo blocks
-# carry the same two commands in the meantime and are checked against live runs.
+# It took nine runs to produce a first GIF. The cause was the vhs version: v0.12.0
+# prints that it is creating the file, exits 0 and writes nothing on this runner
+# image. The pin below is v0.11.0 and the comment there says why. docs/demo.tape
+# records what else was ruled out on the way.
 #
 # Manual only (workflow_dispatch): the recording talks to the live registries and
 # changes a binary file, so it runs when someone decides the demo is stale, on the
@@ -115,34 +108,6 @@ jobs:
           # GIF, exits 0 and writes no file, whatever the tape contains. The tape no
           # longer needs anything v0.12.0 added, so it runs on the release before it.
           version: v0.11.0
-
-      - name: Say what vhs actually did
-        # The action reports success and leaves no file, so this runs vhs again by
-        # hand with its output attached and looks at what is on disk afterwards.
-        # Diagnostic only: it must not decide whether the job passes.
-        continue-on-error: true
-        run: |
-          echo "vhs:    $(command -v vhs)"
-          vhs --version 2>&1 | head -1
-          echo "ttyd:   $(command -v ttyd)"
-          ttyd --version 2>&1 | head -1
-          echo "ffmpeg: $(command -v ffmpeg)"
-          for b in google-chrome google-chrome-stable chromium chromium-browser; do
-            if command -v "${b}" >/dev/null 2>&1; then
-              echo "browser: ${b} $(${b} --version 2>&1 | head -1)"
-            fi
-          done
-          echo "--- running vhs directly, output attached ---"
-          set +e
-          vhs docs/demo.tape 2>&1 | tail -40
-          echo "vhs exit: ${PIPESTATUS[0]}"
-          set -e
-          echo "--- what is in docs/ ---"
-          ls -la docs/ | head -20
-          echo "--- any demo.gif anywhere, written in the last five minutes ---"
-          find / -name 'demo.gif' -type f -newermt '-5 minutes' 2>/dev/null | head -5
-          echo "--- anything vhs left in the temp directory ---"
-          ls -la "${TMPDIR:-/tmp}" 2>/dev/null | grep -iE 'vhs|rod|chrom' | head -10
 
       - name: Put the recording where the rest of this job expects it
         # vhs prints "Creating docs/demo.gif..." and resolves that path against its own

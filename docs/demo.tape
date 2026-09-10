@@ -5,20 +5,24 @@
 # workflow warms it in the step before this one; locally, run the same command once
 # before recording.
 #
-# This tape is deliberately as small as vhs will let it be, because seven runs across
-# two days produced no file at all while it was larger. Three things were tried and
-# ruled out, and they are worth leaving written down so nobody repeats them:
+# Nine runs across two days produced no file at all before one produced this. The
+# cause was the vhs version, not the tape: v0.12.0, released 2026-09-09, prints that
+# it is creating the GIF, exits 0 and writes nothing on an ubuntu-24.04 runner,
+# whatever the tape contains. v0.11.0 records the same tape without complaint. The
+# workflow pins it and says so.
 #
-#   Set Columns and Set Rows, which arrived in vhs v0.12.0 on the same day the first
-#   run failed, are gone in favour of Width and Height. Not the cause.
+# Three other things were changed along the way and none of them was the cause. They
+# are kept because each is an improvement on its own, and listed here so nobody
+# spends a day re-testing them:
 #
-#   ffmpeg is missing from the runner image and vhs does not check for it. The
-#   workflow installs it now. Not the cause either, though it would have been next.
+#   Set Columns and Set Rows, which arrived in v0.12.0, gave way to Width and Height,
+#   which vhs has always had.
 #
-#   A Hide/Show block warmed the cache off camera. Frame capture is what Show turns
-#   back on, so an empty frame set would look exactly like this: vhs prints that it
-#   is creating the file, exits 0, and writes nothing. The warm-up moved into the
-#   workflow and this tape no longer hides anything.
+#   ffmpeg is missing from the runner image and vhs does not check for it, so the
+#   workflow installs it. It would have been the next failure.
+#
+#   A Hide block warmed the cache off camera. That belongs in the job rather than in
+#   the recording, and it is there now.
 
 Output docs/demo.gif
 

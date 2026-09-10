@@ -6,7 +6,11 @@ Version 0.4.0 ships `check` for single packages and for a manifest read at the v
 
 ## Demo
 
-Two commands against the live registries, captured on 2026-09-09. The six lines about a lockfile entry that a ref named on the command line does not have are trimmed here:
+![trustdiff checking express, requests and serde](docs/demo.gif)
+
+The same two commands in text, because a GIF cannot be searched, copied or read by
+anyone using a screen reader, and because these are what the release checklist
+verifies against a live run. Captured on 2026-09-09. The six lines about a lockfile entry that a ref named on the command line does not have are trimmed here:
 
 ```
 $ trustdiff check npm:express@4.19.2 pypi:requests cargo:serde
