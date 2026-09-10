@@ -90,8 +90,10 @@ func TestMinimumAgeNamesTheUnitConfusion(t *testing.T) {
 	rule := MinimumAge{Unit: Seconds}
 	value := configfile.Value{Kind: configfile.KindInt, Text: "10080", Raw: "10080", Line: 3}
 	status, detail := rule.Judge(&value, &Params{Cooldown: threeDays})
-	if status != StatusWrong {
-		t.Fatalf("status = %s, want wrong", status)
+	// Bun does read 10080, and waits the 168 minutes it says, so it is weak rather
+	// than wrong. The sentence is what tells the writer they meant another unit.
+	if status != StatusWeak {
+		t.Fatalf("status = %s, want weak", status)
 	}
 	for _, want := range []string{"168 minutes", "1 week in minutes", "pnpm and Yarn count"} {
 		if !strings.Contains(detail, want) {
@@ -119,14 +121,16 @@ func TestMinimumAgeCreditsTheDefaultOnlyFromTheVersionThatHasIt(t *testing.T) {
 	}
 }
 
-// A value that is present and too small is worse than one that is missing, and
-// the detail says what it really means.
+// A value that is present and too small is worse than one that is missing,
+// because somebody set it and believes they are protected, and the detail says
+// what it really means. It is weak rather than wrong: the manager waits exactly
+// the hour the file asks for.
 func TestMinimumAgeReportsATooSmallValue(t *testing.T) {
 	rule := MinimumAge{Unit: Minutes}
 	value := configfile.Value{Kind: configfile.KindInt, Text: "60", Raw: "60"}
 	status, detail := rule.Judge(&value, &Params{Cooldown: threeDays})
-	if status != StatusWrong {
-		t.Fatalf("status = %s, want wrong", status)
+	if status != StatusWeak {
+		t.Fatalf("status = %s, want weak", status)
 	}
 	if !strings.Contains(detail, "1 hour") || !strings.Contains(detail, "4320") {
 		t.Errorf("detail should say what 60 means and what to write instead:\n%s", detail)

@@ -230,7 +230,7 @@ func TestDoctorHumanBlocks(t *testing.T) {
 	if want := "apps/web/pnpm-workspace.yaml: the value of strictDepBuilds is a YAML alias, which this reader will not interpret"; lines[0] != want {
 		t.Errorf("first line = %q, want the note %q", lines[0], want)
 	}
-	if want := "2 set, 2 wrong, 1 missing, 1 unreadable, 1 advice, 1 not applicable. Exit code 1 (problems at or above the threshold)."; lines[len(lines)-1] != want {
+	if want := "2 set, 2 wrong, 0 weak, 1 missing, 1 unreadable, 1 advice, 1 not applicable. Exit code 1 (problems at or above the threshold)."; lines[len(lines)-1] != want {
 		t.Errorf("last line = %q, want %q", lines[len(lines)-1], want)
 	}
 	for _, want := range []string{
@@ -296,7 +296,7 @@ func TestDoctorMarkdownComment(t *testing.T) {
 	}
 	out := string(normalizeNewlines(buf.Bytes()))
 	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
-	if want := "## trustdiff doctor: 2 set, 2 wrong, 1 missing, 1 unreadable, 1 advice, 1 not applicable"; lines[0] != want {
+	if want := "## trustdiff doctor: 2 set, 2 wrong, 0 weak, 1 missing, 1 unreadable, 1 advice, 1 not applicable"; lines[0] != want {
 		t.Errorf("heading = %q, want %q", lines[0], want)
 	}
 	if want := "Exit code 1 (problems at or above the threshold)."; lines[len(lines)-1] != want {
@@ -645,6 +645,7 @@ func TestDoctorSchemaMatchesConstants(t *testing.T) {
 	statuses := []string{
 		string(doctor.StatusSet),
 		string(doctor.StatusWrong),
+		string(doctor.StatusWeak),
 		string(doctor.StatusMissing),
 		string(doctor.StatusUnreadable),
 		string(doctor.StatusAdvice),

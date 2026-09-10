@@ -155,6 +155,7 @@
       "not applicable": 1,
       "set": 2,
       "unreadable": 1,
+      "weak": 0,
       "wrong": 2
     },
     "exit_code": 1,

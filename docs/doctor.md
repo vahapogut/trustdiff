@@ -19,27 +19,35 @@ every one of those files. A person who writes `minimumReleaseAge = 10080` into
 `bunfig.toml`, meaning a week the way pnpm counts, has asked Bun to wait 168 minutes,
 and the install log says nothing at all.
 
-So a row can be present and still wrong, and the scorecard says which:
+So a row can be present and still hold less than you think, and the scorecard says
+which:
 
 ```
 bun 1.4.2  (version from the packageManager field of apps/native/package.json, apps/native)
-  wrong           DR030 bun-minimum-release-age  apps/native/bunfig.toml:3
+  weak            DR030 bun-minimum-release-age  apps/native/bunfig.toml:3
       10080 is 168 minutes, and the policy asks for 3 days (259200 here). 10080 is 1 week in
       minutes, the unit pnpm and Yarn count in
 ```
+
+That row is `weak` and not `wrong`, and the difference runs through the whole
+command. Bun really does wait the 168 minutes the file asks for: the number is a
+value Bun accepts and acts on, and whoever wrote it made a choice, even if they made
+it by mistake. `wrong` is kept for the case where the manager will not do what the
+file says at all, and those two get different treatment from `--fix`.
 
 ## Statuses
 
 | Status | Meaning |
 |---|---|
 | `set` | the file holds a value that does what the rule asks, or the manager's own default already does |
-| `wrong` | the key is there and its value is not enough: the wrong unit, or a threshold too short to mean anything |
+| `wrong` | the manager will not do what the file says: a value it does not accept, or one it reads as something other than what is written |
+| `weak` | the manager accepts the value and does exactly what it says, and what it says is less than the policy asks |
 | `missing` | the file does not state the key |
 | `unreadable` | the file exists and could not be read, or the value sits somewhere the writer will not touch |
 | `advice` | the rule has no value to check and its sentence is the whole row: which packages may run a build script, what a manager offers instead of a setting it does not have |
 | `not applicable` | this version of the manager does not have the setting, or a newer key replaced it |
 
-`--ci` exits 1 on any `wrong`, `missing` or `unreadable` at or above
+`--ci` exits 1 on any `wrong`, `weak`, `missing` or `unreadable` at or above
 `doctor.ci_min_severity`, which defaults to `warn`. `set`, `advice` and
 `not applicable` never fail a gate.
 
@@ -64,8 +72,14 @@ Before writing, the original is copied to `<file>.trustdiff-backup-<timestamp>` 
 the change is printed as a unified diff. Running `--fix` twice changes nothing the
 second time.
 
-Three things it will not do:
+Four things it will not do:
 
+- **A value that is already there.** `--fix` writes a key the file does not have and
+  nothing else. A setting somebody wrote is theirs: a tool run over a repository it
+  does not own has no business deciding they meant something different, and the one
+  place it could be sure is where there is nothing to overwrite. A `weak` or a
+  `wrong` row is reported, with the sentence that says what the value really does,
+  and the line is left for a person to change.
 - A rule whose answer is a judgment is reported and never written. Which packages may
   run a build script, which security scanner to trust, whether to turn hardened mode
   on: those are decisions, not values.

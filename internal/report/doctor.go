@@ -37,6 +37,7 @@ const doctorStatusWidth = 14
 var doctorSummaryOrder = []doctor.Status{
 	doctor.StatusSet,
 	doctor.StatusWrong,
+	doctor.StatusWeak,
 	doctor.StatusMissing,
 	doctor.StatusUnreadable,
 	doctor.StatusAdvice,
@@ -568,18 +569,20 @@ func doctorStatusRank(status string) int {
 	switch doctor.Status(status) {
 	case doctor.StatusWrong:
 		return 0
-	case doctor.StatusMissing:
+	case doctor.StatusWeak:
 		return 1
-	case doctor.StatusUnreadable:
+	case doctor.StatusMissing:
 		return 2
-	case doctor.StatusSet:
+	case doctor.StatusUnreadable:
 		return 3
-	case doctor.StatusAdvice:
+	case doctor.StatusSet:
 		return 4
-	case doctor.StatusNotApplicable:
+	case doctor.StatusAdvice:
 		return 5
+	case doctor.StatusNotApplicable:
+		return 6
 	}
-	return 6
+	return 7
 }
 
 // doctorStatusColor is the color of a status word. A problem takes the color of its

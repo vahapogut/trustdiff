@@ -329,19 +329,19 @@ trustdiff doctor
 
 ```
 bun 1.4.2  (version from the packageManager field of apps/native/package.json, apps/native)
-  wrong           DR030 bun-minimum-release-age  apps/native/bunfig.toml:3
+  weak            DR030 bun-minimum-release-age  apps/native/bunfig.toml:3
       10080 is 168 minutes, and the policy asks for 3 days (259200 here). 10080 is 1 week in
       minutes, the unit pnpm and Yarn count in
   advice          DR031 bun-security-scanner  apps/native/bunfig.toml
 
 pnpm 11.2.0  (version from the packageManager field of apps/web/package.json, apps/web)
-  wrong           DR010 pnpm-minimum-release-age  apps/web/pnpm-workspace.yaml:5
+  weak            DR010 pnpm-minimum-release-age  apps/web/pnpm-workspace.yaml:5
       60 is 1 hour, and the policy asks for 3 days (4320 here)
   set             DR011 pnpm-strict-dep-builds  apps/web/pnpm-workspace.yaml
       not set, and this version defaults to true
 ```
 
-The units are the point. The same three days is `3` for npm, `4320` for pnpm and Yarn, `259200` for Bun, `P3D` for Deno and pip and `"3 days"` for uv and Renovate, and every one of those is a valid number in every one of those files. A setting can be present, believed in, and worth nothing.
+The units are the point. The same three days is `3` for npm, `4320` for pnpm and Yarn, `259200` for Bun, `P3D` for Deno and pip and `"3 days"` for uv and Renovate, and every one of those is a valid number in every one of those files. A setting can be present, believed in, and worth nothing. Those rows read `weak` rather than `wrong` because each manager does exactly what its file asks; `wrong` is kept for a value the manager will not read at all. `--fix` writes a key the file does not have and never argues with a line somebody wrote.
 
 ```sh
 trustdiff doctor --fix

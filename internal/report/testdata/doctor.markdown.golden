@@ -1,4 +1,4 @@
-## trustdiff doctor: 2 set, 2 wrong, 1 missing, 1 unreadable, 1 advice, 1 not applicable
+## trustdiff doctor: 2 set, 2 wrong, 0 weak, 1 missing, 1 unreadable, 1 advice, 1 not applicable
 
 | Manager | Rule | Status | Setting | Location |
 | --- | --- | --- | --- | --- |

@@ -154,14 +154,15 @@ func TestDoctorFixWritesEachManagersUnit(t *testing.T) {
 		t.Fatalf("exit = %d, want 0 (stderr %q)\n%s", code, stderr, stdout)
 	}
 
-	// Three days, in five different spellings, in five different files.
+	// Three days, in the spelling each manager counts in, written into the files
+	// that did not state the setting at all. Two of the fixture's files already
+	// hold a wait of their own, and those two are reported and left alone: --fix
+	// fills in what is absent and never argues with a line somebody wrote.
 	wants := map[string]string{
-		".npmrc":                       "min-release-age=3",
-		"apps/web/pnpm-workspace.yaml": "minimumReleaseAge: 4320",
-		"apps/admin/.yarnrc.yml":       "npmMinimalAgeGate: 4320",
-		"apps/native/bunfig.toml":      "minimumReleaseAge = 259200",
-		"services/edge/deno.json":      `"minimumDependencyAge": "P3D"`,
-		"services/api/pyproject.toml":  `exclude-newer = "3 days"`,
+		".npmrc":                      "min-release-age=3",
+		"apps/admin/.yarnrc.yml":      "npmMinimalAgeGate: 4320",
+		"services/edge/deno.json":     `"minimumDependencyAge": "P3D"`,
+		"services/api/pyproject.toml": `exclude-newer = "3 days"`,
 	}
 	for name, want := range wants {
 		if got := readFileAt(t, dir, name); !strings.Contains(got, want) {
@@ -270,8 +271,10 @@ func TestDoctorJSONDocument(t *testing.T) {
 	if doc.Summary.Managers != len(doc.Managers) || doc.Summary.Results != len(doc.Results) {
 		t.Errorf("the summary does not agree with the document: %+v", doc.Summary)
 	}
-	if doc.Summary.Statuses["wrong"] == 0 {
-		t.Errorf("no result is wrong, although two settings are:\n%s", stdout)
+	// Both of the fixture's stated waits are values their manager accepts and
+	// neither is the three days the policy asks for, which is what weak is for.
+	if doc.Summary.Statuses["weak"] == 0 {
+		t.Errorf("no result is weak, although two settings hold less than the policy asks:\n%s", stdout)
 	}
 	if doc.Summary.ExitCode != 0 || doc.Summary.ExitMeaning == "" {
 		t.Errorf("summary exit = %d %q", doc.Summary.ExitCode, doc.Summary.ExitMeaning)

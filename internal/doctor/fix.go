@@ -70,9 +70,13 @@ func fixable(res *Result) bool {
 		// installs with.
 		return false
 	}
+	// Only a key the file does not have. A value that is already there was written
+	// by somebody, and a tool that runs over a repository it does not own has no
+	// business deciding they were wrong: it says what the value does and leaves the
+	// line alone. That is what makes --fix safe to put in a script.
 	return res.Rule != nil && res.Rule.Fixable &&
 		res.Rule.Scan == nil &&
-		(res.Status == StatusMissing || res.Status == StatusWrong) &&
+		res.Status == StatusMissing &&
 		res.File != "" && res.target.Name != ""
 }
 

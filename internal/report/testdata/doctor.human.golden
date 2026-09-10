@@ -28,4 +28,4 @@ pnpm at least 10.16.1  (version from apps/web/pnpm-lock.yaml, apps/web)
   not applicable  DR015 pnpm-trust-policy
       pnpm 10.16.1 is older than 11.0.0, which added this setting
 
-2 set, 2 wrong, 1 missing, 1 unreadable, 1 advice, 1 not applicable. Exit code 1 (problems at or above the threshold).
+2 set, 2 wrong, 0 weak, 1 missing, 1 unreadable, 1 advice, 1 not applicable. Exit code 1 (problems at or above the threshold).

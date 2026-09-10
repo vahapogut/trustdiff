@@ -88,9 +88,9 @@ func (m MinimumAge) Judge(v *configfile.Value, p *Params) (Status, string) {
 	}
 	switch {
 	case have == 0:
-		return StatusWrong, fmt.Sprintf("%s turns the wait off", quote(text))
+		return StatusWeak, fmt.Sprintf("%s turns the wait off", quote(text))
 	case have < p.Cooldown:
-		return StatusWrong, fmt.Sprintf("%s is %s, and the policy asks for %s (%s here)%s",
+		return StatusWeak, fmt.Sprintf("%s is %s, and the policy asks for %s (%s here)%s",
 			quote(text), Humanize(have), Humanize(p.Cooldown), m.Unit.Format(p.Cooldown), m.unitConfusion(text))
 	default:
 		return StatusSet, fmt.Sprintf("%s is %s", quote(text), Humanize(have))
@@ -201,12 +201,12 @@ func (b BoolSetting) Judge(v *configfile.Value, p *Params) (Status, string) {
 		if b.On {
 			return StatusSet, ""
 		}
-		return StatusWrong, "set to true, and this should be false"
+		return StatusWeak, "set to true, and this should be false"
 	case "false", "no", "0":
 		if !b.On {
 			return StatusSet, ""
 		}
-		return StatusWrong, "set to false, and this should be true"
+		return StatusWeak, "set to false, and this should be true"
 	}
 	return StatusWrong, fmt.Sprintf("%s is not true or false", quote(v.Text))
 }

@@ -36,15 +36,15 @@ func TestEvaluateJudgesWhatTheFilesHold(t *testing.T) {
 	}
 
 	pnpm := resultFor(t, card, "DR010")
-	if pnpm.Status != StatusWrong {
-		t.Errorf("pnpm minimumReleaseAge = %s (%s), want wrong: 60 minutes is an hour", pnpm.Status, pnpm.Detail)
+	if pnpm.Status != StatusWeak {
+		t.Errorf("pnpm minimumReleaseAge = %s (%s), want weak: 60 minutes is an hour, which pnpm waits", pnpm.Status, pnpm.Detail)
 	}
 	if pnpm.Line != 5 {
 		t.Errorf("pnpm line = %d, want the line the key sits on", pnpm.Line)
 	}
 	bun := resultFor(t, card, "DR030")
-	if bun.Status != StatusWrong || !strings.Contains(bun.Detail, "minutes") {
-		t.Errorf("bun minimumReleaseAge = %s (%s), want wrong and a word about the unit", bun.Status, bun.Detail)
+	if bun.Status != StatusWeak || !strings.Contains(bun.Detail, "minutes") {
+		t.Errorf("bun minimumReleaseAge = %s (%s), want weak and a word about the unit", bun.Status, bun.Detail)
 	}
 	if strict := resultFor(t, card, "DR011"); strict.Status != StatusSet {
 		t.Errorf("strictDepBuilds = %s (%s), want set", strict.Status, strict.Detail)
@@ -57,8 +57,11 @@ func TestEvaluateJudgesWhatTheFilesHold(t *testing.T) {
 	}
 }
 
-// Fixing writes the value each manager counts in, leaves everything else in the
-// file alone, and does nothing at all the second time.
+// Fixing writes the value each manager counts in for a key the file does not
+// have, leaves everything else alone, and does nothing at all the second time. A
+// key that is already there is never rewritten, which
+// TestWeakValuesAreReportedAndNeverRewritten is about; this is the other half,
+// that the value written for an absent one is in the manager's own unit.
 func TestFixWritesEachManagersUnitAndIsIdempotent(t *testing.T) {
 	root := writeFixture(t)
 	opts := Options{
@@ -75,17 +78,13 @@ func TestFixWritesEachManagersUnitAndIsIdempotent(t *testing.T) {
 	}
 
 	workspace := readFile(t, root, "pnpm-workspace.yaml")
-	if !strings.Contains(workspace, "minimumReleaseAge: 4320") {
-		t.Errorf("pnpm-workspace.yaml does not hold the wait in minutes:\n%s", workspace)
-	}
-	for _, keep := range []string{`  - "apps/*"`, "# Wait before installing a release nobody has looked at yet.", "strictDepBuilds: true"} {
+	for _, keep := range []string{`  - "apps/*"`, "# Wait before installing a release nobody has looked at yet.", "strictDepBuilds: true", "minimumReleaseAge: 60"} {
 		if !strings.Contains(workspace, keep) {
 			t.Errorf("the edit lost %q:\n%s", keep, workspace)
 		}
 	}
-	if config := readFile(t, root, "bunfig.toml"); !strings.Contains(config, "minimumReleaseAge = 259200") {
-		t.Errorf("bunfig.toml does not hold the wait in seconds:\n%s", config)
-	}
+	// npm's file is the one with nothing in it, so npm's is the wait that gets
+	// written, in npm's own unit.
 	if npmrc := readFile(t, root, ".npmrc"); !strings.Contains(npmrc, "min-release-age=3") && !strings.Contains(npmrc, "min-release-age = 3") {
 		t.Errorf(".npmrc does not hold the wait in days:\n%s", npmrc)
 	}
@@ -270,5 +269,83 @@ func TestDenoLockfileTurnedOffIsWrongRatherThanMissing(t *testing.T) {
 	}
 	if got := resultFor(t, card, "DR041"); got.Status != StatusSet {
 		t.Errorf("frozen inside the object = %s (%s), want set", got.Status, got.Detail)
+	}
+}
+
+// A value the manager reads and acts on is never reported as a mistake, and
+// --fix never rewrites one. Between them those two rules are what makes doctor
+// safe to run over somebody else's repository: it fills in what is absent and
+// reports what is there, and a deliberate setting is nobody's to overwrite.
+//
+// The three statuses divide as follows. wrong is a value the manager will not
+// accept or reads as something other than what it says, which is a mistake and
+// the writer wants to know. weak is a value the manager accepts that does less
+// than the policy asks, which is a choice and the scorecard states it. missing
+// is the key the file does not have, which is the only thing --fix writes.
+func TestWeakValuesAreReportedAndNeverRewritten(t *testing.T) {
+	root := writeFixture(t)
+	opts := Options{
+		Params: Params{Cooldown: threeDays, Version: "11.2.0", Now: fixedNow()},
+		Fix:    true,
+		Backup: true,
+	}
+	before := readFile(t, root, "pnpm-workspace.yaml")
+	card, err := Evaluate(root, fixtureManagers(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// pnpm reads 60 as sixty minutes and waits an hour, which is a real hour and
+	// not a misunderstanding. It is less than the three days the policy asks for,
+	// and that is what the scorecard says.
+	pnpm := resultFor(t, card, "DR010")
+	if pnpm.Status != StatusWeak {
+		t.Errorf("pnpm minimumReleaseAge = %s (%s), want weak: pnpm waits the hour the file asks for", pnpm.Status, pnpm.Detail)
+	}
+	// Bun reads 10080 as seconds, which is under three hours, and whoever wrote it
+	// meant a week in pnpm's unit. Bun still accepts it, so it is weak rather than
+	// wrong, and the detail is where the unit confusion is said.
+	bun := resultFor(t, card, "DR030")
+	if bun.Status != StatusWeak || !strings.Contains(bun.Detail, "minutes") {
+		t.Errorf("bun minimumReleaseAge = %s (%s), want weak and a word about the unit", bun.Status, bun.Detail)
+	}
+	if !pnpm.Status.Problem() || !bun.Status.Problem() {
+		t.Error("a weak value is a problem the scorecard counts, or nobody reads it")
+	}
+
+	// Both values are still exactly what the file said. --fix may well have added
+	// keys neither file had, which is its whole job, but not one line that was
+	// already there was rewritten.
+	after := readFile(t, root, "pnpm-workspace.yaml")
+	if !strings.Contains(after, "minimumReleaseAge: 60") {
+		t.Errorf("--fix rewrote the wait the file already held:\n%s", after)
+	}
+	if config := readFile(t, root, "bunfig.toml"); !strings.Contains(config, "minimumReleaseAge = 10080") {
+		t.Errorf("--fix rewrote the wait bunfig.toml already held:\n%s", config)
+	}
+	for _, line := range strings.Split(before, "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if !strings.Contains(after, line) {
+			t.Errorf("--fix lost the line %q:\n%s", line, after)
+		}
+	}
+	// A key the file did not have is the one thing --fix writes.
+	if npmrc := readFile(t, root, ".npmrc"); !strings.Contains(npmrc, "min-release-age=3") && !strings.Contains(npmrc, "min-release-age = 3") {
+		t.Errorf(".npmrc does not hold the wait in days:\n%s", npmrc)
+	}
+}
+
+// A value the manager will not read at all is still a mistake, and still says so.
+func TestAValueTheManagerCannotReadIsWrong(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "bunfig.toml", "[install]\nminimumReleaseAge = \"three days\"\n")
+	card, err := Evaluate(root, fixtureManagers(), Options{Params: Params{Cooldown: threeDays, Now: fixedNow()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resultFor(t, card, "DR030"); got.Status != StatusWrong {
+		t.Errorf("bun minimumReleaseAge = %s (%s), want wrong: Bun counts seconds and will not read that", got.Status, got.Detail)
 	}
 }

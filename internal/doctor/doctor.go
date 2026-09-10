@@ -136,9 +136,17 @@ type Status string
 const (
 	// StatusSet means the file holds a value that does what the rule asks.
 	StatusSet Status = "set"
-	// StatusWrong means the key is there and its value does not: the wrong unit,
-	// or a threshold too permissive to mean anything.
+	// StatusWrong means the manager will not do what the file says: a value it
+	// does not accept, or one it reads as something other than what is written. It
+	// is a mistake, and whoever wrote the line wants to know.
 	StatusWrong Status = "wrong"
+	// StatusWeak means the manager accepts the value and does exactly what it says,
+	// and what it says is less than the policy asks for: an hour where the policy
+	// wants three days, or a switch deliberately set the permissive way. It is a
+	// choice rather than a mistake, so the scorecard states it and --fix leaves it
+	// alone. A number written in another manager's unit lands here too, because the
+	// manager really does wait the time it read; the detail is where that is said.
+	StatusWeak Status = "weak"
 	// StatusMissing means the file does not state the key at all.
 	StatusMissing Status = "missing"
 	// StatusUnreadable means the file exists and could not be read or the value
@@ -156,7 +164,7 @@ const (
 
 // Problem reports whether the status is one --ci should be able to fail on.
 func (s Status) Problem() bool {
-	return s == StatusWrong || s == StatusMissing || s == StatusUnreadable
+	return s == StatusWrong || s == StatusWeak || s == StatusMissing || s == StatusUnreadable
 }
 
 // Unit is how a manager spells a length of time. The same three days is 3 for npm,
