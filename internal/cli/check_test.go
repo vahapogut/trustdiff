@@ -25,7 +25,9 @@ import (
 // year ago and 2.0.0 by bob one day before the injected clock. Every other name is
 // unknown, and the name "down" makes the registry unavailable. With slow set,
 // 2.0.0 declares a dependency whose version list never arrives before the
-// caller's context ends, the way a hung registry looks to TD007.
+// caller's context ends, the way a hung registry looks to TD007. With introduced
+// set, a third release sits between the two and is where a dependency both later
+// versions declare first appeared.
 type fakeLoader struct {
 	now time.Time
 	// slow makes the introduced dependency's lookups hang past the deadline.
@@ -37,7 +39,15 @@ type fakeLoader struct {
 	// reads two sources has to get right, and taking the whole loader down cannot
 	// express it.
 	down map[string]bool
+	// introduced adds the release 1.5.0 between the other two, where the dependency
+	// introducedDependency first appears, and declares it on 2.0.0 as well. It is
+	// how a test says a bump crosses the release that added a dependency, which is
+	// the one shape a comparison with the previous release alone cannot see.
+	introduced bool
 }
+
+// introducedDependency is the dependency fakeLoader.introduced adds in 1.5.0.
+const introducedDependency = "trustdiff-fixture-crypto"
 
 // errRegistryDown is what an unreachable source returns: a transport failure,
 // which is an outage rather than an answer the source gave.
@@ -61,6 +71,17 @@ func (f *fakeLoader) list() *registry.VersionList {
 	}
 	if f.slow {
 		list.Versions[1].Dependencies = map[string]string{slowDependency: "^1.0.0"}
+	}
+	if f.introduced {
+		mid := model.VersionInfo{
+			Ref:             ref("1.5.0"),
+			PublishedAt:     f.now.AddDate(0, -6, 0),
+			Publisher:       &model.Publisher{Name: "alice"},
+			WeeklyDownloads: -1,
+			Dependencies:    map[string]string{introducedDependency: "^1.0.0"},
+		}
+		list.Versions = []model.VersionInfo{list.Versions[0], mid, list.Versions[1]}
+		list.Versions[2].Dependencies = map[string]string{introducedDependency: "^1.0.0"}
 	}
 	return list
 }
@@ -150,6 +171,15 @@ func useFakeLoader(t *testing.T) time.Time {
 	loaderFactory = func(*App) (checks.Loader, error) { return &fakeLoader{now: now}, nil }
 	t.Cleanup(func() { loaderFactory = old })
 	return now
+}
+
+// useIntroducingLoader swaps in a loader that holds the release where a dependency
+// arrived, keeping the fixture the caller already set up.
+func useIntroducingLoader(t *testing.T) {
+	t.Helper()
+	old := loaderFactory
+	loaderFactory = func(*App) (checks.Loader, error) { return &fakeLoader{now: fixtureNow, introduced: true}, nil }
+	t.Cleanup(func() { loaderFactory = old })
 }
 
 // useDownLoader swaps in a loader whose named data sources fail, keeping the

@@ -25,7 +25,7 @@ checks:
   young-version: warn                # TD001 published less than `cooldown` ago
   publisher-changed: block           # TD002 publisher not seen in the previous versions
   maintainers-changed: warn          # TD003 maintainer or owner set changed
-  trust-downgrade: block             # TD004 provenance weaker than the previous version
+  trust-downgrade: block             # TD004 provenance weaker than a version the project had
   install-script-introduced: block   # TD005 install script where the previous version had none
   install-script-present: warn       # TD006 runs code at install time at all
   new-dependency-introduced: warn    # TD007 new runtime dependency (escalates when it is young or unknown)

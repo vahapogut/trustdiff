@@ -920,3 +920,65 @@ func TestDiffReportsAHashStrippedFromARequirementsPin(t *testing.T) {
 		t.Errorf("signal = %v, want integrity-removed", got)
 	}
 }
+
+// TestDiffReportsADependencyIntroducedBetweenTheTwoVersions pins finding F7 of
+// docs/review-2026-09-10.md. The project had 1.0.0, the change locks 2.0.0, and the
+// dependency arrived in 1.5.0, the release the registry calls previous. While the
+// check compared with that release alone the dependency was not new to it and
+// nothing was reported, although the project installs it for the first time. A bump
+// usually crosses more than one release, which is what makes this the ordinary case
+// rather than the awkward one.
+func TestDiffReportsADependencyIntroducedBetweenTheTwoVersions(t *testing.T) {
+	base := readRegressionFixture(t, "f7-dependency-introduced-in-between", "base", "package-lock.json")
+	head := readRegressionFixture(t, "f7-dependency-introduced-in-between", "head", "package-lock.json")
+	useFakeLoader(t)
+	useIntroducingLoader(t)
+	dir := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(dir))
+	writeFile(t, dir, "base/package-lock.json", base)
+	writeFile(t, dir, "head/package-lock.json", head)
+	chdir(t, dir)
+
+	code, stdout, stderr := run(t, "--format", "json", "--fail-on", "warn", "diff",
+		"--base-file", "base/package-lock.json", "head/package-lock.json")
+	if code != ExitFindings {
+		t.Fatalf("exit = %d, want %d (stderr %q)\n%s", code, ExitFindings, stderr, stdout)
+	}
+	rep := decodeReport(t, stdout)
+	s := subjectFor(t, &rep, "npm:trustdiff-fixture-lib@2.0.0")
+
+	var found *model.Finding
+	for i := range s.Findings {
+		if s.Findings[i].ID == "TD007" {
+			found = &s.Findings[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("no TD007 finding for a dependency the version the project had never declared; the report carried %+v and skipped %v", s.Findings, s.Skipped)
+	}
+	if got := found.Evidence["dependency"]; got != introducedDependency {
+		t.Errorf("dependency = %v, want %s", got, introducedDependency)
+	}
+	if got := found.Evidence["previous_version"]; got != "1.5.0" {
+		t.Errorf("previous_version = %v, want the release before 2.0.0", got)
+	}
+	if got := found.Evidence["base_version"]; got != "1.0.0" {
+		t.Errorf("base_version = %v, want the version the base file locked", got)
+	}
+	if got := found.Evidence["introduced_since_base"]; got != true {
+		t.Errorf("introduced_since_base = %v, want true", got)
+	}
+	// The finding names the version that declared none of it, not the release the
+	// registry happens to call previous.
+	if !strings.Contains(found.Title, "not declared by 1.0.0") {
+		t.Errorf("title = %q, want the version that declared none of it named", found.Title)
+	}
+	for _, want := range []string{
+		"1.0.0 declared 0 runtime dependencies; 2.0.0 adds trustdiff-fixture-crypto (^1.0.0)",
+		"the release before this one, 1.5.0, already declared it, but the version this change replaces, 1.0.0, did not",
+	} {
+		if !strings.Contains(found.Explanation, want) {
+			t.Errorf("explanation lacks %q:\n%s", want, found.Explanation)
+		}
+	}
+}

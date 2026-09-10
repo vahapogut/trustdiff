@@ -25,6 +25,14 @@ import (
 // npm only: crates.io and PyPI have no per-version script list to compare, and
 // TD006 covers their install-time code.
 //
+// Two comparisons, when diff knows both: the release before the evaluated version,
+// and the version the base lockfile locked, which is the version the project
+// actually had. A bump usually crosses more than one release, and a script the
+// release before this one already carried is still new to a project upgrading from
+// further back. The finding names the version that declared none, the previous
+// release when neither did, and the base version is ignored when the registry
+// client could not gather its scripts.
+//
 // Evidence keys:
 //
 //	previous_version  the previous release
@@ -66,12 +74,7 @@ func (c td005) Run(_ context.Context, s *Subject) Result {
 	// Two comparisons, when diff knows both: the release before this one, and the
 	// version the project actually had. A script the previous release already
 	// carried is still new to a project upgrading from further back.
-	base := s.PreviousInBase
-	if base != nil {
-		if _, unknown := unknownFacet(base, model.FacetScripts); unknown {
-			base = nil
-		}
-	}
+	base := comparableBase(s, model.FacetScripts)
 	fromPrevious := !s.Previous.HasInstallScript()
 	fromBase := base != nil && !base.HasInstallScript()
 	if !fromPrevious && !fromBase {
@@ -88,7 +91,7 @@ func (c td005) Run(_ context.Context, s *Subject) Result {
 	title := fmt.Sprintf("Install script introduced: %s (%s had none)", strings.Join(names, ", "), had.Ref.Version)
 	explanation := fmt.Sprintf("%s declared no install-time script; %s declares %s, which npm runs with the installing user's permissions on every install of the package",
 		had.Ref.Version, ref.Version, scriptsText(s.Version.Scripts))
-	if base != nil && base.Ref.Version != s.Previous.Ref.Version {
+	if base != nil {
 		switch {
 		case fromPrevious && fromBase:
 			explanation += fmt.Sprintf("; the version this change replaces, %s, declared none either", base.Ref.Version)
@@ -107,11 +110,33 @@ func (c td005) Run(_ context.Context, s *Subject) Result {
 		"script_names":     names,
 		"scripts":          copyScripts(s.Version.Scripts),
 	}
-	if base != nil && base.Ref.Version != s.Previous.Ref.Version {
+	if base != nil {
 		evidence["base_version"] = base.Ref.Version
 		evidence["introduced_since_base"] = fromBase
 	}
 	return Result{Findings: []model.Finding{NewFinding(c, s, title, explanation, evidence)}}
+}
+
+// comparableBase is the version the base lockfile had, when there is one a check
+// can compare against: a release of its own rather than the one the registry calls
+// previous, and one whose facet the registry client actually gathered. It is nil
+// for scan, for a ref named on the command line, for an added entry and for a bump
+// of one release, which leaves the check with the single comparison it made before
+// diff learned to name the version the project actually had.
+//
+// TD004, TD005 and TD007 read it, and it is the one place that decides what the
+// second comparison is. The version guard repeats internal/checks/runner.go's own
+// rule for loadBase, because a Subject built by hand in a test can set the field
+// directly.
+func comparableBase(s *Subject, facet string) *model.VersionInfo {
+	base := s.PreviousInBase
+	if base == nil || (s.Previous != nil && base.Ref.Version == s.Previous.Ref.Version) {
+		return nil
+	}
+	if _, unknown := unknownFacet(base, facet); unknown {
+		return nil
+	}
+	return base
 }
 
 // lifecycleOrder is the order in which npm runs the install-time scripts; other

@@ -190,7 +190,7 @@ allow:
 
 ## TD004 trust-downgrade
 
-**Detects.** A version whose publishing evidence is weaker than the previous version's: a verified build attestation or trusted publishing record before, a bare registry signature or nothing now. The strength order is none, signature, attestation, trusted publisher, and a verified record ranks above an unverified one of the same kind. When the registry stores an attestation without verifying it, a deps.dev verification of the same version counts, so a registry that only stores the bundle does not produce a downgrade by itself. Skipped without a previous version. Applies to npm (`dist.attestations`, `dist.signatures`), PyPI (PEP 740 provenance) and crates.io (`trustpub_data`). This is the pnpm `trustPolicy: no-downgrade` idea applied to every ecosystem.
+**Detects.** A version whose publishing evidence is weaker than the previous release's, or than that of the version the base lockfile locked. A verified build attestation or trusted publishing record before, a bare registry signature or nothing now. The strength order is none, signature, attestation, trusted publisher, and a verified record ranks above an unverified one of the same kind. When the registry stores an attestation without verifying it, a deps.dev verification of the same version counts, so a registry that only stores the bundle does not produce a downgrade by itself. A bump usually crosses more than one release, so the version compared with is whichever of the two predecessors carried the most evidence, and the finding names it; a record the release before this one had already dropped is still a record the project is losing. Skipped without a previous version. Applies to npm (`dist.attestations`, `dist.signatures`), PyPI (PEP 740 provenance) and crates.io (`trustpub_data`). This is the pnpm `trustPolicy: no-downgrade` idea applied to every ecosystem.
 
 **Why it matters.** A stolen token cannot produce provenance. When the nx publishing token was stolen through a GitHub Actions injection on 26 August 2025, the attacker published eight malicious nx versions from outside the release workflow, and the Nx team's post mortem notes that "the malicious packages lacked NPM provenance signing" while provenance "doesn't block unsigned packages from being installed" ([Nx post mortem](https://nx.dev/blog/s1ngularity-postmortem), [GHSA-cxm3-wv7p-598c](https://github.com/nrwl/nx/security/advisories/GHSA-cxm3-wv7p-598c)). A package that has shipped provenance for years and suddenly ships none is exactly this pattern.
 
@@ -198,10 +198,17 @@ allow:
 
 | Key | Meaning |
 |---|---|
-| `previous_version` | the previous release compared with |
+| `previous_version` | the previous release, whether or not it is the version the finding names |
 | `previous_kind` | its provenance kind: `none`, `signature`, `attestation` or `trusted-publisher` |
 | `previous_verified` | whether that evidence was verified |
+| `previous_verified_by` | `registry` or `deps.dev`, when verified |
 | `previous_identity` | the workflow or repository it names, when known |
+| `compared_version` | the version the finding names: the stronger of the two predecessors |
+| `base_version` | the version the base lockfile locked, when `diff` knows one and it is not the previous release (`diff` only) |
+| `base_kind` | its provenance kind (`diff` only) |
+| `base_verified` | whether that evidence was verified (`diff` only) |
+| `base_verified_by` | `registry` or `deps.dev`, when verified (`diff` only) |
+| `downgraded_since_base` | whether that version's evidence was stronger than this one's (`diff` only) |
 | `kind` | the evaluated version's provenance kind |
 | `verified` | whether its evidence was verified |
 | `verified_by` | `registry` or `deps.dev`, when verified |
@@ -232,7 +239,7 @@ allow:
 
 ## TD005 install-script-introduced
 
-**Detects.** An npm version that declares an install-time script (`preinstall`, `install` or `postinstall`) while the previous version declared none. npm runs all three on every install of the package. `prepare` is not one of them and is not reported: npm runs a dependency's `prepare` only when the dependency comes from git or from a local folder, never for the registry tarball a lockfile entry names, so a release that adds a `husky` hook has added nothing an install will run. Skipped without a previous version. npm only: crates.io and PyPI have no per-version script list to compare, and TD006 covers their install-time code.
+**Detects.** An npm version that declares an install-time script (`preinstall`, `install` or `postinstall`) which the previous release did not declare, or which the version the base lockfile locked did not. npm runs all three on every install of the package. `prepare` is not one of them and is not reported: npm runs a dependency's `prepare` only when the dependency comes from git or from a local folder, never for the registry tarball a lockfile entry names, so a release that adds a `husky` hook has added nothing an install will run. Skipped without a previous version. npm only: crates.io and PyPI have no per-version script list to compare, and TD006 covers their install-time code.
 
 **Why it matters.** Nearly every npm compromise of the last years delivered its payload through a script that the previous release did not have. The hijacked ua-parser-js releases `0.7.29`, `0.8.0` and `1.0.0` of 22 October 2021 added a `preinstall` hook that ran a cryptominer and a credential stealer ([issue #538](https://github.com/faisalman/ua-parser-js/issues/538)). The Shai-Hulud worm of September 2025 worked "by injecting malicious post-install scripts into popular JavaScript packages" ([GitHub, 22 September 2025](https://github.blog/security/supply-chain-security/our-plan-for-a-more-secure-npm-supply-chain/)). The `plain-crypto-js` package that the compromised axios pulled in on 31 March 2026 downloaded its remote access trojan from a `postinstall` hook ([Datadog Security Labs](https://securitylabs.datadoghq.com/articles/axios-npm-supply-chain-compromise/)). In every case the script was new.
 
@@ -240,7 +247,7 @@ allow:
 
 | Key | Meaning |
 |---|---|
-| `previous_version` | the previous release, which declared no install-time script |
+| `previous_version` | the previous release, whether or not it is the version the finding names |
 | `script_names` | the install-time scripts of the evaluated version, in lifecycle order (`preinstall`, `install`, `postinstall`) |
 | `scripts` | the scripts by name, with the command each one runs |
 
@@ -308,7 +315,7 @@ A pattern such as `"cargo:*"` covers every crate when build scripts are not wort
 
 ## TD007 new-dependency-introduced
 
-**Detects.** Every runtime dependency the evaluated version declares and the previous version did not, one finding per new dependency so that a reviewed one can be allowed on its own. A dependency a plain install does not pull in is reported but never escalated, and the evidence marks it `optional`: a PyPI requirement behind an extra (`pip install pkg[socks]` and nothing else installs it) is the case this covers. Each new dependency is looked up through the registry and deps.dev, and the finding is raised to `block` when the dependency is young (its newest stable version, or the package's first release, is less than 7 days old), has low usage (weekly downloads below `low-usage.min_weekly_downloads`; no escalation on PyPI, which has no counts) or is unknown to deps.dev. The lookup reports the newest stable version rather than the one the requirement would resolve to: resolving a range needs the whole solver, so the explanation says what it actually looked at. A lookup error never escalates; the explanation says what could not be checked. Skipped without a previous version. Applies to every ecosystem.
+**Detects.** Every runtime dependency the evaluated version declares that the previous release did not, or that the version the base lockfile locked did not. One finding per new dependency, so that a reviewed one can be allowed on its own. A dependency a plain install does not pull in is reported but never escalated, and the evidence marks it `optional`: a PyPI requirement behind an extra (`pip install pkg[socks]` and nothing else installs it) is the case this covers. Each new dependency is looked up through the registry and deps.dev, and the finding is raised to `block` when the dependency is young (its newest stable version, or the package's first release, is less than 7 days old), has low usage (weekly downloads below `low-usage.min_weekly_downloads`; no escalation on PyPI, which has no counts) or is unknown to deps.dev. The lookup reports the newest stable version rather than the one the requirement would resolve to: resolving a range needs the whole solver, so the explanation says what it actually looked at. A lookup error never escalates; the explanation says what could not be checked. A bump usually crosses more than one release, so the check compares with the version the base lockfile locked as well as with the release before this one, and the finding names the version that declared none of the dependency. Skipped without a previous version. Applies to every ecosystem.
 
 **Why it matters.** This is the pattern of the axios compromise of 31 March 2026: `axios@1.14.1` and `0.30.4` differed from the previous releases by one new dependency, `plain-crypto-js@4.2.1`, a package created for the attack that carried the remote access trojan ([axios post mortem](https://github.com/axios/axios/issues/10636)). It is also the event-stream pattern of 2018: `event-stream@3.3.6` added `flatmap-stream`, a package with no history and no users ([Snyk post mortem](https://snyk.io/blog/a-post-mortem-of-the-malicious-event-stream-backdoor/)). In both cases the new dependency was days old and had almost no downloads, which is what the escalation looks for.
 
@@ -316,7 +323,9 @@ A pattern such as `"cargo:*"` covers every crate when build scripts are not wort
 
 | Key | Meaning |
 |---|---|
-| `previous_version` | the previous release compared with |
+| `previous_version` | the previous release, whether or not it is the version the finding names |
+| `base_version` | the version the base lockfile locked, when `diff` knows one and it is not the previous release (`diff` only) |
+| `introduced_since_base` | whether that version declared none of the dependency (`diff` only) |
 | `dependency` | the new dependency's name |
 | `requirement` | the version requirement the evaluated version declares |
 | `optional` | true when a plain install does not pull the dependency in, which also means no escalation |

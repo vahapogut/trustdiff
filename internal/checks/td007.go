@@ -47,7 +47,8 @@ import (
 //
 // Evidence keys (present in every finding unless marked):
 //
-//	previous_version      the previous release compared with
+//	previous_version      the previous release, whether or not it is the version
+//	                      the finding names
 //	dependency            the new dependency's name
 //	requirement           the version requirement the evaluated version declares
 //	optional              true for a PyPI requirement behind an extra marker
@@ -114,14 +115,34 @@ func (c td007) Run(ctx context.Context, s *Subject) Result {
 	}
 	previous := declaredDependencies(eco, s.Previous)
 	current := declaredDependencies(eco, s.Version)
+	// Two comparisons, when diff knows both: the release before this one, and the
+	// version the project actually had. A dependency the previous release already
+	// declared is still new to a project upgrading from further back, which is the
+	// axios shape this check is named for once the bump crosses the release that
+	// added it.
+	base := comparableBase(s, model.FacetDependencies)
+	var inBase map[string]requirement
+	if base != nil {
+		inBase = declaredDependencies(eco, base)
+	}
 	var added []string
+	since := make(map[string]*introduction, len(current))
 	for key, req := range current {
-		before, declared := previous[key]
-		// A dependency the previous version declared only behind an extra is new
-		// as a runtime dependency.
-		if !declared || (before.optional && !req.optional) {
-			added = append(added, req.name)
+		fromPrevious := newRuntimeDependency(previous, key, req)
+		fromBase := base != nil && newRuntimeDependency(inBase, key, req)
+		if !fromPrevious && !fromBase {
+			continue
 		}
+		intro := &introduction{fromPrevious: fromPrevious, fromBase: fromBase, base: base}
+		// The version to name is the one that declared none of it; when neither
+		// did, the previous release is the closer comparison.
+		if fromPrevious {
+			intro.had, intro.declared = s.Previous, previous
+		} else {
+			intro.had, intro.declared = base, inBase
+		}
+		added = append(added, req.name)
+		since[key] = intro
 	}
 	if len(added) == 0 {
 		return Result{}
@@ -132,9 +153,10 @@ func (c td007) Run(ctx context.Context, s *Subject) Result {
 	now := runClock(s)
 	findings := make([]model.Finding, 0, len(added))
 	for _, name := range added {
-		facts := inspectDependency(ctx, s, eco, name, current[model.NormalizeName(eco, name)], threshold)
+		key := model.NormalizeName(eco, name)
+		facts := inspectDependency(ctx, s, eco, name, current[key], threshold)
 		facts.settle(ctx, s, ref, name, now, threshold)
-		findings = append(findings, c.finding(s, ref, name, added, facts, previous, threshold))
+		findings = append(findings, c.finding(s, ref, name, added, facts, since[key], threshold))
 	}
 	return Result{Findings: findings}
 }
@@ -168,6 +190,51 @@ func declaredDependencies(eco model.Ecosystem, v *model.VersionInfo) map[string]
 		out[model.NormalizeName(eco, name)] = req
 	}
 	return out
+}
+
+// introduction is why one dependency counts as new: which of the two versions the
+// check compares with declared none of it, and the version the finding names and
+// counts the declarations of.
+type introduction struct {
+	// fromPrevious is true when the release before the evaluated one declared none
+	// of it, fromBase when the version the base lockfile had declared none.
+	fromPrevious bool
+	fromBase     bool
+	// had is the version that declared none of it and declared what it did declare.
+	// It is the previous release whenever that release lacked the dependency, the
+	// closer of the two comparisons.
+	had      *model.VersionInfo
+	declared map[string]requirement
+	// base is the version the base lockfile had, nil unless diff knows one and it
+	// is not the previous release.
+	base *model.VersionInfo
+}
+
+// baseText words the second comparison for the explanation, saying which of the two
+// versions declared the dependency and which did not. Empty when diff knows no base
+// version of its own.
+func (i *introduction) baseText(previousVersion string) string {
+	if i.base == nil {
+		return ""
+	}
+	switch {
+	case i.fromPrevious && i.fromBase:
+		return fmt.Sprintf("; the version this change replaces, %s, declared none of it either", i.base.Ref.Version)
+	case i.fromBase:
+		return fmt.Sprintf("; the release before this one, %s, already declared it, but the version this change replaces, %s, did not, so the dependency is new to this project",
+			previousVersion, i.base.Ref.Version)
+	default:
+		return fmt.Sprintf("; the version this change replaces, %s, already declared it", i.base.Ref.Version)
+	}
+}
+
+// newRuntimeDependency reports whether a version's declarations lack the
+// requirement as a runtime dependency: it declared nothing of that name, or
+// declared it only behind an extra while the evaluated version declares it
+// outright.
+func newRuntimeDependency(declared map[string]requirement, key string, req requirement) bool {
+	before, ok := declared[key]
+	return !ok || (before.optional && !req.optional)
 }
 
 // extraMarkers match the two spellings of an extra clause in a PEP 508 marker:
@@ -400,7 +467,7 @@ func npmScope(name string) string {
 
 // finding builds the finding for one new dependency and escalates it when a
 // reason applies.
-func (c td007) finding(s *Subject, ref model.PackageRef, name string, added []string, facts *dependencyFacts, previous map[string]requirement, threshold int64) model.Finding {
+func (c td007) finding(s *Subject, ref model.PackageRef, name string, added []string, facts *dependencyFacts, intro *introduction, threshold int64) model.Finding {
 	now := runClock(s)
 	reasons := facts.reasons
 	if reasons == nil {
@@ -412,11 +479,11 @@ func (c td007) finding(s *Subject, ref model.PackageRef, name string, added []st
 	if facts.requirement.optional {
 		kind = "optional dependency"
 	}
-	title := fmt.Sprintf("New %s %s (%s), not declared by %s", kind, name, facts.requirement.text, s.Previous.Ref.Version)
+	title := fmt.Sprintf("New %s %s (%s), not declared by %s", kind, name, facts.requirement.text, intro.had.Ref.Version)
 	if escalated {
 		title += ": " + joinAnd(reasonTexts(reasons))
 	}
-	explanation := dependencyText(s, ref, name, added, facts, previous, now, threshold)
+	explanation := dependencyText(s, ref, name, added, facts, intro, now, threshold)
 
 	evidence := map[string]any{
 		"previous_version":   s.Previous.Ref.Version,
@@ -462,6 +529,10 @@ func (c td007) finding(s *Subject, ref model.PackageRef, name string, added []st
 	if len(facts.problems) > 0 {
 		evidence["inspection_errors"] = facts.problems
 	}
+	if intro.base != nil {
+		evidence["base_version"] = intro.base.Ref.Version
+		evidence["introduced_since_base"] = intro.fromBase
+	}
 
 	f := NewFinding(c, s, title, explanation, evidence)
 	if escalated && f.Level != model.LevelOff && !f.Level.AtLeast(model.LevelBlock) {
@@ -472,14 +543,15 @@ func (c td007) finding(s *Subject, ref model.PackageRef, name string, added []st
 
 // dependencyText writes the explanation: what changed, what is known about the
 // dependency, and why the level was or was not raised.
-func dependencyText(s *Subject, ref model.PackageRef, name string, added []string, facts *dependencyFacts, previous map[string]requirement, now time.Time, threshold int64) string {
+func dependencyText(s *Subject, ref model.PackageRef, name string, added []string, facts *dependencyFacts, intro *introduction, now time.Time, threshold int64) string {
 	var b strings.Builder
-	runtime := runtimeDependencies(previous)
+	runtime := runtimeDependencies(intro.declared)
 	fmt.Fprintf(&b, "%s declared %d runtime dependenc%s; %s adds %s (%s)",
-		s.Previous.Ref.Version, runtime, pluralY(runtime), ref.Version, name, facts.requirement.text)
+		intro.had.Ref.Version, runtime, pluralY(runtime), ref.Version, name, facts.requirement.text)
 	if len(added) > 1 {
 		fmt.Fprintf(&b, ", one of %d new dependencies (%s)", len(added), strings.Join(added, ", "))
 	}
+	b.WriteString(intro.baseText(s.Previous.Ref.Version))
 	b.WriteString(". ")
 
 	var known []string

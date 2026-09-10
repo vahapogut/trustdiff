@@ -447,17 +447,22 @@ var checkRules = []checkRule{
 	},
 	{
 		ID: "TD004", Name: "trust-downgrade",
-		Short: "A version whose publishing evidence is weaker than the previous version's.",
-		Full: "The previous version carried a verified build attestation or a trusted publishing record " +
-			"and this one carries a bare signature or nothing. Strength runs none, signature, attestation, " +
-			"trusted publisher, and a verified record ranks above an unverified one of the same kind.",
+		Short: "A version whose publishing evidence is weaker than the previous release's, or than that of the version the base lockfile locked.",
+		Full: "A predecessor carried a verified build attestation or a trusted publishing record and this " +
+			"version carries a bare signature or nothing. Strength runs none, signature, attestation, " +
+			"trusted publisher, and a verified record ranks above an unverified one of the same kind. A " +
+			"bump usually crosses more than one release, so the comparison is with whichever of the two " +
+			"predecessors carried the most: a record dropped before the release this change locks is " +
+			"still a record the project is losing.",
 	},
 	{
 		ID: "TD005", Name: "install-script-introduced",
-		Short: "An npm version that declares an install-time script (preinstall, install or postinstall) while the previous version declared none.",
-		Full: "An npm version declares preinstall, install or postinstall while the previous " +
-			"version declared none. npm runs all three on every install of the package, so code that " +
-			"arrives this way runs on the machine of everyone who updates.",
+		Short: "An npm version that declares an install-time script (preinstall, install or postinstall) which the previous release did not declare, or which the version the base lockfile locked did not.",
+		Full: "An npm version declares preinstall, install or postinstall that a predecessor did not. " +
+			"npm runs all three on every install of the package, so code that arrives this way runs on " +
+			"the machine of everyone who updates. A bump usually crosses more than one release, so a " +
+			"script the release before this one already carried is still new to a project upgrading " +
+			"from further back.",
 	},
 	{
 		ID: "TD006", Name: "install-script-present",
@@ -468,10 +473,12 @@ var checkRules = []checkRule{
 	},
 	{
 		ID: "TD007", Name: "new-dependency-introduced",
-		Short: "Every runtime dependency the evaluated version declares and the previous version did not.",
+		Short: "Every runtime dependency the evaluated version declares that the previous release did not, or that the version the base lockfile locked did not.",
 		Full: "Every added dependency is reported on its own, so that a reviewed one can be allowed " +
 			"separately. A new dependency that is itself young, barely used or unknown to deps.dev is " +
-			"escalated, because a package that pulls in a payload usually pulls in a fresh one.",
+			"escalated, because a package that pulls in a payload usually pulls in a fresh one. A bump " +
+			"usually crosses more than one release, so a dependency the release before this one already " +
+			"declared is still new to a project upgrading from further back.",
 	},
 	{
 		ID: "TD008", Name: "typosquat-suspect",

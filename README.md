@@ -357,10 +357,10 @@ Every check has a stable id, a name used in the policy file, a default level and
 | [TD001](docs/checks.md#td001-young-version) | `young-version` | published less than `cooldown` ago | warn | all |
 | [TD002](docs/checks.md#td002-publisher-changed) | `publisher-changed` | publishing account not among the previous 5 versions' publishers | block | npm, cargo; pypi through the baseline |
 | [TD003](docs/checks.md#td003-maintainers-changed) | `maintainers-changed` | maintainer set differs from the previous version | warn | npm; pypi and cargo through the baseline |
-| [TD004](docs/checks.md#td004-trust-downgrade) | `trust-downgrade` | provenance weaker than the previous version's | block | npm, pypi, cargo |
+| [TD004](docs/checks.md#td004-trust-downgrade) | `trust-downgrade` | provenance weaker than a version the project already had | block | npm, pypi, cargo |
 | [TD005](docs/checks.md#td005-install-script-introduced) | `install-script-introduced` | install script where the previous version had none | block | npm |
 | [TD006](docs/checks.md#td006-install-script-present) | `install-script-present` | runs code at install time (npm scripts, `build.rs`, proc-macro, sdist-only release) | warn | all |
-| [TD007](docs/checks.md#td007-new-dependency-introduced) | `new-dependency-introduced` | runtime dependency the previous version did not declare; block when it is young, low usage or unknown to deps.dev | warn | all |
+| [TD007](docs/checks.md#td007-new-dependency-introduced) | `new-dependency-introduced` | runtime dependency a version the project already had did not declare; block when it is young, low usage or unknown to deps.dev | warn | all |
 | [TD008](docs/checks.md#td008-typosquat-suspect) | `typosquat-suspect` | name close to a popular package | block | all |
 | [TD009](docs/checks.md#td009-malicious-advisory) | `malicious-advisory` | OSV `MAL-` advisory or deps.dev `MALICIOUS` finding | block | all |
 | [TD010](docs/checks.md#td010-vulnerability) | `vulnerability` | OSV advisory at or above `min_severity` | block, min high | all |

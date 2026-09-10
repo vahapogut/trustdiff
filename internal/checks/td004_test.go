@@ -166,3 +166,91 @@ func TestTD004Skips(t *testing.T) {
 		})
 	}
 }
+
+// The version the project actually had is the second comparison, and the finding is
+// about how much evidence this release gives up, so the version compared with is
+// whichever predecessor carried the most. A trusted publishing record the release
+// before this one had already dropped is still a record the project is losing, and
+// while only the previous release was consulted that loss was reported as nothing at
+// all. Finding F7 of docs/review-2026-09-10.md, the half of it about TD004.
+func TestTD004ComparesWithTheVersionTheProjectHad(t *testing.T) {
+	trusted := model.Provenance{Kind: model.ProvenanceTrustedPublisher, Verified: true, Identity: "github.com/org/lib"}
+	signature := model.Provenance{Kind: model.ProvenanceSignature, Verified: true}
+	none := model.Provenance{}
+
+	tests := []struct {
+		name     string
+		base     model.Provenance
+		previous model.Provenance
+		current  model.Provenance
+		fires    bool
+		named    string
+		evidence map[string]any
+		text     []string
+	}{
+		{
+			name: "the record was dropped before the release this change locks",
+			base: trusted, previous: none, current: none, fires: true, named: "1.0.0",
+			evidence: map[string]any{
+				"previous_version":      "1.2.0",
+				"previous_kind":         "none",
+				"compared_version":      "1.0.0",
+				"base_version":          "1.0.0",
+				"base_kind":             "trusted-publisher",
+				"base_verified":         true,
+				"downgraded_since_base": true,
+			},
+			text: []string{
+				"1.0.0 was published with a verified trusted publishing record for github.com/org/lib",
+				"weaker than for the version this change replaces",
+				"the release before this one, 1.2.0, was published with no provenance evidence",
+			},
+		},
+		{
+			name: "the previous release carried more, so it is the comparison",
+			base: signature, previous: trusted, current: none, fires: true, named: "1.2.0",
+			evidence: map[string]any{
+				"compared_version":      "1.2.0",
+				"base_version":          "1.0.0",
+				"base_kind":             "signature",
+				"downgraded_since_base": true,
+			},
+			text: []string{"weaker than for the previous one"},
+		},
+		{
+			name: "neither predecessor carried more than this release",
+			base: none, previous: none, current: signature, fires: false,
+		},
+		{
+			// The two are equally strong, so the rule degenerates to the previous
+			// release, which is the closer comparison.
+			name: "equal strength names the previous release",
+			base: trusted, previous: trusted, current: none, fires: true, named: "1.2.0",
+			evidence: map[string]any{"compared_version": "1.2.0", "downgraded_since_base": true},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := subjectA(model.NPM, "lib", "1.3.0")
+			s.Version.Provenance = tt.current
+			withPreviousA(s, "1.2.0").Provenance = tt.previous
+			withBaseA(s, "1.0.0").Provenance = tt.base
+			want := outcomeA{}
+			if tt.fires {
+				want.findings = 1
+			}
+			res := runA(t, "TD004", s, want)
+			if !tt.fires {
+				return
+			}
+			f := res.Findings[0]
+			wantTextA(t, "title", f.Title, "Provenance weaker than "+tt.named)
+			for key, want := range tt.evidence {
+				if got := f.Evidence[key]; got != want {
+					t.Errorf("evidence[%q] = %v, want %v", key, got, want)
+				}
+			}
+			wantTextA(t, "explanation", f.Explanation, tt.text...)
+		})
+	}
+}

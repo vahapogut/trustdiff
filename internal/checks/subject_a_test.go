@@ -132,6 +132,15 @@ func subjectA(eco model.Ecosystem, name, ver string) *Subject {
 	}
 }
 
+// withBaseA attaches the version the base lockfile had, published 90 days before
+// the run, which is what diff hands a check when the bump crosses more than one
+// release. The runner only ever sets it when it differs from the previous release.
+func withBaseA(s *Subject, ver string) *model.VersionInfo {
+	b := versionA(s.Ref.Ecosystem, s.Ref.Name, ver, agoA(90*dayA))
+	s.PreviousInBase = &b
+	return s.PreviousInBase
+}
+
 // withPreviousA attaches a previous version published 60 days before the run.
 func withPreviousA(s *Subject, ver string) *model.VersionInfo {
 	p := versionA(s.Ref.Ecosystem, s.Ref.Name, ver, agoA(60*dayA))

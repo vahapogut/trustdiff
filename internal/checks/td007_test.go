@@ -467,3 +467,87 @@ func TestTD007LoaderCallsAreScopedToTheNewDependency(t *testing.T) {
 		t.Errorf("loader calls = %v, want %v", l.calls, want)
 	}
 }
+
+// A bump usually crosses more than one release, so the second comparison is with
+// the version the base lockfile had. A dependency the release before this one
+// already declared is still new to a project upgrading from further back, and while
+// only that release was consulted the check returned a pass. Finding F7 of
+// docs/review-2026-09-10.md.
+func TestTD007ComparesWithTheVersionTheProjectHad(t *testing.T) {
+	tests := []struct {
+		name     string
+		base     map[string]string
+		previous map[string]string
+		current  map[string]string
+		fires    bool
+		named    string
+		evidence map[string]any
+		text     []string
+	}{
+		{
+			name:     "the dependency arrived in the release between the two",
+			base:     map[string]string{},
+			previous: map[string]string{"left-pad": "^1.3.0"},
+			current:  map[string]string{"left-pad": "^1.3.0"},
+			fires:    true, named: "1.0.0",
+			evidence: map[string]any{
+				"previous_version":      "1.2.0",
+				"base_version":          "1.0.0",
+				"introduced_since_base": true,
+			},
+			text: []string{
+				"1.0.0 declared 0 runtime dependencies; 1.3.0 adds left-pad (^1.3.0)",
+				"the release before this one, 1.2.0, already declared it, but the version this change replaces, 1.0.0, did not",
+			},
+		},
+		{
+			name:     "new against both is still named against the previous release",
+			base:     map[string]string{},
+			previous: map[string]string{},
+			current:  map[string]string{"left-pad": "^1.3.0"},
+			fires:    true, named: "1.2.0",
+			evidence: map[string]any{"base_version": "1.0.0", "introduced_since_base": true},
+			text:     []string{"the version this change replaces, 1.0.0, declared none of it either"},
+		},
+		{
+			name:     "a dependency both predecessors declared is not new",
+			base:     map[string]string{"left-pad": "^1.3.0"},
+			previous: map[string]string{"left-pad": "^1.3.0"},
+			current:  map[string]string{"left-pad": "^1.3.0"},
+			fires:    false,
+		},
+		{
+			name:     "new against the previous release but not against the base",
+			base:     map[string]string{"left-pad": "^1.3.0"},
+			previous: map[string]string{},
+			current:  map[string]string{"left-pad": "^1.3.0"},
+			fires:    true, named: "1.2.0",
+			evidence: map[string]any{"introduced_since_base": false},
+			text:     []string{"the version this change replaces, 1.0.0, already declared it"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := subjectA(model.NPM, "lib", "1.3.0")
+			s.Version.Dependencies = tt.current
+			withPreviousA(s, "1.2.0").Dependencies = tt.previous
+			withBaseA(s, "1.0.0").Dependencies = tt.base
+			want := outcomeA{}
+			if tt.fires {
+				want.findings = 1
+			}
+			res := runA(t, "TD007", s, want)
+			if !tt.fires {
+				return
+			}
+			f := res.Findings[0]
+			wantTextA(t, "title", f.Title, "not declared by "+tt.named)
+			for key, want := range tt.evidence {
+				if got := f.Evidence[key]; got != want {
+					t.Errorf("evidence[%q] = %v, want %v", key, got, want)
+				}
+			}
+			wantTextA(t, "explanation", f.Explanation, tt.text...)
+		})
+	}
+}

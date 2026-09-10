@@ -30,13 +30,32 @@ import (
 // previous version, when the previous version's details could not be fetched,
 // and when a registry could not gather the provenance of either version.
 //
+// Two comparisons, when diff knows both: the release before the evaluated version,
+// and the version the base lockfile locked, which is the version the project
+// actually had. A bump usually crosses more than one release, so a trusted
+// publishing record the release before this one had already dropped is still
+// evidence the project is losing. The version compared with is whichever of the two
+// carried the most, because the finding is about how much of it this release gives
+// up, and it degenerates to the previous release when the two are equally strong.
+// The base version is ignored when the registry client could not gather its
+// provenance.
+//
 // Evidence keys:
 //
-//	previous_version      the previous release compared with
+//	previous_version      the previous release, whether or not it is the version
+//	                      the finding names
 //	previous_kind         its provenance kind: none, signature, attestation or trusted-publisher
 //	previous_verified     whether that evidence was verified
 //	previous_verified_by  registry or deps.dev, when verified
 //	previous_identity     the workflow or repository it names, when known
+//	compared_version      the version the finding names: the stronger of the two
+//	base_version          the version the base lockfile locked, when diff knows one
+//	                      and it is not the previous release (diff only)
+//	base_kind             its provenance kind (diff only)
+//	base_verified         whether that evidence was verified (diff only)
+//	base_verified_by      registry or deps.dev, when verified (diff only)
+//	downgraded_since_base whether that version's evidence was stronger than this
+//	                      one's (diff only)
 //	kind                  the evaluated version's provenance kind
 //	verified              whether its evidence was verified
 //	verified_by           registry or deps.dev, when verified
@@ -73,29 +92,52 @@ func (c td004) Run(ctx context.Context, s *Subject) Result {
 	current := s.Version.Provenance
 	var verifiedBy string
 	current.Verified, verifiedBy = verification(current, s.DepsDev)
-	previous := s.Previous.Provenance
-	previousBy := ""
-	if previous.Verified {
-		previousBy = SourceRegistry
-	} else if previous.Kind == model.ProvenanceAttestation && s.Loader != nil && s.DepsDev != nil && s.DepsDev.Found {
-		if facts, err := s.Loader.DepsDev(ctx, s.Previous.Ref); err == nil && depsDevVerified(facts) {
-			previous.Verified, previousBy = true, SourceDepsDev
-		}
+	previous, previousBy := predecessorProvenance(ctx, s, s.Previous)
+
+	// Two comparisons, when diff knows both: the release before this one, and the
+	// version the project actually had. The finding is about how much evidence this
+	// release lost, so the version to compare with is whichever of the two carried
+	// the most of it; a record the release before this one had already dropped is
+	// still evidence the project is losing.
+	base := comparableBase(s, model.FacetProvenance)
+	var baseProvenance model.Provenance
+	baseBy := ""
+	if base != nil {
+		baseProvenance, baseBy = predecessorProvenance(ctx, s, base)
 	}
-	if previous.Strength() <= current.Strength() {
+	compared, comparedBy, with := previous, previousBy, s.Previous
+	if base != nil && baseProvenance.Strength() > previous.Strength() {
+		compared, comparedBy, with = baseProvenance, baseBy, base
+	}
+	if compared.Strength() <= current.Strength() {
 		return Result{}
 	}
 
 	title := fmt.Sprintf("Provenance weaker than %s: %s before, %s now",
-		s.Previous.Ref.Version, provenanceText(previous, false), provenanceText(current, false))
-	explanation := fmt.Sprintf("%s was published with %s; %s was published with %s, so the evidence tying this release to its source is weaker than for the previous one",
-		s.Previous.Ref.Version, provenanceText(previous, true), ref.Version, provenanceText(current, true))
+		with.Ref.Version, provenanceText(compared, false), provenanceText(current, false))
+	// The tail names what the comparison was against. It stays "the previous one"
+	// wherever the previous release is the version compared with, which is every
+	// run but a diff whose base carried more than that release did.
+	against := "the previous one"
+	if with != s.Previous {
+		against = "the version this change replaces"
+	}
+	explanation := fmt.Sprintf("%s was published with %s; %s was published with %s, so the evidence tying this release to its source is weaker than for %s",
+		with.Ref.Version, provenanceText(compared, true), ref.Version, provenanceText(current, true), against)
+	if with != s.Previous {
+		explanation += fmt.Sprintf("; the release before this one, %s, was published with %s, so the loss is only visible against the version the project actually had",
+			s.Previous.Ref.Version, provenanceText(previous, true))
+	}
 	var notes []string
 	if verifiedBy == SourceDepsDev {
 		notes = append(notes, "the attestation was verified by deps.dev, not by the registry")
 	}
-	if previousBy == SourceDepsDev {
-		notes = append(notes, "the previous version's attestation was verified by deps.dev, not by the registry")
+	if comparedBy == SourceDepsDev {
+		if with == s.Previous {
+			notes = append(notes, "the previous version's attestation was verified by deps.dev, not by the registry")
+		} else {
+			notes = append(notes, fmt.Sprintf("%s's attestation was verified by deps.dev, not by the registry", with.Ref.Version))
+		}
 	}
 	if len(notes) > 0 {
 		explanation += " (" + joinAnd(notes) + ")"
@@ -104,8 +146,15 @@ func (c td004) Run(ctx context.Context, s *Subject) Result {
 		"previous_version":  s.Previous.Ref.Version,
 		"previous_kind":     string(kindOrNone(previous.Kind)),
 		"previous_verified": previous.Verified,
+		"compared_version":  with.Ref.Version,
 		"kind":              string(kindOrNone(current.Kind)),
 		"verified":          current.Verified,
+	}
+	if base != nil {
+		evidence["base_version"] = base.Ref.Version
+		evidence["base_kind"] = string(kindOrNone(baseProvenance.Kind))
+		evidence["base_verified"] = baseProvenance.Verified
+		evidence["downgraded_since_base"] = baseProvenance.Strength() > current.Strength()
 	}
 	if previous.Identity != "" {
 		evidence["previous_identity"] = previous.Identity
@@ -116,10 +165,34 @@ func (c td004) Run(ctx context.Context, s *Subject) Result {
 	if previousBy != "" {
 		evidence["previous_verified_by"] = previousBy
 	}
+	if base != nil && baseBy != "" {
+		evidence["base_verified_by"] = baseBy
+	}
 	if verifiedBy != "" {
 		evidence["verified_by"] = verifiedBy
 	}
 	return Result{Findings: []model.Finding{NewFinding(c, s, title, explanation, evidence)}}
+}
+
+// predecessorProvenance reads what an earlier version was published with, and who
+// vouched for it. It reads deliberately differently from verification, which judges
+// the evaluated version: here a registry that verified the record settles it, and
+// only an attestation the registry left unverified is taken to deps.dev, and only
+// when deps.dev has indexed the evaluated version too. That last condition is what
+// keeps indexing lag from inventing a downgrade out of a predecessor deps.dev knows
+// and an evaluated version it has not seen yet.
+func predecessorProvenance(ctx context.Context, s *Subject, v *model.VersionInfo) (model.Provenance, string) {
+	p := v.Provenance
+	if p.Verified {
+		return p, SourceRegistry
+	}
+	if p.Kind == model.ProvenanceAttestation && s.Loader != nil && s.DepsDev != nil && s.DepsDev.Found {
+		if facts, err := s.Loader.DepsDev(ctx, v.Ref); err == nil && depsDevVerified(facts) {
+			p.Verified = true
+			return p, SourceDepsDev
+		}
+	}
+	return p, ""
 }
 
 // verification decides whether provenance counts as verified and by whom. An

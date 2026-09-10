@@ -57,10 +57,10 @@
               "id": "TD004",
               "name": "trust-downgrade",
               "shortDescription": {
-                "text": "A version whose publishing evidence is weaker than the previous version's."
+                "text": "A version whose publishing evidence is weaker than the previous release's, or than that of the version the base lockfile locked."
               },
               "fullDescription": {
-                "text": "The previous version carried a verified build attestation or a trusted publishing record and this one carries a bare signature or nothing. Strength runs none, signature, attestation, trusted publisher, and a verified record ranks above an unverified one of the same kind."
+                "text": "A predecessor carried a verified build attestation or a trusted publishing record and this version carries a bare signature or nothing. Strength runs none, signature, attestation, trusted publisher, and a verified record ranks above an unverified one of the same kind. A bump usually crosses more than one release, so the comparison is with whichever of the two predecessors carried the most: a record dropped before the release this change locks is still a record the project is losing."
               },
               "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td004-trust-downgrade"
             },
@@ -68,10 +68,10 @@
               "id": "TD005",
               "name": "install-script-introduced",
               "shortDescription": {
-                "text": "An npm version that declares an install-time script (preinstall, install or postinstall) while the previous version declared none."
+                "text": "An npm version that declares an install-time script (preinstall, install or postinstall) which the previous release did not declare, or which the version the base lockfile locked did not."
               },
               "fullDescription": {
-                "text": "An npm version declares preinstall, install or postinstall while the previous version declared none. npm runs all three on every install of the package, so code that arrives this way runs on the machine of everyone who updates."
+                "text": "An npm version declares preinstall, install or postinstall that a predecessor did not. npm runs all three on every install of the package, so code that arrives this way runs on the machine of everyone who updates. A bump usually crosses more than one release, so a script the release before this one already carried is still new to a project upgrading from further back."
               },
               "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td005-install-script-introduced"
             },
@@ -90,10 +90,10 @@
               "id": "TD007",
               "name": "new-dependency-introduced",
               "shortDescription": {
-                "text": "Every runtime dependency the evaluated version declares and the previous version did not."
+                "text": "Every runtime dependency the evaluated version declares that the previous release did not, or that the version the base lockfile locked did not."
               },
               "fullDescription": {
-                "text": "Every added dependency is reported on its own, so that a reviewed one can be allowed separately. A new dependency that is itself young, barely used or unknown to deps.dev is escalated, because a package that pulls in a payload usually pulls in a fresh one."
+                "text": "Every added dependency is reported on its own, so that a reviewed one can be allowed separately. A new dependency that is itself young, barely used or unknown to deps.dev is escalated, because a package that pulls in a payload usually pulls in a fresh one. A bump usually crosses more than one release, so a dependency the release before this one already declared is still new to a project upgrading from further back."
               },
               "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td007-new-dependency-introduced"
             },
