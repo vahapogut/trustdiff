@@ -44,7 +44,12 @@ Run these on the commit you intend to tag, with the working tree clean.
 7. **Manual.** `README.md` and `SECURITY.md`: the version sentence near the top
    of the readme, and the archive names used as examples in both files, name the
    release that is about to exist. Both carry `trustdiff_<version>_<os>_<arch>`
-   examples and both go stale silently.
+   examples and both go stale silently. `.pre-commit-hooks.yaml` carries a third:
+   the `rev:` in its header comment, which a reader copies into their own
+   configuration. Bump it only when this release changes what the hook does, since
+   it names the first release a reader can pin and get the current behavior from,
+   not the newest release that exists. It said `v0.2.0` until v0.6.0 widened the
+   `files` pattern from four formats to nine.
 8. Commit the changelog and readme edits as `chore(release): X.Y.Z`.
 
 `action.yml` is *not* touched here. Its pinned version and its sha256 table can
