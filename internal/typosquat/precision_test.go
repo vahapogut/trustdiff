@@ -52,7 +52,7 @@ func TestPrecision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close() //nolint:errcheck // a fixture opened for reading
+	defer f.Close()
 	lf, err := p.Parse(precisionCorpus, f)
 	if err != nil {
 		t.Fatal(err)
