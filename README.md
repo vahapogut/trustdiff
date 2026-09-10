@@ -297,17 +297,25 @@ Exit code 0 (no blocking findings).
 In a workflow, write SARIF instead and let code scanning put those findings on the diff:
 
 ```yaml
-- uses: vahapogut/trustdiff@v0.4.1
+- uses: vahapogut/trustdiff@6dc4bfae90521a0e491bc128ae0452d49dd3ed35 # v0.4.1
   with:
-    version: v0.4.1
     fail-on: block
     format: sarif
 ```
 
-`version` is given explicitly because the action's own default lags one release
-behind. The checksum table it verifies a download against can only be written after
-the archives exist, so the commit that fills it in comes after the tag, and the
-action at tag `v0.4.1` still defaults to downloading `v0.4.0`.
+The `uses:` is a commit sha and not a tag, and this is the one example in these
+docs where that is not just good practice. `doctor` reports a tagged `uses:` as
+`wrong` under DR110, at `warn`, which `doctor --ci` fails on by default, so a
+repository that copied a tagged example would fail its own hardening check on the
+workflow it had just added.
+
+The sha is the `chore(action): pin <tag> and checksums` commit for that release,
+not the tag. The table the action verifies a download against can only be written
+after the archives exist, so it is filled in one commit after the tag, and the
+action at the tag itself still defaults to the release before it. Pinning at the
+pin commit is what makes `version` unnecessary: at that sha the default already
+is that release. Pass `version:` only to run a different one, which takes the
+cosign route described below.
 
 The action downloads the release you name and checks what it downloaded before running it. For the version it defaults to it compares the sha256 against a table embedded in `action.yml`, which was read from that release's cosign-signed `checksums.txt` and committed; for any other version it fetches `checksums.txt` and its cosign bundle and runs `cosign verify-blob` against the certificate identity of this repository's release workflow at that tag. The `verification` output says which of the two happened. Then it uploads the SARIF, for which the job needs `security-events: write`. A pull request from a fork gets a read-only token whatever the workflow asks for, so there the action skips the upload and prints the findings in the job log instead of failing on a permission the change cannot be given. Pass `upload-sarif: false` to skip the upload deliberately, where the token cannot write code scanning results or the findings should stay in the log; the report is printed there instead, and the `report` output still names the file a later step can archive. Or run the binary yourself:
 

@@ -156,3 +156,35 @@ func contains(list []string, want string) bool {
 	}
 	return false
 }
+
+// The README's workflow example is the line a reader copies into their own
+// repository. A tagged "uses:" there is what DR110 reports as wrong, at warn,
+// which doctor --ci fails on by default, so the example would have handed every
+// reader a workflow that fails their own hardening check. Finding F22 of
+// docs/review-2026-09-10.md.
+//
+// The sha has to be the "chore(action): pin <tag> and checksums" commit of the
+// release: at the tag itself the action still defaults to the release before it,
+// because the checksum table can only be written once the archives exist. This
+// cannot check that the sha is the newest such commit, since at the moment it is
+// written the newest one is the commit being written. It checks the shape, which
+// is the half that rots silently.
+func TestREADMEPinsTheActionAtACommit(t *testing.T) {
+	readme := string(repoFile(t, "README.md"))
+	uses := regexp.MustCompile(`(?m)^- uses: vahapogut/trustdiff@(\S+)(.*)$`).FindAllStringSubmatch(readme, -1)
+	if len(uses) == 0 {
+		t.Fatal("the README shows no vahapogut/trustdiff action example; the pattern or the document changed")
+	}
+	for _, match := range uses {
+		ref, rest := match[1], match[2]
+		if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(ref) {
+			t.Errorf("the example pins %s, which is not a commit sha, and DR110 reports a tag at warn", ref)
+			continue
+		}
+		// The sha alone says nothing about which release it is, which is why every
+		// pinned uses: in this repository's own workflows carries the tag beside it.
+		if !strings.Contains(rest, "# v") {
+			t.Errorf("the example pins %s with no trailing # vX.Y.Z comment, so nothing says which release it is", ref)
+		}
+	}
+}

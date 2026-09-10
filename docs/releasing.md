@@ -198,9 +198,20 @@ anything at run time. That table can only be written after the release exists.
 
 One thing this ordering cannot fix: the tag is pushed before this commit exists,
 so the action at tag `vX.Y.Z` always defaults to the release before it. That is why
-the README's workflow example passes `version:` explicitly rather than relying on
-the default. If the action is ever given a moving major tag, advance it to this
-commit and the example can drop the input.
+the README's workflow example pins `uses:` at the sha of this commit rather than at
+the tag: at this sha the default already is this release, and the example needs no
+`version:` input. It is also the only pin a reader can copy without failing their
+own `doctor --ci`, since DR110 reports a tagged `uses:` at `warn`.
+
+So the example carries a sha that only exists once this commit is pushed, which
+makes it the one edit that cannot be made before the tag:
+
+8. **Manual.** After pushing the commit above, `git rev-parse HEAD`, and put that
+   sha in the README's workflow example with a trailing `# vX.Y.Z` comment. Commit
+   it as `docs: pin the readme example at the vX.Y.Z action commit`. `internal/cli`
+   `TestREADMEPinsTheActionAtACommit` fails while the example holds a tag, so this
+   cannot be forgotten quietly; it cannot check that the sha is the newest one,
+   because the newest one is the commit being written.
 
 Leaving an entry as `pending` is safe but slower for every caller: the action
 falls back to verifying the release's `checksums.txt` with cosign at run time,
