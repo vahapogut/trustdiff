@@ -2,6 +2,7 @@ package cli
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -735,6 +736,101 @@ func TestScanDoesNotReportTheProjectAsItsOwnDependency(t *testing.T) {
 			slices.Sort(wantUnhashed)
 			if !slices.Equal(unhashed, wantUnhashed) {
 				t.Errorf("integrity-missing on %v, want %v", unhashed, wantUnhashed)
+			}
+		})
+	}
+}
+
+// newScanRepo is scanFixture inside a git repository, for the paths a report
+// carries. The repository is isolated from the machine's git configuration the way
+// internal/gitdiff isolates its own: the two configuration files are named inside
+// the temporary directory and never created, which git reads as empty.
+func newScanRepo(t *testing.T) string {
+	t.Helper()
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is not on PATH")
+	}
+	useFakeLoader(t)
+	dir := t.TempDir()
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(dir, "absent-global-gitconfig"))
+	t.Setenv("GIT_CONFIG_SYSTEM", filepath.Join(dir, "absent-system-gitconfig"))
+	cmd := exec.CommandContext(t.Context(), git, "init", "--quiet")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	return dir
+}
+
+// TestScanReportsPathsFromTheRepositoryRoot is finding F17 of
+// docs/review-2026-09-10.md. A SARIF file is read by a code scanning service, which
+// resolves every artifact location against the checkout root, so "scan frontend"
+// writing package-lock.json put the annotation on a file at the top of the
+// repository: a different file, or none. diff was already right, because git names
+// every path from the root, and the two commands now agree.
+func TestScanReportsPathsFromTheRepositoryRoot(t *testing.T) {
+	lock := readRegressionFixture(t, "f17-sarif-path-from-the-repository-root", "package-lock.json")
+
+	tests := []struct {
+		name string
+		// from is the directory to run in, relative to the repository root.
+		from string
+		args []string
+		want string
+	}{
+		{
+			name: "a subdirectory named on the command line",
+			from: ".",
+			args: []string{"scan", "frontend"},
+			want: "frontend/package-lock.json",
+		},
+		{
+			// Standing in the directory does not make it the root of anything.
+			name: "the working directory, which is a subdirectory",
+			from: "frontend",
+			args: []string{"scan"},
+			want: "frontend/package-lock.json",
+		},
+		{
+			name: "the repository root itself, which prefixes nothing",
+			from: ".",
+			args: []string{"scan", "."},
+			want: "package-lock.json",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := newScanRepo(t)
+			where := "frontend/package-lock.json"
+			if tt.want == "package-lock.json" {
+				where = "package-lock.json"
+			}
+			writeFile(t, dir, where, lock)
+			chdir(t, filepath.Join(dir, filepath.FromSlash(tt.from)))
+
+			args := append([]string{"--format", "sarif", "--fail-on", "never"}, tt.args...)
+			code, stdout, stderr := run(t, args...)
+			if code != ExitOK {
+				t.Fatalf("exit = %d, want %d (stderr %q)\n%s", code, ExitOK, stderr, stdout)
+			}
+			if want := `"uri": "` + tt.want + `"`; !strings.Contains(stdout, want) {
+				t.Errorf("the SARIF file does not carry %s:\n%s", want, stdout)
+			}
+
+			// The json report is where a script reads the same path, so the two say
+			// the same thing about the same file.
+			args = append([]string{"--format", "json", "--fail-on", "never"}, tt.args...)
+			code, stdout, stderr = run(t, args...)
+			if code != ExitOK {
+				t.Fatalf("exit = %d, want %d (stderr %q)\n%s", code, ExitOK, stderr, stdout)
+			}
+			rep := decodeReport(t, stdout)
+			if len(rep.Subjects) == 0 || rep.Subjects[0].Location == nil {
+				t.Fatalf("no located subject in %s", stdout)
+			}
+			if got := rep.Subjects[0].Location.Path; got != tt.want {
+				t.Errorf("location = %q, want %q", got, tt.want)
 			}
 		})
 	}

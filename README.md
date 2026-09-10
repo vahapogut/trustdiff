@@ -315,7 +315,7 @@ The action downloads the pinned release, verifies it against checksums signed wi
 trustdiff diff --base "$BASE_SHA" --format sarif > trustdiff.sarif
 ```
 
-`trustdiff scan` evaluates every entry of every lockfile it finds, which is the first-adoption pass rather than the gate. `trustdiff hook install` writes a pre-commit hook that runs the same diff locally, and `.pre-commit-hooks.yaml` offers it to pre-commit users. Exceptions live in `.trustdiff.yaml` with a reason and an expiry date and are reviewed like code.
+`trustdiff scan` evaluates every entry of every lockfile it finds, which is the first-adoption pass rather than the gate. It names every file from the root of the repository, the way `diff` does, so `scan frontend --format sarif` puts its annotations on `frontend/package-lock.json` and not on a file of the same name at the top of the checkout. `trustdiff hook install` writes a pre-commit hook that runs the same diff locally, and `.pre-commit-hooks.yaml` offers it to pre-commit users. Exceptions live in `.trustdiff.yaml` with a reason and an expiry date and are reviewed like code.
 
 A note on what the gate compares against: the previous version of a package is the release before the one you are getting, and separately the version your project actually had. Upgrading across several releases makes those differ, and `diff` uses both, so a postinstall script that arrived two releases ago is still reported as new to your project.
 
