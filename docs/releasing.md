@@ -446,6 +446,11 @@ make.
 This first version goes out without a provenance attestation. Every version after it
 gets one, because every version after it comes from the workflow.
 
+Do not be alarmed when `npm view` answers 404 straight afterwards. A new package under
+a new organisation takes a few minutes to appear: the publish returns 200, `npm access
+get status` already reports it as public, and the registry document is the last thing
+to catch up. On 2026-09-10 that took a little over three minutes.
+
 ### 8.3 Add the trusted publisher
 
 With the package on the registry, point it at the workflow that may publish it:
