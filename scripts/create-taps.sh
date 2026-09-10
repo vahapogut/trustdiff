@@ -100,7 +100,7 @@ readme() {
 
 			## What is in here
 
-			One file, \`Casks/trustdiff.rb\`, and nothing else. It is written by [goreleaser](https://goreleaser.com) from \`.goreleaser.yaml\` in the trustdiff repository and committed here by the release workflow every time a version tag is pushed. Nothing here is edited by hand, so a pull request against the cask would be overwritten by the next release. Changes belong in [${owner}/trustdiff](${project_url}), where the cask is generated from.
+			One generated file, \`Casks/trustdiff.rb\`, beside this README and the license. It is written by [goreleaser](https://goreleaser.com) from \`.goreleaser.yaml\` in the trustdiff repository and committed here by the release workflow every time a version tag is pushed. Nothing here is edited by hand, so a pull request against the cask would be overwritten by the next release. Changes belong in [${owner}/trustdiff](${project_url}), where the cask is generated from.
 
 			A release candidate, meaning a tag with a suffix such as \`v1.2.3-rc.1\`, is deliberately not published here. That is what makes one safe to push: it exercises the whole release pipeline without moving what \`brew upgrade\` would hand to somebody.
 
@@ -128,7 +128,7 @@ readme() {
 
 			## What is in here
 
-			One file, \`bucket/trustdiff.json\`, and nothing else. It is written by [goreleaser](https://goreleaser.com) from \`.goreleaser.yaml\` in the trustdiff repository and committed here by the release workflow every time a version tag is pushed. The architecture table inside it, one entry per Windows build with its download URL and its sha256, is generated from that release's archives, so a hand edit would go stale on the next release and would be overwritten anyway. Changes belong in [${owner}/trustdiff](${project_url}).
+			One generated file, \`bucket/trustdiff.json\`, beside this README and the license at the repository root, which is where they belong because Scoop counts everything under \`bucket/\`. It is written by [goreleaser](https://goreleaser.com) from \`.goreleaser.yaml\` in the trustdiff repository and committed here by the release workflow every time a version tag is pushed. The architecture table inside it, one entry per Windows build with its download URL and its sha256, is generated from that release's archives, so a hand edit would go stale on the next release and would be overwritten anyway. Changes belong in [${owner}/trustdiff](${project_url}).
 
 			A release candidate, meaning a tag with a suffix such as \`v1.2.3-rc.1\`, is deliberately not published here, so pushing one exercises the release pipeline without moving what \`scoop update\` would hand to somebody.
 

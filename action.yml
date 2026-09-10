@@ -40,6 +40,7 @@
 #         fetch-depth: 0       # diff needs the base commit's lockfiles
 #     - uses: vahapogut/trustdiff@v0.4.0
 #       with:
+#         version: v0.4.0    # the tag's own default is the release before it
 #         base: ${{ github.event.pull_request.base.sha }}
 
 name: trustdiff

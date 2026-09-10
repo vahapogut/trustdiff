@@ -6,7 +6,7 @@ Version 0.4.0 ships `check` for single packages and for a manifest read at the v
 
 ## Demo
 
-Two commands against the live registries, captured on 2026-09-09. The four lines about a lockfile entry that a ref named on the command line does not have are trimmed here:
+Two commands against the live registries, captured on 2026-09-09. The six lines about a lockfile entry that a ref named on the command line does not have are trimmed here:
 
 ```
 $ trustdiff check npm:express@4.19.2 pypi:requests cargo:serde
@@ -26,7 +26,7 @@ cargo:serde@1.0.229  WARN
 3 subjects, 0 block, 1 warn, 0 info, 9 skipped checks. Exit code 0 (no blocking findings).
 ```
 
-`flatmap-stream@0.1.1` is the package that carried the 2018 event-stream backdoor. npm removed it from the registry, so the history checks have nothing to compare and say so; the advisory and download checks still run (the other seven skipped lines are trimmed here):
+`flatmap-stream@0.1.1` is the package that carried the 2018 event-stream backdoor. npm removed it from the registry, so the history checks have nothing to compare and say so; the advisory and download checks still run (the other nine skipped lines are trimmed here):
 
 ```
 $ trustdiff check npm:flatmap-stream@0.1.1
@@ -53,7 +53,7 @@ npm:flatmap-stream@0.1.1  BLOCK
   skipped TD001: registry: version info of npm:flatmap-stream@0.1.1: npm: flatmap-stream@0.1.1: not found in the registry
   ...
 
-1 subject, 3 block, 0 warn, 1 info, 8 skipped checks. Exit code 1 (blocking findings).
+1 subject, 3 block, 0 warn, 1 info, 10 skipped checks. Exit code 1 (blocking findings).
 ```
 
 ## Install
@@ -75,7 +75,7 @@ scoop bucket add trustdiff https://github.com/vahapogut/scoop-bucket
 scoop install trustdiff
 ```
 
-Both point at [vahapogut/homebrew-tap](https://github.com/vahapogut/homebrew-tap) and [vahapogut/scoop-bucket](https://github.com/vahapogut/scoop-bucket), which hold one generated file each and nothing else.
+Both point at [vahapogut/homebrew-tap](https://github.com/vahapogut/homebrew-tap) and [vahapogut/scoop-bucket](https://github.com/vahapogut/scoop-bucket), which hold one generated file each beside a README and the license.
 
 The Homebrew line names the cask in full on purpose. Since Homebrew 6.0 a tap that is not one of Homebrew's own has to be trusted before its code will run, and installing a fully qualified name trusts that one cask and nothing else. `brew tap vahapogut/tap` followed by the short name needs a separate `brew trust --cask vahapogut/tap/trustdiff`, and `brew trust vahapogut/tap` accepts everything the tap ever holds, which is more than anyone should hand a third party.
 
@@ -205,7 +205,15 @@ $ trustdiff --format json check cargo:serde@1.0.210
       "skipped": [
         {
           "check": "TD003",
-          "reason": "pypi records no maintainer set per version; the run read no baseline"
+          "reason": "cargo records no maintainer set per version; the run read no baseline"
+        },
+        {
+          "check": "TD013",
+          "reason": "no lockfile entry for cargo:serde@1.0.210: the ref was named directly, not read from a lockfile"
+        },
+        {
+          "check": "TD014",
+          "reason": "no lockfile entry for cargo:serde@1.0.210: the ref was named directly, not read from a lockfile"
         }
       ],
       "findings": [
@@ -240,7 +248,7 @@ $ trustdiff --format json check cargo:serde@1.0.210
       "info": 0,
       "warn": 1
     },
-    "skipped": 1,
+    "skipped": 3,
     "exit_code": 0,
     "exit_meaning": "no blocking findings"
   }
@@ -279,9 +287,15 @@ In a workflow, write SARIF instead and let code scanning put those findings on t
 ```yaml
 - uses: vahapogut/trustdiff@v0.4.0
   with:
+    version: v0.4.0
     fail-on: block
     format: sarif
 ```
+
+`version` is given explicitly because the action's own default lags one release
+behind. The checksum table it verifies a download against can only be written after
+the archives exist, so the commit that fills it in comes after the tag, and the
+action at tag `v0.4.0` still defaults to downloading `v0.3.0`.
 
 The action downloads the pinned release, verifies it against checksums signed with cosign before running it, and uploads the SARIF. The job needs `security-events: write` for that upload. A pull request from a fork gets a read-only token whatever the workflow asks for, so there the action skips the upload and prints the findings in the job log instead of failing on a permission the change cannot be given. Or run the binary yourself:
 

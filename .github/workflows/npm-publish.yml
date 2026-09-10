@@ -7,10 +7,12 @@
 # no secret is referenced: a leaked repository secret cannot publish this package,
 # because there is no secret to leak.
 #
-# It stages rather than publishes, and that is deliberate. Since 2026-09-03 every
-# trusted publishing configuration can stage by default and direct publishing is
-# opt in per configuration, which npm recommends leaving alone because staging
-# puts a person between a build and a version the world can install. This project
+# It stages rather than publishes, and that is deliberate. A trusted publishing
+# configuration carries an explicit permission, chosen when it is created: npm
+# refuses to create one without either --allow-stage-publish or --allow-publish,
+# so there is no default to fall back on. This package was given staging only,
+# which is what npm recommends, because staging puts a person between a build and
+# a version the world can install. This project
 # exists to say that a package which changed hands deserves a look before it lands,
 # so opting out of the one place it can practise that would be a strange thing to
 # do. A staged version is on the registry and nobody can install it until it is
@@ -41,8 +43,8 @@
 #      with OIDC", was still open on 2026-09-10, so the first version has to come
 #      from a person who can answer a two-factor prompt.
 #   3. The trusted publisher itself, added with "npm trust github" or on the
-#      package settings page, naming this repository and this file. The default it
-#      is created with, staging only, is the one this workflow expects.
+#      package settings page, naming this repository and this file, and created
+#      with --allow-stage-publish, which is the permission this workflow expects.
 #
 # Versions were read on 2026-09-10: npm 12.0.2 is current and its engines field
 # asks for node ^22.22.2 || ^24.15.0 || >=26.0.0; trusted publishing itself needs
@@ -210,7 +212,11 @@ jobs:
         run: npm stage publish --provenance --access public
 
       - name: Say what happens next
-        if: always()
+        # success() and not always(): on a failed run the decide step may never have
+        # set its outputs, and this would then announce a staged version with an
+        # empty name at the bottom of a red job, which is the least helpful thing a
+        # last step can do.
+        if: success()
         run: |
           name="${{ steps.decide.outputs.name }}"
           version="${{ steps.decide.outputs.version }}"
@@ -221,6 +227,11 @@ jobs:
             ;;
           published)
             echo "nothing staged; ${name}@${version} is already published"
+            exit 0
+            ;;
+          new) ;;
+          *)
+            echo "nothing staged; the run did not get as far as deciding"
             exit 0
             ;;
           esac

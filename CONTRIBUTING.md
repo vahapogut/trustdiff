@@ -34,8 +34,9 @@ This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). Security pr
 | `snapshot` | `goreleaser release --snapshot --clean --skip=sign,publish,sbom`: a local dry run of the release pipeline that needs neither syft, cosign nor a GitHub token. The archives land in `dist/` |
 | `clean` | Removes `bin/` and `dist/` |
 | `tools` | Installs the pinned developer tools from `tools.mk` |
+| `demo` | Runs the gate over `testdata/demo-repo` offline with the clock pinned |
 
-`fixture` records one live registry response into a testdata directory (see Recording fixtures below) and `test-integration` runs the live tests in `internal/integration`, which need the network and skip when `TRUSTDIFF_INTEGRATION_OFFLINE` is set. The `demo` target arrives with the demo repository in 0.2.0.
+`fixture` records one live registry response into a testdata directory (see Recording fixtures below) and `test-integration` runs the live tests in `internal/integration`, which need the network and skip when `TRUSTDIFF_INTEGRATION_OFFLINE` is set. `demo` runs the pull request gate over the demo repository with `--offline` and the clock pinned, so it prints the same thing on every machine; [docs/demo-repo.md](docs/demo-repo.md) says what that is.
 
 CI runs `lint`, `test`, `vet`, `vuln` and `sec`, plus a binary size gate and a direct dependency budget gate. Run the same targets locally before opening a pull request.
 

@@ -35,10 +35,12 @@ if [ ! -f "${dir}/package.json" ]; then
 	echo "run this from the root of a trustdiff checkout: ${dir}/package.json is read from here" >&2
 	exit 2
 fi
-if ! command -v npm >/dev/null 2>&1; then
-	echo "npm is not on PATH" >&2
-	exit 2
-fi
+for tool in npm node; do
+	if ! command -v "${tool}" >/dev/null 2>&1; then
+		echo "${tool} is not on PATH" >&2
+		exit 2
+	fi
+done
 
 name=$(node --print "require('./${dir}/package.json').name")
 version=$(node --print "require('./${dir}/package.json').version")
@@ -144,18 +146,23 @@ fi
 # 3. The trusted publisher, so the workflow can take over.
 echo
 echo "pointing ${name} at ${repo} .github/workflows/${workflow}"
-if npm trust list "${name}" 2>/dev/null | grep -q "${workflow}"; then
+# The output and the exit status are kept apart on purpose. npm trust list writes
+# to stderr and exits non-zero when there is nothing configured yet, and an earlier
+# version of this discarded both, so the "already configured" branch could never be
+# taken and a second run would try to create the configuration again.
+if trust_out=$(npm trust list "${name}" 2>&1) && printf '%s' "${trust_out}" | grep -q "${workflow}"; then
 	echo "already configured, leaving it alone"
 else
 	# The package is named rather than inferred: npm would otherwise read the
 	# package.json of whatever directory this runs in, and that is the repository
 	# root here, not the scanner.
 	#
-	# --allow-stage-publish is passed rather than left to the default. Staging is
-	# the default for a configuration created today, but that default changed once
-	# already, in September 2026, and the workflow runs "npm stage publish" and
-	# nothing else. Saying it out loud is what keeps the two in step. Direct
-	# publishing is deliberately not enabled; docs/releasing.md section 8 says why.
+	# --allow-stage-publish is not optional either. npm refuses to create a
+	# configuration without a permission flag: trust-cmd.js throws "At least one
+	# permission flag is required". Staging is the one this project chooses, because
+	# the workflow runs "npm stage publish" and nothing else, and because a person
+	# between a build and a version the world can install is the whole argument this
+	# tool makes. docs/releasing.md section 8 says why at length.
 	npm trust github "${name}" --repo "${repo}" --file "${workflow}" --allow-stage-publish
 	echo "configured"
 fi
@@ -165,9 +172,9 @@ cat <<EOF
 Done. From here on, bump "version" in ${dir}/package.json in the commit that
 carries the trustdiff release it belongs to, and the version tag stages it.
 
-Staged, not published: a trusted publishing configuration permits staging by
-default and direct publishing is opt in, and this project deliberately does not
-take that opt-in. To release a staged version:
+Staged, not published: this configuration was created with staging permission and
+not direct publish, which is a choice rather than a default, and one this project
+makes on purpose. To release a staged version:
 
   npm stage list ${name}
   npm stage download <stage-id>   # read what the job built

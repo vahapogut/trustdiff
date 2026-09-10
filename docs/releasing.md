@@ -8,12 +8,14 @@ Read this page top to bottom the first time. The steps that need a human are
 marked **manual**. Two of them recur on every release, the changelog and the
 readme edits before the tag and the tag itself. The rest are one-time setup: two
 for the Homebrew tap and the Scoop bucket in section 6, and three for the npm
-package in section 8. None of the one-time steps blocks a release; a tag with
-none of them done still produces a complete, signed, verifiable release.
+package in section 8. All five were done on 2026-09-10, so those sections now read
+as a record of what was set up rather than as work waiting to be done. None of them
+blocks a release either: a tag with none of them done still produces a complete,
+signed, verifiable release.
 
-Pinned versions live in `tools.mk` and are repeated in the release workflow:
-goreleaser v2.18.1, cosign v3.1.3, syft v1.51.1. Bump them in `tools.mk` first,
-then in the workflow, never only in one place.
+goreleaser v2.18.1 and cosign v3.1.3 are pinned twice, in `tools.mk` and in the
+release workflow, and must be bumped in both. syft v1.51.1 is pinned only in
+`.github/workflows/release.yml`, because nothing outside the release job runs it.
 
 ## 1. Before the tag
 
@@ -39,9 +41,10 @@ Run these on the commit you intend to tag, with the working tree clean.
 6. **Manual.** `CHANGELOG.md`: move the entries under `Unreleased` to a new
    `## [X.Y.Z] - YYYY-MM-DD` heading, leave `Unreleased` empty, and update the
    link definitions at the bottom of the file.
-7. **Manual.** `README.md`: the version sentence near the top, and the archive
-   names used as examples in the Install section, name the release that is about
-   to exist.
+7. **Manual.** `README.md` and `SECURITY.md`: the version sentence near the top
+   of the readme, and the archive names used as examples in both files, name the
+   release that is about to exist. Both carry `trustdiff_<version>_<os>_<arch>`
+   examples and both go stale silently.
 8. Commit the changelog and readme edits as `chore(release): X.Y.Z`.
 
 `action.yml` is *not* touched here. Its pinned version and its sha256 table can
@@ -159,13 +162,21 @@ anything at run time. That table can only be written after the release exists.
    cosign signature you checked.
 2. In `action.yml`, set the `version` input's `default:` to the new tag.
 3. Set `pinned_version=` in the "Resolve the release archive for this runner"
-   step to the same tag. It appears twice in the file and both must change.
+   step to the same tag. There is one assignment, and it has to match the
+   `default:` above it or the table is never consulted.
 4. Replace all six values in the `case "${os}_${arch}"` table with the ones from
    `checksums.txt`, matching each line by archive name. Copy them; do not retype
    them.
-5. `git diff action.yml` and read it. Six hashes changed, two version strings
+5. `git diff action.yml` and read it. Six hashes changed, the `default:` and the
+   `pinned_version=` changed, the two example snippets in the header comment
    changed, nothing else.
 6. Commit as `chore(action): pin v0.4.0 and checksums`.
+
+One thing this ordering cannot fix: the tag is pushed before this commit exists,
+so the action at tag `vX.Y.Z` always defaults to the release before it. That is why
+the README's workflow example passes `version:` explicitly rather than relying on
+the default. If the action is ever given a moving major tag, advance it to this
+commit and the example can drop the input.
 
 Leaving an entry as `pending` is safe but slower for every caller: the action
 falls back to verifying the release's `checksums.txt` with cosign at run time,
@@ -236,7 +247,10 @@ homebrew-core or homebrew-cask, and no `trustdiff` in the main or extras Scoop
 buckets. Section 9 of `docs/PLAN.md` records `installgate` as the fallback name
 and asks for this check right before this task.
 
-### 6.2 Manual: create the token
+### 6.2 Create the token
+
+Done on 2026-09-10. Redo this when the token expires, which is what its expiry date
+is for, or when it is rotated for any other reason.
 
 A fine-grained personal access token, not a classic one.
 
@@ -254,7 +268,10 @@ automatic `GITHUB_TOKEN` for that, and a token that can do both jobs is a token
 whose leak costs twice as much. Nothing in the tap or the bucket needs issues,
 pull requests, workflows or metadata write.
 
-### 6.3 Manual: store it as a secret
+### 6.3 Store it as a secret
+
+Done on 2026-09-10. `gh secret list --repo vahapogut/trustdiff` shows
+`TAP_GITHUB_TOKEN` and the date it was set.
 
 Store the token as a repository secret on `vahapogut/trustdiff` named
 `TAP_GITHUB_TOKEN`:
@@ -290,7 +307,8 @@ Nothing needs undoing. The first release with the token overwrites both files.
 
 ### 6.4 What the first release with the token looks like
 
-Push a release candidate first, for example `v0.4.0-rc.1`. Because
+Push a release candidate first, with the version you are about to release and an
+`-rc.1` suffix. Because
 `skip_upload` is `auto` when the token is present, goreleaser will log
 `prerelease detected with 'auto' upload, skipping homebrew publish` and the same
 for Scoop. That proves the guard, the tag parsing and the generated files, and
@@ -388,9 +406,11 @@ publisher alone. It handles no credential of its own: npm asks for the one time
 password in its own prompt. The three steps, and why each is what it is, were
 confirmed against npm's own documentation on 2026-09-10.
 
-### 8.1 Manual: create the npm organisation
+### 8.1 Create the npm organisation
 
-This is the one step nothing can do for you.
+Done on 2026-09-10: the organisation `trustdiff` exists and `vahapogut1` owns it.
+This is the one step nothing can do for you, so it is written out in full for the
+next scope this project ever needs.
 
 The scope has to exist and it cannot be a personal one. npm gives every account the
 scope matching its own name, and the npm account here is `vahapogut1`, so it owns
@@ -418,6 +438,11 @@ If the name `trustdiff` turns out to be taken, the fallbacks are
 workflow.
 
 ### 8.2 Publish the first version by hand
+
+Done on 2026-09-10: `@trustdiff/bun-scanner@0.4.0` is public. It was packed from
+the working tree rather than from the `v0.4.0` tag, so its README is a few commits
+newer than the tag's. Every later version comes from the workflow, which packs the
+tag's own checkout, so this is the only version that can differ.
 
 Trusted publishing cannot create a package that does not exist yet. npm/cli issue
 8544, "Allow publishing initial version with OIDC", was still open on 2026-09-10,
@@ -453,19 +478,29 @@ to catch up. On 2026-09-10 that took a little over three minutes.
 
 ### 8.3 Add the trusted publisher
 
+Done on 2026-09-10, with staging permission only. `npm trust list
+@trustdiff/bun-scanner` shows it.
+
 With the package on the registry, point it at the workflow that may publish it:
 
 ```sh
-npm trust github --repo vahapogut/trustdiff --file npm-publish.yml
+npm trust github @trustdiff/bun-scanner \
+  --repo vahapogut/trustdiff --file npm-publish.yml --allow-stage-publish
 ```
+
+Both of the arguments that look optional are not. Without the package name npm
+reads the `package.json` of the directory it runs in, which at the repository root
+is trustdiff's own and not the scanner's. Without a permission flag it refuses
+outright: `trust-cmd.js` throws `At least one permission flag is required
+(--allow-publish, --allow-stage-publish)`. There is no default to leave it at.
+
+`--allow-stage-publish` and not `--allow-publish` is the decision, and it is the
+one the workflow is written against: it runs `npm stage publish` and nothing else.
 
 `npm trust` needs npm 11.15.0 or newer and account-level two-factor authentication,
 and it will prompt for a one-time password; tokens that bypass two-factor are
 explicitly not accepted for it. The package settings page on npmjs.com does the
 same thing through a form.
-
-Leave the configuration at its default, which permits staging and not direct
-publishing. That is what the workflow expects, and it is what npm recommends.
 
 The file name is part of the contract. npm will only accept a publish that comes
 from `.github/workflows/npm-publish.yml` in `vahapogut/trustdiff`, so renaming that
