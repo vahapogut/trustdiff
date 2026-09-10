@@ -74,6 +74,30 @@ jobs:
           # The tape uses Set Columns and Set Rows, which need vhs v0.12.0 or later.
           version: v0.12.0
 
+      - name: Put the recording where the rest of this job expects it
+        # vhs prints "Creating docs/demo.gif..." and resolves that path against its own
+        # working directory, which is not necessarily the workspace root, so the file
+        # can land somewhere the upload and the commit below do not look. This finds it
+        # wherever it went and puts it in place, and says what it found either way, so
+        # a future failure names the path instead of only the absence.
+        run: |
+          if [ -f docs/demo.gif ]; then
+            echo "docs/demo.gif is where it should be"
+            ls -l docs/demo.gif
+            exit 0
+          fi
+          echo "docs/demo.gif is missing; looking for it"
+          found=$(find "${GITHUB_WORKSPACE}" "${RUNNER_TEMP}" -name 'demo.gif' -type f 2>/dev/null | head -1)
+          if [ -z "${found}" ]; then
+            echo "::error::vhs reported creating the recording but no demo.gif exists anywhere under the workspace or the runner temp"
+            find "${GITHUB_WORKSPACE}" -name '*.gif' -type f 2>/dev/null | head -20
+            exit 1
+          fi
+          echo "found it at ${found}"
+          mkdir -p docs
+          mv "${found}" docs/demo.gif
+          ls -l docs/demo.gif
+
       - name: Upload the recording as an artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
