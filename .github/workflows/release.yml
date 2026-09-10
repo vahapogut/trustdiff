@@ -25,6 +25,30 @@ jobs:
       id-token: write # Sigstore keyless signing and the provenance attestation
       attestations: write # store the provenance attestation
     steps:
+      # v0.4.1 went green while publishing nothing to either tap. The secret was
+      # there and its value was empty, which is what goreleaser's isEnvSet reads as
+      # unset, so both blocks logged skip_upload and the job finished. A release
+      # that cannot write the taps has to say so before it builds anything, not
+      # leave brew and scoop on the version before it.
+      #
+      # A prerelease is exempt because it deliberately publishes no tap at all
+      # (skip_upload is auto), which is what makes a candidate safe to push, and
+      # demanding a token it will not use would take that away.
+      - name: Refuse to build a release that cannot write the taps
+        env:
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            *-*)
+              echo "::notice::${GITHUB_REF_NAME} is a prerelease, which publishes no tap; the tap token is not needed"
+              exit 0
+              ;;
+          esac
+          if [ -z "${TAP_GITHUB_TOKEN}" ]; then
+            echo "::error::TAP_GITHUB_TOKEN is empty or unset, so goreleaser would skip both tap uploads and this release would leave brew and scoop on the previous version. A secret set to the empty string looks exactly like a working one in the secret list; the step header above prints *** for a secret that holds something. See docs/releasing.md section 6.3."
+            exit 1
+          fi
+
       - name: Check out the tagged commit with full history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -80,3 +104,43 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/checksums.txt
+
+      # goreleaser reports skip_upload as a notice and exits 0, so a tap that was
+      # not written is invisible in a green job. This reads the two repositories
+      # back and fails when either still serves the version before this one.
+      #
+      # It reads with the job's own GITHUB_TOKEN rather than with the tap token:
+      # both repositories are public, the read needs no write credential, and the
+      # tap token is scoped to writing them. A prerelease publishes no tap, and a
+      # first publish creates the files, so neither is a failure here.
+      - name: Verify the tap and the bucket serve this release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            *-*)
+              echo "::notice::${GITHUB_REF_NAME} is a prerelease, which leaves both taps where they were"
+              exit 0
+              ;;
+          esac
+          want="${GITHUB_REF_NAME#v}"
+          read_tap() {
+            gh api "repos/vahapogut/$1/contents/$2" --jq .content 2>/dev/null | base64 -d 2>/dev/null || true
+          }
+          # Five reads, four ten second waits between them: the contents API is
+          # served from a cache that can lag a push by a few seconds.
+          for attempt in 1 2 3 4 5; do
+            cask=$(read_tap homebrew-tap Casks/trustdiff.rb | sed -n 's/^ *version "\([^"]*\)".*/\1/p' | head -1)
+            manifest=$(read_tap scoop-bucket bucket/trustdiff.json | sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' | head -1)
+            if [ "${cask}" = "${want}" ] && [ "${manifest}" = "${want}" ]; then
+              echo "::notice::the cask and the manifest both serve ${want}"
+              exit 0
+            fi
+            echo "attempt ${attempt}: cask ${cask:-<unread>}, manifest ${manifest:-<unread>}, want ${want}"
+            if [ "${attempt}" -lt 5 ]; then
+              sleep 10
+            fi
+          done
+          echo "::error::the tap repositories do not serve ${want}: Casks/trustdiff.rb is ${cask:-unreadable} and bucket/trustdiff.json is ${manifest:-unreadable}. The release exists; brew and scoop still hand out what they had. docs/releasing.md section 6 says how to place them by hand and what the job needs to do it itself."
+          exit 1
+

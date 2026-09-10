@@ -74,6 +74,10 @@ afterwards with `gh release edit <tag> --prerelease`.
 
 Pushing the tag starts one job. It needs no input and no approval.
 
+0. Refuses to go on when `TAP_GITHUB_TOKEN` is empty and the tag is not a
+   prerelease. That is the whole of what went wrong with v0.4.1, and it costs
+   nothing to check before anything is built. A prerelease is exempt because it
+   publishes no tap at all, which is what makes one safe to push.
 1. Checks out the tagged commit with full history and no persisted credentials.
 2. Installs Go 1.26.x, cosign v3.1.3 and syft v1.51.1.
 3. Sets `SOURCE_DATE_EPOCH` to the tagged commit's committer timestamp, so the
@@ -95,6 +99,14 @@ Pushing the tag starts one job. It needs no input and no approval.
      `TAP_GITHUB_TOKEN` is in the environment. See section 6.
 5. Attests build provenance for the archives and `checksums.txt` with GitHub's
    own attestation action.
+6. Reads the cask and the manifest back out of the two tap repositories and
+   fails when either still serves the version before this one. goreleaser
+   reports a skipped upload as a notice and exits 0, so a tap that was not
+   written is invisible in a green job; this is what makes it visible. It reads
+   with the job's own `GITHUB_TOKEN`, because both repositories are public and
+   the read needs no write credential, and it reads five times ten seconds apart,
+   because the contents API is served from a cache that can lag a push. A
+   prerelease is exempt for the same reason as step 0.
 
 If the job goes red, find out how far it got before you touch anything. A
 failure before the release is created leaves nothing behind but the tag: delete
@@ -200,7 +212,7 @@ it by hand afterwards.
 **When `TAP_GITHUB_TOKEN` is not set, the release still succeeds.** goreleaser
 writes the cask to `dist/homebrew/Casks/trustdiff.rb` and the manifest to
 `dist/scoop/bucket/trustdiff.json`, logs `brew.skip_upload is set` and
-`scoop.skip_upload is set`, and moves on. Neither file is uploaded anywhere, and
+`scoop.skip_upload is true`, and moves on. Neither file is uploaded anywhere, and
 nothing else in the pipeline depends on them.
 
 One thing needs the owner's own hands, and it is the token in 6.2. A fine grained
@@ -316,9 +328,15 @@ overwrites both files.
 value, so a secret set to the empty string looks exactly like a working one. What
 tells the two apart is the job's own step header: GitHub prints
 `TAP_GITHUB_TOKEN: ***` for a secret that holds something and
-`TAP_GITHUB_TOKEN:` with nothing after it for one that does not. Read that line,
-or read for `skip_upload` in the goreleaser output, before assuming a green
-release published the tap.
+`TAP_GITHUB_TOKEN:` with nothing after it for one that does not.
+
+Since v0.4.1 the job checks both ends itself, so this is a way of reading a
+failure rather than something to remember: step 0 refuses to build a stable tag
+with an empty token, and step 6 reads the two repositories back and fails when
+either still serves the version before. Neither can be satisfied by a token that
+is present and does not work, which is the one shape left: such a release stops
+at goreleaser, after the GitHub release exists, and section 6.4 says what to do
+with it.
 
 ### 6.4 What the first release with the token looks like
 
