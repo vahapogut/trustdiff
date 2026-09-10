@@ -205,6 +205,10 @@ func runA(t *testing.T, id string, s *Subject, want outcomeA) Result {
 		if f.Title == "" || f.Explanation == "" {
 			t.Errorf("%s: finding without title or explanation: %+v", id, f)
 		}
+		// The character class holds the two dashes it forbids, which is the one
+		// place in this repository they are allowed to appear. CONTRIBUTING.md
+		// records that carve-out so nobody removes them as a violation of the
+		// rule they implement.
 		if strings.ContainsAny(f.Title+f.Explanation, "–—") {
 			t.Errorf("%s: finding text contains a dash character: %q", id, f.Title+" "+f.Explanation)
 		}

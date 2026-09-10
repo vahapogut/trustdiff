@@ -161,6 +161,10 @@ func assertFindingsAtC(t *testing.T, c Check, s *Subject, res Result, n int, lev
 		if f.Title == "" || f.Explanation == "" {
 			t.Errorf("finding %d: empty title or explanation: %+v", i, f)
 		}
+		// The character class holds the two dashes it forbids, which is the one
+		// place in this repository they are allowed to appear. CONTRIBUTING.md
+		// records that carve-out so nobody removes them as a violation of the
+		// rule they implement.
 		if strings.ContainsAny(f.Title+f.Explanation, "–—") {
 			t.Errorf("finding %d: prose contains a dash character: %q", i, f.Title+" "+f.Explanation)
 		}
