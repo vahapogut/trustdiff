@@ -40,6 +40,11 @@ import (
 // The base version is ignored when the registry client could not gather its
 // provenance.
 //
+// A base version nobody could reach is not ignored quietly: where it would have
+// decided the answer the check reports itself as skipped naming it. A base version
+// the registry no longer has, which is what an unpublished release looks like, is
+// an answer, and the check goes on with the release before this one alone.
+//
 // Evidence keys:
 //
 //	previous_version      the previous release, whether or not it is the version
@@ -110,7 +115,10 @@ func (c td004) Run(ctx context.Context, s *Subject) Result {
 		compared, comparedBy, with = baseProvenance, baseBy, base
 	}
 	if compared.Strength() <= current.Strength() {
-		return Result{}
+		// No predecessor that was read carried more. A base version nobody could
+		// reach may have carried more than either of them, which is the half of the
+		// question that stays open.
+		return cleanOrSkip(c, s, SourceBase)
 	}
 
 	title := fmt.Sprintf("Provenance weaker than %s: %s before, %s now",

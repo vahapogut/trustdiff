@@ -5,9 +5,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/vahapogut/trustdiff/internal/checks"
 	"github.com/vahapogut/trustdiff/internal/model"
 	"github.com/vahapogut/trustdiff/internal/report"
 )
@@ -979,6 +981,53 @@ func TestDiffReportsADependencyIntroducedBetweenTheTwoVersions(t *testing.T) {
 	} {
 		if !strings.Contains(found.Explanation, want) {
 			t.Errorf("explanation lacks %q:\n%s", want, found.Explanation)
+		}
+	}
+}
+
+// TestDiffComparesWithThePreviousReleaseWhenTheBaseVersionIsGone pins finding F10 of
+// docs/review-2026-09-10.md. The base lockfile pinned a release the registry no
+// longer lists, which is what an unpublished version looks like from outside, while
+// the release before the new one loaded in full. The runner filed the registry's
+// answer about the base version under the previous version's own name, so every
+// check that compares the two releases reported itself as skipped although it held
+// both of them, and a change coming off a version that is gone was the least
+// examined change of all.
+func TestDiffComparesWithThePreviousReleaseWhenTheBaseVersionIsGone(t *testing.T) {
+	base := readRegressionFixture(t, "f10-base-version-unpublished", "base", "package-lock.json")
+	head := readRegressionFixture(t, "f10-base-version-unpublished", "head", "package-lock.json")
+	useFakeLoader(t)
+	dir := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(dir))
+	writeFile(t, dir, "base/package-lock.json", base)
+	writeFile(t, dir, "head/package-lock.json", head)
+	chdir(t, dir)
+
+	code, stdout, stderr := run(t, "--format", "json", "diff",
+		"--base-file", "base/package-lock.json", "head/package-lock.json")
+	if code != ExitFindings {
+		t.Fatalf("exit = %d, want %d (stderr %q)\n%s", code, ExitFindings, stderr, stdout)
+	}
+	rep := decodeReport(t, stdout)
+	s := subjectFor(t, &rep, "npm:trustdiff-fixture-lib@2.0.0")
+
+	reasons := map[string]string{}
+	for _, sk := range s.Skipped {
+		reasons[sk.Check] = sk.Reason
+	}
+	for _, id := range []string{"TD004", "TD005", "TD007"} {
+		if !slices.Contains(s.Evaluated, id) {
+			t.Errorf("%s skipped with %q; 1.0.0 loaded in full, and it is 1.5.0, the version the base file pinned, that the registry no longer has",
+				id, reasons[id])
+		}
+	}
+	// TD003 has a second way to answer and is skipped here for reasons of its own:
+	// the fixture records no maintainer set for the version and carries no baseline.
+	// What it must no longer say is that the previous version was unreadable, in
+	// either of the two wordings sourceProblem gives a source that did not answer.
+	for _, wording := range []string{checks.SourcePrevious + ":", checks.SourcePrevious + " unavailable:"} {
+		if strings.Contains(reasons["TD003"], wording) {
+			t.Errorf("TD003 skipped with %q, want a reason of its own", reasons["TD003"])
 		}
 	}
 }

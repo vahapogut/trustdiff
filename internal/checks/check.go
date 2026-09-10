@@ -55,7 +55,17 @@ const (
 	// that compares the two versions' detail (TD003, TD004, TD005, TD007) skips
 	// with the reason instead of reading facts the list entry may not carry (PyPI
 	// and crates.io list entries have no dependencies or provenance).
-	SourcePrevious  = "previous"
+	SourcePrevious = "previous"
+	// SourceBase is the version the base lockfile locked, which diff has the runner
+	// load into Subject.PreviousInBase when it is neither the evaluated version nor
+	// the release the registry calls previous. It is a name of its own because it
+	// fails on its own: it takes a request of its own, for a version that a project
+	// is moving away from and that the registry may no longer have. Filing that
+	// failure under SourcePrevious said the previous release was unreadable when it
+	// had loaded in full, and took every comparison with it down. The checks that
+	// read the base version consult this instead; today that is TD004, TD005 and
+	// TD007, and each of them falls back to the one comparison it can still make.
+	SourceBase      = "base"
 	SourceOwners    = "owners"
 	SourceDownloads = "downloads"
 	SourceOSV       = "osv"

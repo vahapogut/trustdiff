@@ -33,6 +33,11 @@ import (
 // release when neither did, and the base version is ignored when the registry
 // client could not gather its scripts.
 //
+// A base version nobody could reach is not ignored quietly: where it would have
+// decided the answer the check reports itself as skipped naming it. A base version
+// the registry no longer has, which is what an unpublished release looks like, is
+// an answer, and the check goes on with the release before this one alone.
+//
 // Evidence keys:
 //
 //	previous_version  the previous release
@@ -78,7 +83,10 @@ func (c td005) Run(_ context.Context, s *Subject) Result {
 	fromPrevious := !s.Previous.HasInstallScript()
 	fromBase := base != nil && !base.HasInstallScript()
 	if !fromPrevious && !fromBase {
-		return Result{}
+		// Nothing new as far as the versions that were read go. If the base version
+		// was not one of them the question is only half answered: a script the
+		// release before this one already carried may still be new to this project.
+		return cleanOrSkip(c, s, SourceBase)
 	}
 
 	// The version to name is the one that had no script; when both did, the

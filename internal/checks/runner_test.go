@@ -1110,3 +1110,49 @@ func TestRunRefusesAnUnrelatedRegistryName(t *testing.T) {
 		t.Error("Outcome.Unavailable = false: nothing about the package asked for was read")
 	}
 }
+
+// The version the base lockfile locked is loaded separately and fails separately.
+// Recording that failure under SourcePrevious skipped every comparison with the
+// previous release although that release had loaded in full, which is finding F10
+// of docs/review-2026-09-10.md: a project moving off a version that was unpublished
+// got the least examined change of all.
+func TestRunRecordsABaseVersionFailureUnderItsOwnSource(t *testing.T) {
+	base := model.MustParseRef("npm:lib@1.0.0")
+	tests := []struct {
+		name            string
+		err             error
+		wantReason      string
+		wantUnavailable bool
+	}{
+		{name: "outage", err: errors.New("503"), wantReason: "base unavailable: 503", wantUnavailable: true},
+		{name: "unpublished", err: registry.ErrNotFound, wantReason: "base: not found in the registry"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			loader := libLoaderR()
+			loader.failInfo[base] = tt.err
+			var previousDown, recorded bool
+			var reason string
+			check := fakeCheckR{id: "TD005", name: "install-script-introduced", run: func(_ context.Context, s *Subject) Result {
+				_, previousDown = s.Skipped(SourcePrevious)
+				reason, recorded = s.Skipped(SourceBase)
+				return cleanOrSkip(fakeCheckR{id: "TD005"}, s, SourceBase)
+			}}
+			in := inputsR("npm:lib@2.0.0")
+			in[0].BaseVersion = base.Version
+			out := newRunnerR(loader, check).Evaluate(context.Background(), in)
+			if previousDown {
+				t.Error("the previous version reads as unavailable although 1.1.0 loaded in full")
+			}
+			if !recorded || reason != tt.wantReason {
+				t.Errorf("Skipped(base) = %q, %v; want %q", reason, recorded, tt.wantReason)
+			}
+			// A base version the registry does not have is an answer, so the check
+			// goes on with the one comparison it can make. One nobody could reach is
+			// not, and the run has to say the data was missing.
+			if out[0].Unavailable != tt.wantUnavailable {
+				t.Errorf("Outcome.Unavailable = %v, want %v", out[0].Unavailable, tt.wantUnavailable)
+			}
+		})
+	}
+}

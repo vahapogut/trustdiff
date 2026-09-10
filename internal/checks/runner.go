@@ -532,9 +532,12 @@ func (rn *run) loadPrevious(ctx context.Context, s *Subject) {
 // it is neither the evaluated version nor the release the registry calls
 // previous. Upgrading across several releases makes those differ, and what the
 // project actually had is the comparison a pull request gate cares about (brief
-// section 4.1). A failure leaves PreviousInBase nil and is recorded like any
-// other previous-version failure, so a check that wanted it skips rather than
-// comparing against nothing.
+// section 4.1). A failure leaves PreviousInBase nil and is recorded under
+// SourceBase, a name of its own: the release the registry calls previous loaded
+// and is fine, and a base version the registry no longer has, which is what an
+// unpublished release looks like, must not take the comparisons with the previous
+// release down with it. A check that wanted the base falls back to the one
+// comparison it can still make, and says so where the base would have decided.
 func (rn *run) loadBase(ctx context.Context, s *Subject, baseVersion string) {
 	if baseVersion == "" || baseVersion == s.Ref.Version {
 		return
@@ -546,9 +549,7 @@ func (rn *run) loadBase(ctx context.Context, s *Subject, baseVersion string) {
 	info, err := rn.loader.VersionInfo(ctx, ref)
 	if err != nil {
 		rn.log.Debug("base version details unavailable", "ref", ref.String(), "error", err)
-		if _, seen := s.Unavailable[SourcePrevious]; !seen {
-			s.Unavailable[SourcePrevious] = err
-		}
+		s.Unavailable[SourceBase] = err
 		return
 	}
 	copied := *info

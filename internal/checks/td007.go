@@ -43,7 +43,11 @@ import (
 // the previous version's details could not be fetched (a version-list entry
 // carries no dependencies, so comparing against it would report every
 // dependency as new), and when the registry could not gather the dependencies
-// of either version.
+// of either version. A base version nobody could reach is not ignored quietly:
+// where it would have decided the answer the check reports itself as skipped
+// naming it. A base version the registry no longer has, which is what an
+// unpublished release looks like, is an answer, and the check goes on with the
+// release before this one alone.
 //
 // Evidence keys (present in every finding unless marked):
 //
@@ -145,7 +149,11 @@ func (c td007) Run(ctx context.Context, s *Subject) Result {
 		since[key] = intro
 	}
 	if len(added) == 0 {
-		return Result{}
+		// Nothing new against the versions that were read. A base version nobody
+		// could reach leaves the other half of the question open, because a
+		// dependency the release before this one already declared may still be new
+		// to this project.
+		return cleanOrSkip(c, s, SourceBase)
 	}
 	sort.Strings(added)
 
