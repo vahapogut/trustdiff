@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-11
+
+The P1 and P2 sections of an independent review of 0.4.0, closed in order, with the
+follow-ups its P0 fixes turned up. [docs/review-2026-09-10.md](docs/review-2026-09-10.md)
+is that review as it was received; 0.4.1 closed its P0 section.
+
+Two things change what a `doctor` run does to your files and to your pipeline.
+**`--fix` now writes only a setting the file does not state.** It used to
+overwrite a value it had judged wrong, which is how it replaced a deliberate uv
+timestamp with `"3 days"` and a Deno `{age, exclude}` object with `"P3D"`. A value
+somebody wrote is theirs; the one place a tool that does not own the repository can
+be sure is where there is nothing to overwrite. **`weak` is a new status, and
+`--ci` fails on it** at or above the policy severity, alongside `missing`, `wrong`
+and `unreadable`. It is for a setting the package manager honors that does less
+than the policy asks, such as `minimumReleaseAge: 60` against a three day cooldown;
+`wrong` now means only a value the manager will not read at all. A project that
+relied on `--fix` to raise a wait it had already set will be told the value is weak
+and asked to change the line itself.
+
 ### Added
 
 - `version-downgraded` ([TD017](docs/checks.md#td017-version-downgraded), `info`, every ecosystem) reports a lockfile entry whose version went backwards: the head file locks a release that sorts below the one the base file locked. Both releases are real and both check out, so every other check read the version in front of it and agreed it was fine, and it was; the change is the direction, and the direction was the one thing nothing looked at. Rolling a dependency back is how a project unships a fix, including a security fix with no advisory filed yet, which is exactly the window this tool exists for: `vulnerability` reports the older release only once OSV knows about it. It is `info` rather than a block because going back a release is a thing projects do on purpose, and because a lockfile holding one name at several majors can pair a dropped 5.x entry with a 4.x one that stayed; the finding names both versions, so it is one line to check and one line to answer. The order is the ecosystem's own, PEP 440 for PyPI and semantic versions elsewhere, and a pair neither scheme can order, which is what a `bun.lock` git or workspace line looks like, is reported as skipped rather than as a pass. Finding F11 of the review.
@@ -204,7 +223,8 @@ Project skeleton, published as a prerelease so that the release pipeline (checks
 - Continuous integration: lint, tests on Linux, macOS and Windows with Go 1.26 and 1.27, `govulncheck`, `gosec`, a binary size gate and a direct dependency budget gate.
 - Signed releases: reproducible builds for Linux, macOS and Windows on amd64 and arm64, `checksums.txt`, an SBOM, cosign keyless signatures and GitHub build provenance. `SECURITY.md` explains how to verify a download.
 
-[Unreleased]: https://github.com/vahapogut/trustdiff/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/vahapogut/trustdiff/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/vahapogut/trustdiff/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/vahapogut/trustdiff/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/vahapogut/trustdiff/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/vahapogut/trustdiff/compare/v0.2.0...v0.3.0
