@@ -56,7 +56,7 @@ During 0.x only the latest minor release line receives security fixes, as a patc
 
 ## Verifying a download
 
-Every release publishes `checksums.txt`, its cosign bundle `checksums.txt.sigstore.json`, one archive per platform (`trustdiff_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows) and an SPDX SBOM next to each archive. Download the archive for your platform together with the two checksum files, then run the three steps below from the download directory. Substitute the archive name you downloaded for `trustdiff_0.4.0_linux_amd64.tar.gz`.
+Every release publishes `checksums.txt`, its cosign bundle `checksums.txt.sigstore.json`, one archive per platform (`trustdiff_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows) and an SPDX SBOM next to each archive. Download the archive for your platform together with the two checksum files, then run the three steps below from the download directory. Substitute the archive name you downloaded for `trustdiff_0.4.1_linux_amd64.tar.gz`.
 
 1. Verify the signature on the checksum file. This needs cosign v3 or later. The identity is the release workflow of this repository, running on a version tag.
 
@@ -78,14 +78,14 @@ Every release publishes `checksums.txt`, its cosign bundle `checksums.txt.sigsto
    On Windows, compare the two outputs by eye:
 
    ```powershell
-   (Get-FileHash .\trustdiff_0.4.0_windows_amd64.zip -Algorithm SHA256).Hash
+   (Get-FileHash .\trustdiff_0.4.1_windows_amd64.zip -Algorithm SHA256).Hash
    Select-String windows_amd64 .\checksums.txt
    ```
 
 3. Verify the build provenance with the GitHub CLI. This confirms the archive was built by this repository's release workflow from the tagged commit.
 
    ```sh
-   gh attestation verify trustdiff_0.4.0_linux_amd64.tar.gz \
+   gh attestation verify trustdiff_0.4.1_linux_amd64.tar.gz \
      --owner vahapogut \
      --signer-workflow vahapogut/trustdiff/.github/workflows/release.yml
    ```
