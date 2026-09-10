@@ -110,8 +110,11 @@ jobs:
         uses: charmbracelet/vhs-action@f6d7db07a432fcd3b06772628d36a57f96d95dcf # v2.1.1
         with:
           path: docs/demo.tape
-          # The tape uses Set Columns and Set Rows, which need vhs v0.12.0 or later.
-          version: v0.12.0
+          # v0.11.0 rather than v0.12.0. v0.12.0 shipped on 2026-09-09, the day this
+          # job first failed, and on this runner it prints that it is creating the
+          # GIF, exits 0 and writes no file, whatever the tape contains. The tape no
+          # longer needs anything v0.12.0 added, so it runs on the release before it.
+          version: v0.11.0
 
       - name: Say what vhs actually did
         # The action reports success and leaves no file, so this runs vhs again by
