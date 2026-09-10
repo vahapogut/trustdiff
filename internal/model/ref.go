@@ -98,6 +98,25 @@ func NormalizeName(eco Ecosystem, name string) string {
 	return name
 }
 
+// SameName reports whether two spellings name one package, which is the test a
+// caller applies before it adopts a registry's own spelling of a name over the one
+// it asked with. NormalizeName cannot answer it: that is the identity a ref carries
+// everywhere, and only PyPI has a normalization its registry publishes.
+//
+// crates.io allocates a crate name case-insensitively and treats "-" and "_" as the
+// same character, and serves the crate document under every one of those spellings
+// (GET https://crates.io/api/v1/crates/Serde-Json answers serde_json's document,
+// read 2026-09-10), while the registered spelling is the only one OSV matches. npm
+// and JSR names stay exact: npm serves legacy mixed-case names as packages of their
+// own, so folding case there would call two packages one. internal/typosquat folds
+// the same way for its own comparison, in Canonical, and for the same reason.
+func SameName(eco Ecosystem, a, b string) bool {
+	if eco == Cargo {
+		return strings.EqualFold(strings.ReplaceAll(a, "-", "_"), strings.ReplaceAll(b, "-", "_"))
+	}
+	return NormalizeName(eco, a) == NormalizeName(eco, b)
+}
+
 // String renders the ref in the form ParseRef accepts.
 func (r PackageRef) String() string {
 	if r.Version == "" {

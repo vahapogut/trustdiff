@@ -159,6 +159,10 @@ func Subjects(outcomes []Outcome) []report.Subject {
 // resolution is what the first phase of Evaluate decided for one input.
 type resolution struct {
 	ref model.PackageRef
+	// list is the version list that settled the ref, so the second phase reads the
+	// answer this one already has rather than asking for it again under a key that
+	// may differ from the one it was fetched with.
+	list *registry.VersionList
 	// latest is true when the input had no version and ref carries the resolved one.
 	latest bool
 	// skip is the reason nothing can be evaluated; empty when evaluation proceeds.
@@ -247,17 +251,46 @@ func (rn *run) forEach(n int, fn func(i int)) {
 	wg.Wait()
 }
 
-// resolve turns a bare ref into the latest stable version of the package. A ref
-// that already carries a version passes through untouched.
+// resolve settles the ref a subject is evaluated under: the registry's own spelling
+// of the package name, and the latest stable version when the caller named none. It
+// asks for the version list even for a ref that carries a version, because the
+// spelling has to be settled before Prefetch keys the batch memos by it, and it
+// hands the list on so the second phase does not ask again.
+//
+// A registry that did not answer settles nothing. For a ref that carries a version
+// that is not this phase's business: load asks and words the answer, so a package
+// the registry does not have skips every check while an outage still leaves the
+// advisory checks to run.
 func (rn *run) resolve(ctx context.Context, in *Input) resolution {
 	ref := in.Ref
-	if ref.Version != "" {
-		return resolution{ref: ref}
-	}
 	list, err := rn.loader.Versions(ctx, ref.Ecosystem, ref.Name)
 	if err != nil {
+		if ref.Version != "" {
+			return resolution{ref: ref}
+		}
 		rn.log.Debug("cannot resolve latest version", "package", ref.String(), "error", err)
 		return resolution{ref: ref, skip: sourceProblem(SourceRegistry, err), unavailable: !definite(err)}
+	}
+	if list.Name != "" && list.Name != ref.Name {
+		if !model.SameName(ref.Ecosystem, ref.Name, list.Name) {
+			// The registry answered about another package. Renaming the subject to
+			// it would report about something nobody asked about, and going on under
+			// the name asked for would judge that package's maintainers, history and
+			// facts as this one's, so the run says it could not check this one.
+			rn.log.Warn("registry answered with an unrelated package name",
+				"package", ref.String(), "registry_name", list.Name)
+			return resolution{
+				ref:         ref,
+				skip:        fmt.Sprintf("the registry answered for %s, which is not another spelling of %s", list.Name, ref.Name),
+				unavailable: true,
+			}
+		}
+		rn.log.Debug("adopted the registry's spelling of the package name",
+			"package", ref.String(), "registry_name", list.Name)
+		ref.Name = list.Name
+	}
+	if ref.Version != "" {
+		return resolution{ref: ref, list: list}
 	}
 	latest := registry.LatestStable(list)
 	if latest == nil {
@@ -265,7 +298,7 @@ func (rn *run) resolve(ctx context.Context, in *Input) resolution {
 		return resolution{ref: ref, skip: "no stable version"}
 	}
 	rn.log.Debug("resolved latest stable version", "package", ref.String(), "version", latest.Ref.Version)
-	return resolution{ref: ref.WithVersion(latest.Ref.Version), latest: true}
+	return resolution{ref: ref.WithVersion(latest.Ref.Version), list: list, latest: true}
 }
 
 // evaluate assembles the Subject for one input and runs the checks over it.
@@ -288,7 +321,7 @@ func (rn *run) evaluate(ctx context.Context, in *Input, res *resolution) Outcome
 	if res.skip != "" {
 		return rn.skipAll(ctx, &out, s, applicable, res.skip, res.unavailable)
 	}
-	if reason := rn.load(ctx, s); reason != "" {
+	if reason := rn.load(ctx, s, res.list); reason != "" {
 		return rn.skipAll(ctx, &out, s, applicable, reason, false)
 	}
 	rn.loadBase(ctx, s, in.BaseVersion)
@@ -401,9 +434,17 @@ func (rn *run) applicable(s *Subject) []Check {
 // version, in which case nothing else is fetched: the caller skips every check
 // with it. Sources are loaded one after the other; the batch sources were
 // prefetched, so most of these are memo hits.
-func (rn *run) load(ctx context.Context, s *Subject) string {
+func (rn *run) load(ctx context.Context, s *Subject, list *registry.VersionList) string {
 	ref := s.Ref
-	if list, err := rn.loader.Versions(ctx, ref.Ecosystem, ref.Name); err != nil {
+	// resolve fetched the list to settle the name and handed it on, so this asks
+	// again only for the refs it left alone: one whose own Versions call failed. A
+	// second request would be under a different memo key wherever a name was
+	// adopted, which is the case that pays for it.
+	var err error
+	if list == nil {
+		list, err = rn.loader.Versions(ctx, ref.Ecosystem, ref.Name)
+	}
+	if err != nil {
 		if errors.Is(err, registry.ErrNotFound) {
 			return sourceProblem(SourceRegistry, err)
 		}

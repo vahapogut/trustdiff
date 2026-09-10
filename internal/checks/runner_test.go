@@ -1036,3 +1036,77 @@ func TestEvaluateReportsAFacetOutageWithNoReason(t *testing.T) {
 		t.Error("Outcome.Unavailable = false: a facet with no reason is still a facet nobody gathered")
 	}
 }
+
+// crates.io serves the crate document under every spelling of a name that differs
+// only in case or in "-" against "_": GET /api/v1/crates/Serde-Json answers
+// serde_json's document, read 2026-09-10. OSV does not, because it matches a
+// crates.io name as written, so a run that kept the caller's spelling evaluated the
+// crate, asked the advisory sources about one that does not exist and read the
+// empty answer as a clean bill of health. The registry's own spelling has to be
+// settled before Prefetch, or the batch memos stay keyed by the caller's. Finding
+// F9 of docs/review-2026-09-10.md.
+func TestRunAdoptsTheRegistrySpellingOfTheName(t *testing.T) {
+	loader := newFakeLoaderR()
+	registered := stableListR(model.Cargo, "generic-array", "0.13.2")
+	loader.add(registered)
+	// The registry answers the caller's spelling with the registered crate, the way
+	// crates.io answers generic_array with generic-array's document, while the
+	// advisory source knows the registered spelling alone.
+	loader.lists[pkgR(model.Cargo, "generic_array")] = registered
+	vuln := advisory.Advisory{ID: "GHSA-3358-4f7f-p4j4", Summary: "Use after free in generic-array", Severity: advisory.SeverityHigh}
+	loader.advisories[model.MustParseRef("cargo:generic-array@0.13.2")] = []advisory.Advisory{vuln}
+
+	var seenRef model.PackageRef
+	var seen []advisory.Advisory
+	check := fakeCheckR{id: "TD010", name: "vulnerability", run: func(_ context.Context, s *Subject) Result {
+		seenRef, seen = s.Ref, s.Advisories
+		return Result{}
+	}}
+
+	out := newRunnerR(loader, check).Run(context.Background(), inputsR("cargo:generic_array@0.13.2"))
+	if len(out) != 1 {
+		t.Fatalf("Run returned %d subjects, want 1", len(out))
+	}
+	const want = "cargo:generic-array@0.13.2"
+	if seenRef.String() != want {
+		t.Errorf("the check saw %s, want %s: the registry's own spelling is what the sources are keyed by", seenRef, want)
+	}
+	if len(seen) != 1 || seen[0].ID != vuln.ID {
+		t.Errorf("advisories = %v, want %s: the run asked about a crate that does not exist", seen, vuln.ID)
+	}
+	if out[0].Ref.String() != want {
+		t.Errorf("report ref = %s, want %s", out[0].Ref, want)
+	}
+	wantPrefetch := []model.PackageRef{model.MustParseRef(want)}
+	if len(loader.prefetched) != 1 || !slices.Equal(loader.prefetched[0], wantPrefetch) {
+		t.Errorf("Prefetch refs = %v, want %v: a rewrite after Prefetch leaves the batch memos keyed by the caller's spelling",
+			loader.prefetched, wantPrefetch)
+	}
+}
+
+// A registry that answers with a name that is not another spelling of the one asked
+// for has not answered about the package the caller named. Renaming the subject to
+// it would report about something nobody asked about, and going on under the name
+// asked for would judge one package's maintainers, history and facts as another's,
+// so the run says it could not check this one.
+func TestRunRefusesAnUnrelatedRegistryName(t *testing.T) {
+	loader := newFakeLoaderR()
+	other := stableListR(model.Cargo, "tokio", "1.0.0")
+	loader.add(other)
+	loader.lists[pkgR(model.Cargo, "serde")] = other
+
+	out := newRunnerR(loader, passCheckR("TD001", "young-version")).Evaluate(context.Background(), inputsR("cargo:serde@1.0.0"))
+	if len(out) != 1 {
+		t.Fatalf("Evaluate returned %d outcomes, want 1", len(out))
+	}
+	if got := out[0].Subject.Ref.String(); got != "cargo:serde@1.0.0" {
+		t.Errorf("report ref = %s, want the name the caller asked for", got)
+	}
+	reason := skippedReasonsR(&out[0].Subject)["TD001"]
+	if !strings.Contains(reason, "tokio") {
+		t.Errorf("TD001 skipped with %q, want the name the registry answered with", reason)
+	}
+	if !out[0].Unavailable {
+		t.Error("Outcome.Unavailable = false: nothing about the package asked for was read")
+	}
+}

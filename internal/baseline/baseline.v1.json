@@ -37,7 +37,7 @@
           "enum": ["npm", "pypi", "cargo", "deno", "jsr"]
         },
         "name": {
-          "description": "Package name in the registry's canonical spelling: PEP 503 normalized for pypi, unchanged elsewhere. Scoped npm and jsr names keep their @scope/ prefix.",
+          "description": "Package name in the registry's canonical spelling: PEP 503 normalized for pypi, unchanged elsewhere. Scoped npm and jsr names keep their @scope/ prefix. A baseline records what the lockfile or the command line spelled, which for cargo can differ from the spelling a report carries, because a run adopts the registry's own.",
           "type": "string",
           "pattern": "^[^\\s]+$"
         },

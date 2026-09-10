@@ -201,9 +201,10 @@ type dependenciesResponse struct {
 // trusted publishing repository), checksum and provenance. Maintainers stays
 // empty because owners cost a second request; use Owners. The list and every
 // Ref carry the registered spelling (crate.name), not the caller's: crates.io
-// answers serde-json and Serde with serde_json's document, and a caller that
-// kept its own spelling would go on to ask OSV and deps.dev about a crate that
-// does not exist.
+// answers serde-json and Serde with serde_json's document, and a caller that kept
+// its own spelling would go on to ask OSV about a crate that does not exist and
+// read the empty answer as a clean bill of health. deps.dev resolves such a
+// spelling itself, so OSV is the source this matters to.
 func (c *Client) Versions(ctx context.Context, name string) (*registry.VersionList, error) {
 	doc, err := c.crate(ctx, name)
 	if err != nil {

@@ -30,9 +30,11 @@ type VersionList struct {
 	// Name is the registry's canonical spelling of the package, which is also
 	// the Name of every Ref in Versions. It can differ from what the caller asked
 	// for where the registry answers aliases: crates.io serves serde_json for
-	// serde-json and Serde, so a caller that goes on to ask other sources (OSV,
-	// deps.dev) about the package adopts this spelling first. PyPI names are
-	// PEP 503 normalized and npm names are case-sensitive as given.
+	// serde-json and Serde. The runner settles a subject's ref on this spelling
+	// before it asks anything else about the package, because OSV matches a
+	// crates.io name as written and would answer nothing about the other one, which
+	// reads exactly like a package with no advisories. PyPI names are PEP 503
+	// normalized and npm names are case-sensitive as given.
 	Name string
 	// Latest is the registry's own idea of the current version (npm dist-tags.latest,
 	// PyPI info.version, crates.io max_stable_version); empty when it has none.
