@@ -35,12 +35,13 @@ import (
 // twice, and it is not a rare shape. npm's own lockfile bundles 677 of its 1009
 // entries, which is 677 warnings about hashes that are exactly where they belong.
 //
-// A local directory is not exempt: it has no artifact to hash either, but nothing in
-// the lockfile says the bytes are covered by something else, and a workspace member
-// is the shape a repository can silence with an allow entry. The explanation says
-// which case it is rather than claiming that nothing guards it, and the source
-// evidence key is there so that telling them apart does not mean opening the
-// lockfile.
+// A local directory is exempt, which it was not until finding F16 of the review.
+// There is no artifact for a hash to be missing from: an install builds the entry
+// from the working tree, so nothing is downloaded and nothing could be verified. A
+// hash a lockfile cannot record is not a hash a lockfile is missing, and reporting
+// it at warn buried the entries where a hash really is absent. That a dependency
+// comes from a directory rather than a registry is a fact worth reporting, and
+// exotic-source reports it, at info, where it belongs.
 //
 // Evidence keys:
 //
@@ -108,6 +109,12 @@ func (c integrityMissing) missingHash(s *Subject) (model.Finding, bool) {
 		return model.Finding{}, false
 	}
 	source := entrySource(s.Lock)
+	if source == lockfile.SourcePath {
+		// An install builds this from the working tree. Nothing is downloaded, so
+		// there is nothing for a hash to be about; exotic-source is the check that
+		// has something to say about where it comes from.
+		return model.Finding{}, false
+	}
 	if source == lockfile.SourceGit {
 		if _, pinned := pinnedCommit(s.Lock.Resolved); pinned {
 			return model.Finding{}, false
@@ -137,8 +144,6 @@ func (c integrityMissing) missingHash(s *Subject) (model.Finding, bool) {
 	case lockfile.SourceGit:
 		b.WriteString(unguarded)
 		b.WriteString(" A git entry needs no hash when its location pins a full forty character commit sha, because the sha is the integrity; this one pins a branch or a tag instead.")
-	case lockfile.SourcePath:
-		b.WriteString(". The entry is a local directory, which has nothing to download and so nothing to hash, so there is nothing here for an install to verify against; a workspace member is silenced with an allow entry for integrity-missing with a package glob.")
 	case lockfile.SourceUnknown:
 		b.WriteString(". Nothing in the entry ties it to the bytes an install downloads.")
 		if s.Ref.Ecosystem == model.NPM {

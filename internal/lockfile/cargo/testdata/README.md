@@ -12,8 +12,10 @@ below.
 
 ripgrep is a Cargo workspace and its lockfile is format version 3: ten of its
 packages carry no source because the workspace builds them, and the `ripgrep`
-package lists the project's own dependencies. zoxide is a single crate and its
-lockfile is format version 4.
+package lists the project's own dependencies. Those ten are the repository rather
+than anything it installs, so the parser drops them and reads their dependency
+lists for what is direct. zoxide is a single crate and its lockfile is format
+version 4, where the crate itself is the one table with no source.
 
 The rest are hand written for the tests and say so in their first line. They are not
 Cargo output:

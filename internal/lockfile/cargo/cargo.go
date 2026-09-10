@@ -94,6 +94,16 @@ func (Parser) Parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 	direct := directDependencies(packages)
 	for i := range packages {
 		p := &packages[i]
+		if p.Source == "" {
+			// The root package and every workspace member, which Cargo writes with
+			// no source and no checksum because it builds them from the directory it
+			// found them in. They are the repository being scanned, not something it
+			// installs, and reporting them gave a clean checkout of a workspace one
+			// warning per crate of its own. directDependencies has already read
+			// their dependency lists, which is what makes the rest direct.
+			lf.Drop("%s: %q is this workspace, not an installed crate", lockfile.At(p.line), p.Name)
+			continue
+		}
 		lf.Add(lockfile.Entry{
 			// NormalizeName leaves a crates.io name alone; it is called so the
 			// identity rule lives in one place.

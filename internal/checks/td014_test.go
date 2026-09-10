@@ -226,23 +226,18 @@ func TestIntegrityMissing(t *testing.T) {
 			},
 		},
 		{
+			// A directory has no artifact for a hash to be missing from: an install
+			// builds it from the working tree, so nothing is downloaded and there is
+			// nothing to verify. Reporting it at warn buried the entries where a
+			// hash really is absent, and exotic-source already says, at info, that
+			// this one does not come from a registry. Finding F16 of
+			// docs/review-2026-09-10.md.
 			name: "workspace member resolved from a path",
 			ref:  "npm:@acme/ui@1.0.0",
 			entry: func(t *testing.T) *lockfile.Entry {
 				return entryC(t, "npm:@acme/ui@1.0.0", lockfile.SourcePath, resolvedC("packages/ui"))
 			},
-			want: 1,
-			verify: func(t *testing.T, findings []model.Finding) {
-				if got := evidenceC(t, &findings[0], "source"); got != string(lockfile.SourcePath) {
-					t.Errorf("source = %s, want path", got)
-				}
-				assertContainsC(t, "explanation", findings[0].Explanation,
-					"The entry is a local directory, which has nothing to download and so nothing to hash",
-					"allow entry for integrity-missing with a package glob")
-				if strings.Contains(findings[0].Explanation, "a compromised mirror is installed without complaint") {
-					t.Errorf("a local directory is explained as a download: %q", findings[0].Explanation)
-				}
-			},
+			want: 0,
 		},
 		{
 			// npm writes a bundled dependency with no location and no hash: its bytes

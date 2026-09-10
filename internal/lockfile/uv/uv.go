@@ -121,14 +121,15 @@ func (Parser) Parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 	for i := range packages {
 		p := &packages[i]
 		switch {
-		case p.Source.Virtual != "":
+		case p.project(members):
+			// The project uv locked, and every workspace member beside it, is the
+			// repository being scanned rather than something it acquired. uv writes
+			// it as a package like any other, with a virtual source when there is no
+			// build backend and an editable one when there is, and either way there
+			// is no artifact, no hash and nobody to hold responsible for it. Their
+			// dependency lists are what made the entries above direct, which is read
+			// before this loop.
 			lf.Drop("%s: %q is the project itself (%s), not an installed package", lockfile.At(p.line), p.Name, p.Source.describe())
-			continue
-		case p.Version == "" && p.project(members):
-			// The project and its workspace members state no version when it is
-			// dynamic. There is nothing to evaluate, and their dependency lists are
-			// what made the entries above direct.
-			lf.Drop("%s: %q states no version (%s), so only its dependencies are read", lockfile.At(p.line), p.Name, p.Source.describe())
 			continue
 		case p.Version == "":
 			lf.Drop("%s: package %q without a version", lockfile.At(p.line), p.Name)

@@ -40,6 +40,17 @@ func entryOf(t *testing.T, lf *lockfile.Lockfile, ref string) lockfile.Entry {
 	return lockfile.Entry{}
 }
 
+// has reports whether the lockfile holds a ref, for an assertion that something is
+// absent, which entryOf cannot make because it fails the test.
+func has(lf *lockfile.Lockfile, ref string) bool {
+	for _, e := range lf.Entries {
+		if e.Ref.String() == ref {
+			return true
+		}
+	}
+	return false
+}
+
 func TestDetectMatchesTheFileNameOnly(t *testing.T) {
 	tests := []struct {
 		base string
@@ -82,11 +93,20 @@ func TestParseWorkspaceLockfileVersion3(t *testing.T) {
 	if lf.Version != "3" {
 		t.Errorf("Version = %q, want 3", lf.Version)
 	}
-	if len(lf.Entries) != 61 {
-		t.Errorf("read %d entries, want 61", len(lf.Entries))
+	// Ten of the file's 61 tables are ripgrep: the root package and the nine
+	// crates of its own workspace. They are the repository, not something it
+	// installs, and reporting them gave a clean checkout ten warnings about its own
+	// code. Finding F16 of docs/review-2026-09-10.md.
+	if len(lf.Entries) != 51 {
+		t.Errorf("read %d entries, want 51", len(lf.Entries))
 	}
-	if len(lf.Dropped) != 0 {
-		t.Errorf("dropped %v, want nothing", lf.Dropped)
+	if len(lf.Dropped) != 10 {
+		t.Errorf("dropped %v, want the ten crates of the workspace", lf.Dropped)
+	}
+	for _, own := range []string{"cargo:ripgrep@14.1.1", "cargo:grep@0.3.2", "cargo:ignore@0.4.23"} {
+		if has(lf, own) {
+			t.Errorf("%s is an entry, and it is this workspace", own)
+		}
 	}
 
 	tests := []struct {
@@ -117,22 +137,16 @@ func TestParseWorkspaceLockfileVersion3(t *testing.T) {
 			},
 		},
 		{
-			// A workspace member: no source, and the ripgrep package asks for it.
-			ref: "cargo:grep@0.3.2",
+			// A crate a workspace member asks for. The member is gone from the
+			// entries and its dependency list is still what makes this one direct.
+			ref: "cargo:bstr@1.10.0",
 			want: lockfile.Entry{
-				Ref:    model.MustParseRef("cargo:grep@0.3.2"),
-				Source: lockfile.SourcePath,
-				Direct: true,
-				Line:   120,
-			},
-		},
-		{
-			// The project itself: a path entry nobody depends on.
-			ref: "cargo:ripgrep@14.1.1",
-			want: lockfile.Entry{
-				Ref:    model.MustParseRef("cargo:ripgrep@14.1.1"),
-				Source: lockfile.SourcePath,
-				Line:   362,
+				Ref:       model.MustParseRef("cargo:bstr@1.10.0"),
+				Source:    lockfile.SourceRegistry,
+				Resolved:  cratesIndex,
+				Integrity: "sha256:40723b8fb387abc38f4f4a37c09073622e41dd12327033091ef8950659e6dc0c",
+				Direct:    true,
+				Line:      20,
 			},
 		},
 	}
@@ -149,8 +163,13 @@ func TestParseSingleCrateLockfileVersion4(t *testing.T) {
 	if lf.Version != "4" {
 		t.Errorf("Version = %q, want 4", lf.Version)
 	}
-	if len(lf.Entries) != 112 {
-		t.Errorf("read %d entries, want 112", len(lf.Entries))
+	// One of the file's 112 tables is zoxide itself, which has no source because
+	// Cargo builds it from this directory.
+	if len(lf.Entries) != 111 {
+		t.Errorf("read %d entries, want 111", len(lf.Entries))
+	}
+	if has(lf, "cargo:zoxide@0.9.8") {
+		t.Error("cargo:zoxide@0.9.8 is an entry, and it is the crate being scanned")
 	}
 	if got := lf.Entries[0].Ref.String(); got != "cargo:aho-corasick@1.1.3" {
 		t.Errorf("first entry = %s, want aho-corasick, the first of the file", got)
@@ -183,14 +202,6 @@ func TestParseSingleCrateLockfileVersion4(t *testing.T) {
 				Line:      5,
 			},
 		},
-		{
-			ref: "cargo:zoxide@0.9.8",
-			want: lockfile.Entry{
-				Ref:    model.MustParseRef("cargo:zoxide@0.9.8"),
-				Source: lockfile.SourcePath,
-				Line:   969,
-			},
-		},
 	}
 	for _, tt := range tests {
 		if got := entryOf(t, lf, tt.ref); got != tt.want {
@@ -205,8 +216,9 @@ func TestParseReadsEverySourceKind(t *testing.T) {
 	if lf.Version != "4" {
 		t.Errorf("Version = %q, want 4", lf.Version)
 	}
-	if len(lf.Entries) != 13 || len(lf.Dropped) != 0 {
-		t.Fatalf("read %d entries and dropped %v, want 13 entries and no drops", len(lf.Entries), lf.Dropped)
+	// Two of the fifteen tables are the workspace root and a member of it.
+	if len(lf.Entries) != 11 || len(lf.Dropped) != 2 {
+		t.Fatalf("read %d entries and dropped %v, want 11 entries and the two of the workspace", len(lf.Entries), lf.Dropped)
 	}
 
 	tests := []struct {
@@ -281,15 +293,6 @@ func TestParseReadsEverySourceKind(t *testing.T) {
 				Integrity: "sha256:40723b8fb387abc38f4f4a37c09073622e41dd12327033091ef8950659e6dc0c",
 				Direct:    true,
 				Line:      50,
-			},
-		},
-		{
-			what: "a workspace member, which is the project too",
-			ref:  "cargo:member-crate@0.1.0",
-			want: lockfile.Entry{
-				Ref:    model.MustParseRef("cargo:member-crate@0.1.0"),
-				Source: lockfile.SourcePath,
-				Line:   56,
 			},
 		},
 		{
@@ -431,6 +434,7 @@ func TestParseIsNotFooledByAHeaderInsideAValue(t *testing.T) {
 [[package]]
 name = "innocent"
 version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 description = """
 [[package]]
 name = "evil"
@@ -444,7 +448,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	want := map[string]int{"cargo:innocent@1.0.0": 3, "cargo:evil@6.6.6": 11}
+	want := map[string]int{"cargo:innocent@1.0.0": 3, "cargo:evil@6.6.6": 12}
 	if len(lf.Entries) != len(want) {
 		t.Fatalf("entries = %+v, want %d", lf.Entries, len(want))
 	}

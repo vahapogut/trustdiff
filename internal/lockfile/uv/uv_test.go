@@ -132,9 +132,16 @@ func TestParseEditableProjectLockfileWithDependencyGroup(t *testing.T) {
 	if lf.Version != "1" {
 		t.Errorf("Version = %q, want 1", lf.Version)
 	}
-	// An editable project is installed, so unlike a virtual one it stays an entry.
-	if len(lf.Entries) != 42 || len(lf.Dropped) != 0 {
-		t.Fatalf("read %d entries and dropped %v, want 42 entries and no drops", len(lf.Entries), lf.Dropped)
+	// An editable project is installed, and it is still the project: uv writes the
+	// repository being scanned into the lockfile with an editable source where it
+	// has a build backend and a virtual one where it has not, and neither is a
+	// dependency the project acquired. Finding F16 of docs/review-2026-09-10.md.
+	if len(lf.Entries) != 41 || len(lf.Dropped) != 1 {
+		t.Fatalf("read %d entries and dropped %v, want 41 entries and the project", len(lf.Entries), lf.Dropped)
+	}
+	wantDrop := `line 707: "uv-docker-example" is the project itself (editable = "."), not an installed package`
+	if lf.Dropped[0] != wantDrop {
+		t.Errorf("dropped %q, want %q", lf.Dropped[0], wantDrop)
 	}
 
 	tests := []struct {
@@ -142,16 +149,6 @@ func TestParseEditableProjectLockfileWithDependencyGroup(t *testing.T) {
 		ref  string
 		want lockfile.Entry
 	}{
-		{
-			what: "the project, installed from its own directory",
-			ref:  "pypi:uv-docker-example@0.1.0",
-			want: lockfile.Entry{
-				Ref:      model.MustParseRef("pypi:uv-docker-example@0.1.0"),
-				Source:   lockfile.SourcePath,
-				Resolved: ".",
-				Line:     707,
-			},
-		},
 		{
 			what: "a runtime dependency of the project",
 			ref:  "pypi:fastapi@0.118.0",
@@ -204,13 +201,23 @@ func TestParseReadsEverySourceKind(t *testing.T) {
 	if lf.Version != "1" {
 		t.Errorf("Version = %q, want 1", lf.Version)
 	}
-	// Seventeen packages, one of which is the virtual project.
-	if len(lf.Entries) != 16 {
-		t.Fatalf("read %d entries, want 16", len(lf.Entries))
+	// Seventeen packages, three of which are the project and two members of it.
+	if len(lf.Entries) != 14 {
+		t.Fatalf("read %d entries, want 14", len(lf.Entries))
 	}
 	wantDrop := `line 24: "example-project" is the project itself (virtual = "."), not an installed package`
-	if len(lf.Dropped) != 1 || lf.Dropped[0] != wantDrop {
-		t.Errorf("dropped %v, want [%s]", lf.Dropped, wantDrop)
+	if len(lf.Dropped) != 3 || lf.Dropped[1] != wantDrop {
+		t.Errorf("dropped %v, want the project and its two members, one of them [%s]", lf.Dropped, wantDrop)
+	}
+	// The members go with it: editable-member has an editable source and
+	// member-package is named in [manifest] members with a directory source. Both
+	// are this repository's own code, and neither is a package it acquired.
+	for _, own := range []string{"editable-member", "member-package"} {
+		for _, e := range lf.Entries {
+			if e.Ref.Name == own {
+				t.Errorf("%s is an entry, and it is a member of this workspace", own)
+			}
+		}
 	}
 
 	tests := []struct {
@@ -219,13 +226,15 @@ func TestParseReadsEverySourceKind(t *testing.T) {
 		want lockfile.Entry
 	}{
 		{
-			what: "a workspace member, installed in place",
-			ref:  "pypi:editable-member@0.2.0",
+			what: "what a workspace member asks for is a dependency, and the member is not",
+			ref:  "pypi:from-editable@0.7.0",
 			want: lockfile.Entry{
-				Ref:      model.MustParseRef("pypi:editable-member@0.2.0"),
-				Source:   lockfile.SourcePath,
-				Resolved: "packages/editable",
-				Line:     16,
+				Ref:       model.MustParseRef("pypi:from-editable@0.7.0"),
+				Source:    lockfile.SourceRegistry,
+				Resolved:  "https://files.pythonhosted.org/packages/aa/bb/from_editable-0.7.0-py3-none-any.whl",
+				Integrity: "sha256:5b3d1e9c9c2c9f1d3a2b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091",
+				Direct:    true,
+				Line:      58,
 			},
 		},
 		{
@@ -334,16 +343,6 @@ func TestParseReadsEverySourceKind(t *testing.T) {
 				Direct:    true,
 				Optional:  true,
 				Line:      107,
-			},
-		},
-		{
-			what: "a member the manifest names, whose source is a directory",
-			ref:  "pypi:member-package@0.3.0",
-			want: lockfile.Entry{
-				Ref:      model.MustParseRef("pypi:member-package@0.3.0"),
-				Source:   lockfile.SourcePath,
-				Resolved: "packages/member",
-				Line:     113,
 			},
 		},
 		{
@@ -459,11 +458,11 @@ func TestParseReadsAProjectWithADynamicVersion(t *testing.T) {
 	if dev := entryOf(t, lf, "pypi:dev-dependency@0.1.0"); !dev.Dev {
 		t.Errorf("dev-dependency = %+v, want a development dependency", dev)
 	}
-	// The two version-less tables leave the entries, but with a reason that says
-	// what they are rather than calling them packages without a version.
+	// The project and its member leave the entries, with a reason that says what
+	// they are rather than calling them packages without a version.
 	want := []string{
-		`line 23: "dynamic-member" states no version (editable = "packages/member"), so only its dependencies are read`,
-		`line 30: "dynamic-project" states no version (editable = "."), so only its dependencies are read`,
+		`line 23: "dynamic-member" is the project itself (editable = "packages/member"), not an installed package`,
+		`line 30: "dynamic-project" is the project itself (editable = "."), not an installed package`,
 	}
 	if len(lf.Dropped) != len(want) {
 		t.Fatalf("dropped %v, want %v", lf.Dropped, want)

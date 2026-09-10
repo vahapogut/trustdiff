@@ -1,0 +1,34 @@
+# uv writes the project it locked into the lockfile like any other package, with an
+# editable source pointing at the directory it lives in. virtual = "." was already
+# dropped; editable = "." is the same thing with a build backend. Finding F16 of
+# docs/review-2026-09-10.md.
+version = 1
+requires-python = ">=3.12"
+
+[manifest]
+members = [
+    "trustdiff-fixture-app",
+    "trustdiff-fixture-worker",
+]
+
+[[package]]
+name = "trustdiff-fixture-app"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "trustdiff-fixture-lib" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "trustdiff-fixture-lib", specifier = ">=2.0.0" }]
+
+[[package]]
+name = "trustdiff-fixture-worker"
+version = "0.1.0"
+source = { editable = "services/worker" }
+
+[[package]]
+name = "trustdiff-fixture-lib"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/source/t/trustdiff-fixture-lib/trustdiff_fixture_lib-2.0.0.tar.gz", hash = "sha256:5f0c3b0f0c1a2f0d3a4b5c6d7e8f90112233445566778899aabbccddeeff0011" }

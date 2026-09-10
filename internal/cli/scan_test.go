@@ -662,3 +662,80 @@ func TestScanAggregatesUnhashedRequirements(t *testing.T) {
 		})
 	}
 }
+
+// TestScanDoesNotReportTheProjectAsItsOwnDependency is finding F16 of
+// docs/review-2026-09-10.md. Three lockfile formats write the repository's own
+// code into the lockfile beside what it installs: uv gives the project an editable
+// source, Cargo gives the root package and every workspace member a table with no
+// source, and Poetry gives a sibling package a directory source. None of them is a
+// dependency the project acquired, and each of them arrived with no hash, so a
+// clean checkout of ripgrep reported ten warnings about its own crates. What the
+// project builds from its own working tree is not something a trust report has
+// anything to say about.
+func TestScanDoesNotReportTheProjectAsItsOwnDependency(t *testing.T) {
+	tests := []struct {
+		name string
+		file string
+		// subjects is every package the run should evaluate, and nothing else.
+		subjects []string
+		// unhashed is the subjects that should carry an integrity-missing finding.
+		unhashed []string
+	}{
+		{
+			name:     "a cargo workspace is not eleven dependencies",
+			file:     "cargo.lock",
+			subjects: []string{"memchr"},
+		},
+		{
+			name:     "the project uv locked is not a package uv installed",
+			file:     "uv.lock",
+			subjects: []string{"trustdiff-fixture-lib"},
+		},
+		{
+			// Poetry does not write the root project, and a sibling package is a
+			// dependency: it stays a subject, and TD013 still says it comes from a
+			// directory. What it must not say is that a hash is missing, because a
+			// directory has no artifact for one to be missing from.
+			name:     "a directory dependency has no artifact to hash",
+			file:     "poetry.lock",
+			subjects: []string{"trustdiff-fixture-local", "trustdiff-fixture-lib"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lock := readRegressionFixture(t, "f16-the-project-is-not-a-dependency", tt.file)
+			dir := scanFixture(t)
+			writeFile(t, dir, tt.file, lock)
+
+			code, stdout, stderr := run(t, "--format", "json", "--fail-on", "never", "scan")
+			if code != ExitOK {
+				t.Fatalf("exit = %d, want %d (stderr %q)\n%s", code, ExitOK, stderr, stdout)
+			}
+			rep := decodeReport(t, stdout)
+
+			got := make([]string, 0, len(rep.Subjects))
+			var unhashed []string
+			for i := range rep.Subjects {
+				s := &rep.Subjects[i]
+				got = append(got, s.Ref.Name)
+				for j := range s.Findings {
+					if s.Findings[j].ID == "TD014" {
+						unhashed = append(unhashed, s.Ref.Name)
+					}
+				}
+			}
+			slices.Sort(got)
+			want := slices.Clone(tt.subjects)
+			slices.Sort(want)
+			if !slices.Equal(got, want) {
+				t.Errorf("subjects = %v, want %v", got, want)
+			}
+			slices.Sort(unhashed)
+			wantUnhashed := slices.Clone(tt.unhashed)
+			slices.Sort(wantUnhashed)
+			if !slices.Equal(unhashed, wantUnhashed) {
+				t.Errorf("integrity-missing on %v, want %v", unhashed, wantUnhashed)
+			}
+		})
+	}
+}

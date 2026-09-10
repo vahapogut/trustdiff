@@ -1,0 +1,33 @@
+# Poetry never writes the root project into the lockfile, but a sibling package of
+# the same repository is a directory dependency with no files list: there is no
+# artifact, so there is no hash, and there never can be. Finding F16 of
+# docs/review-2026-09-10.md.
+[[package]]
+name = "trustdiff-fixture-local"
+version = "0.1.0"
+description = "a package of this repository, built from the working tree"
+optional = false
+python-versions = ">=3.12"
+groups = ["main"]
+files = []
+develop = true
+
+[package.source]
+type = "directory"
+url = "libs/local"
+
+[[package]]
+name = "trustdiff-fixture-lib"
+version = "2.0.0"
+description = "a package from the index"
+optional = false
+python-versions = ">=3.12"
+groups = ["main"]
+files = [
+    {file = "trustdiff_fixture_lib-2.0.0-py3-none-any.whl", hash = "sha256:49f99d62abad30e598b4fce52a2d0769bbc0f1b7f3c2f63d8423dc85d6d2db20"},
+]
+
+[metadata]
+lock-version = "2.1"
+python-versions = ">=3.12"
+content-hash = "0f0c3b0f0c1a2f0d3a4b5c6d7e8f90112233445566778899aabbccddeeff0011"
