@@ -63,6 +63,33 @@ if ! who=$(npm whoami 2>/dev/null); then
 fi
 echo "signed in as: ${who}"
 
+# Two-factor authentication is checked before anything is published, not when the
+# publisher is configured, because step 3 needs it and step 2 does not. Finding
+# out at the end would leave the package published and the workflow still unable
+# to touch it, which is the one half-done state worth avoiding.
+tfa=$(npm profile get --json 2>/dev/null | node --print "JSON.parse(require('fs').readFileSync(0,'utf8')).tfa ? 'on' : 'off'" 2>/dev/null || echo unknown)
+if [ "${tfa}" = "off" ]; then
+	cat >&2 <<-EOF
+
+		Two-factor authentication is off on ${who}, and "npm trust" refuses to run
+		without it.
+
+		It has to be a passkey or a security key. npm stopped accepting an
+		authenticator app for a new enrolment: as of 2026-09-10 "npm profile
+		enable-2fa" answers a request to add one with "Adding a new TOTP 2FA is no
+		longer supported". The methods it does take are WebAuthn ones, which means a
+		passkey through Windows Hello, Touch ID or Face ID, or a hardware key such as
+		a YubiKey.
+
+		  https://www.npmjs.com/settings/${who}/tfa
+
+		Keep the recovery codes somewhere you will still have them if the device is
+		lost. Then run this script again.
+	EOF
+	exit 2
+fi
+echo "two-factor authentication: ${tfa}"
+
 # 1. The organisation, which is the one step nothing can do for you.
 if ! npm org ls "${org}" >/dev/null 2>&1; then
 	cat >&2 <<-EOF
@@ -74,8 +101,13 @@ if ! npm org ls "${org}" >/dev/null 2>&1; then
 		  Name: ${org}          (the name becomes the scope, so it must be exactly this)
 		  Plan: the free one, "unlimited public packages"
 
-		Turn on two-factor authentication on the account first: the publish below and
-		"npm trust" both require it.
+		Turn on two-factor authentication on the account first: "npm trust" requires it.
+		npm no longer accepts an authenticator app for a new enrolment. As of
+		2026-09-10 "npm profile enable-2fa" answers a request to add one with "Adding
+		a new TOTP 2FA is no longer supported", and the only methods it takes are
+		WebAuthn ones: a passkey through Windows Hello, Touch ID or Face ID, or a
+		hardware key such as a YubiKey. Add one at
+		https://www.npmjs.com/settings/<your-account>/tfa and keep the recovery codes.
 
 		Then run this script again.
 	EOF

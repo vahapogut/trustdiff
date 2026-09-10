@@ -400,8 +400,15 @@ created on npmjs.com only. `npm org` manages the members of one that already exi
 and cannot create it, and there is no API for it.
 
 Choose the free plan. It allows unlimited public packages, which is all this needs.
-Turn on two-factor authentication on the account first: the next two steps both
-require it.
+
+Turn on two-factor authentication on the account too, because `npm trust` in 8.3
+refuses to run without it. It has to be a passkey or a security key. npm stopped
+accepting an authenticator app for a new enrolment, and `npm profile enable-2fa`
+answers a request to add one with `Adding a new TOTP 2FA is no longer supported`,
+verified on 2026-09-10. The methods it does take are WebAuthn ones: a passkey
+through Windows Hello, Touch ID or Face ID, or a hardware key such as a YubiKey.
+Add one at `https://www.npmjs.com/settings/<account>/tfa` and keep the recovery
+codes somewhere you will still have them if the device is lost.
 
 If the name `trustdiff` turns out to be taken, the fallbacks are
 `@vahapogut1/bun-scanner`, which needs no organisation at all, or the unscoped
