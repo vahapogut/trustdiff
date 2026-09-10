@@ -293,9 +293,9 @@ Exit code 0 (no blocking findings).
 In a workflow, write SARIF instead and let code scanning put those findings on the diff:
 
 ```yaml
-- uses: vahapogut/trustdiff@v0.4.0
+- uses: vahapogut/trustdiff@v0.4.1
   with:
-    version: v0.4.0
+    version: v0.4.1
     fail-on: block
     format: sarif
 ```
@@ -303,7 +303,7 @@ In a workflow, write SARIF instead and let code scanning put those findings on t
 `version` is given explicitly because the action's own default lags one release
 behind. The checksum table it verifies a download against can only be written after
 the archives exist, so the commit that fills it in comes after the tag, and the
-action at tag `v0.4.0` still defaults to downloading `v0.3.0`.
+action at tag `v0.4.1` still defaults to downloading `v0.4.0`.
 
 The action downloads the pinned release, verifies it against checksums signed with cosign before running it, and uploads the SARIF. The job needs `security-events: write` for that upload. A pull request from a fork gets a read-only token whatever the workflow asks for, so there the action skips the upload and prints the findings in the job log instead of failing on a permission the change cannot be given. Or run the binary yourself:
 

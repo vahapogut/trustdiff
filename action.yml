@@ -38,9 +38,9 @@
 #     - uses: actions/checkout@<sha>
 #       with:
 #         fetch-depth: 0       # diff needs the base commit's lockfiles
-#     - uses: vahapogut/trustdiff@v0.4.0
+#     - uses: vahapogut/trustdiff@v0.4.1
 #       with:
-#         version: v0.4.0    # the tag's own default is the release before it
+#         version: v0.4.1    # the tag's own default is the release before it
 #         base: ${{ github.event.pull_request.base.sha }}
 
 name: trustdiff
@@ -54,14 +54,14 @@ branding:
 inputs:
   version:
     description: >-
-      Release tag of trustdiff to run, for example v0.4.0. The default is the
+      Release tag of trustdiff to run, for example v0.4.1. The default is the
       version whose sha256 table is embedded in this file; any other version is
       verified through the release's cosign-signed checksums.txt instead.
     required: false
     # The pin and the sha256 table below are updated after every release, in a
     # commit named "chore(action): pin <tag> and checksums". v0.1.0 is not a
     # usable default here: it has no diff command.
-    default: v0.4.0
+    default: v0.4.1
   base:
     description: >-
       Git ref or commit to compare against. Leave it empty to let trustdiff use
@@ -109,7 +109,7 @@ runs:
         # publishes, so a typo is a message here rather than a 404 later.
         version="$VERSION"
         if ! [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
-          echo "::error::version must be a release tag such as v0.4.0 or v0.4.0-rc.1; got '${version}'"
+          echo "::error::version must be a release tag such as v0.4.1 or v0.4.1-rc.1; got '${version}'"
           exit 1
         fi
 
@@ -144,16 +144,16 @@ runs:
         # signature. An entry left as "pending" falls back to the cosign route
         # below, which proves the same thing by a longer path, so the action keeps
         # working before the table is filled in.
-        pinned_version=v0.4.0
+        pinned_version=v0.4.1
         sha=""
         if [ "$version" = "$pinned_version" ]; then
           case "${os}_${arch}" in
-            linux_amd64)    sha=94bdb32c1d76b9eaa682f81e51e1b7be28b094e310030904c7a7f6adf2ad3b9e ;;
-            linux_arm64)    sha=ecddbf3ef5d028113863c6625dc5e369c9d5a311f91bbc9049bc2acd7d335963 ;;
-            darwin_amd64)   sha=12dc31ff447e22478ce481645455ca264dfe9286a405717478d9d24c7aea5425 ;;
-            darwin_arm64)   sha=ed10f206d14164cacc744bb0568431a261565d692b6afc7be90a7e29b967fb43 ;;
-            windows_amd64)  sha=a399d541ad9dc3ee024a919500cd34d32a77bf4d1114117f9e320add85acd477 ;;
-            windows_arm64)  sha=c1a9d740087d055a62c43c5ade556094f89f3d699107be215d90e682e8f47c68 ;;
+            linux_amd64)    sha=9ff26ef6255d4fcbd0166af9bc9d9b9d74577e61a703b402e0ed5dc54ebf0f35 ;;
+            linux_arm64)    sha=6d011ae5bf51e4e21a28e73815e076264dd833df80087290f49af94c93db28e8 ;;
+            darwin_amd64)   sha=8154a17d56e7c5eb91262e69556b2b83f0560ee1df25c739ccb7b0fb3cb4dd75 ;;
+            darwin_arm64)   sha=be4212d60bc446dad33de75074bb790e8c98d647a0ec8d7c7f8b049189150ab9 ;;
+            windows_amd64)  sha=3f0e555a9f34a291c9cce157068cae05ca26b8ecf919a60798de0a572d08baad ;;
+            windows_arm64)  sha=7cdd3811178dffbf2f58615031c8036f241bfd7eb4717b879cd83c35b4e84462 ;;
           esac
         fi
         verify=pinned
