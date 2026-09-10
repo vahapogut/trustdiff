@@ -102,6 +102,34 @@ jobs:
           # The tape uses Set Columns and Set Rows, which need vhs v0.12.0 or later.
           version: v0.12.0
 
+      - name: Say what vhs actually did
+        # The action reports success and leaves no file, so this runs vhs again by
+        # hand with its output attached and looks at what is on disk afterwards.
+        # Diagnostic only: it must not decide whether the job passes.
+        continue-on-error: true
+        run: |
+          echo "vhs:    $(command -v vhs)"
+          vhs --version 2>&1 | head -1
+          echo "ttyd:   $(command -v ttyd)"
+          ttyd --version 2>&1 | head -1
+          echo "ffmpeg: $(command -v ffmpeg)"
+          for b in google-chrome google-chrome-stable chromium chromium-browser; do
+            if command -v "${b}" >/dev/null 2>&1; then
+              echo "browser: ${b} $(${b} --version 2>&1 | head -1)"
+            fi
+          done
+          echo "--- running vhs directly, output attached ---"
+          set +e
+          vhs docs/demo.tape 2>&1 | tail -40
+          echo "vhs exit: ${PIPESTATUS[0]}"
+          set -e
+          echo "--- what is in docs/ ---"
+          ls -la docs/ | head -20
+          echo "--- any demo.gif anywhere, written in the last five minutes ---"
+          find / -name 'demo.gif' -type f -newermt '-5 minutes' 2>/dev/null | head -5
+          echo "--- anything vhs left in the temp directory ---"
+          ls -la "${TMPDIR:-/tmp}" 2>/dev/null | grep -iE 'vhs|rod|chrom' | head -10
+
       - name: Put the recording where the rest of this job expects it
         # vhs prints "Creating docs/demo.gif..." and resolves that path against its own
         # working directory, which is not necessarily the workspace root, so the file
