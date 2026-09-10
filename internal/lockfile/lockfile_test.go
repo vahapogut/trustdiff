@@ -384,3 +384,99 @@ func (parentParser) Detect(name string) bool {
 func (parentParser) Parse(path string, _ io.Reader) (*Lockfile, error) {
 	return &Lockfile{Path: path, Format: "parent-directory-test"}, nil
 }
+
+// A version a file locks at two places is one thing to evaluate while the two lines
+// install the same artifact, and a mirror rewrite of a registry location is not a
+// disagreement: it is the same release fetched through somewhere else.
+func TestInstallsCollapsesTheCopiesOfOneArtifact(t *testing.T) {
+	lf := &Lockfile{Ecosystem: model.NPM}
+	ref := model.MustParseRef("npm:left-pad@1.3.0")
+	lf.Add(Entry{Ref: ref, Source: SourceRegistry, Resolved: "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz", Integrity: "sha512-pad", Line: 12})
+	lf.Add(Entry{Ref: ref, Source: SourceRegistry, Resolved: "https://npm.example.com/left-pad/-/left-pad-1.3.0.tgz", Integrity: "sha512-pad", Direct: true, Line: 340})
+
+	got := lf.Installs()
+	if len(got) != 1 {
+		t.Fatalf("Installs() = %d entries, want one: a mirror serves the same artifact", len(got))
+	}
+	if got[0].Line != 12 || !got[0].Direct {
+		t.Errorf("Installs()[0] = line %d, direct %v, want line 12 and direct", got[0].Line, got[0].Direct)
+	}
+}
+
+// This is finding F3 of docs/review-2026-09-10.md at the level the collapsing
+// happens: a copy repointed at an archive of its own installs other bytes under the
+// same version, so it is a line of its own to judge.
+func TestInstallsKeepsACopyThatInstallsSomethingElse(t *testing.T) {
+	lf := &Lockfile{Ecosystem: model.NPM}
+	ref := model.MustParseRef("npm:left-pad@1.3.0")
+	lf.Add(Entry{Ref: ref, Source: SourceRegistry, Resolved: "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz", Integrity: "sha512-pad", Line: 12})
+	lf.Add(Entry{Ref: ref, Source: SourceURL, Resolved: "https://tarballs.example.com/left-pad.tgz", Line: 340})
+
+	got := lf.Installs()
+	if len(got) != 2 {
+		t.Fatalf("Installs() = %d entries, want both: the two lines install different bytes", len(got))
+	}
+	if got[0].Line != 12 || got[1].Line != 340 {
+		t.Errorf("Installs() lines = %d and %d, want 12 and 340", got[0].Line, got[1].Line)
+	}
+}
+
+// npm records neither a location nor a hash for a dependency bundled inside another
+// package's archive, so such a line contradicts nothing the fetched line says,
+// whichever of the two the file writes first. minimatch's 411 line lockfile holds 68
+// versions of this shape and 11 of them put the bundled line first, so reading a
+// bundled line as a copy that installs something else would turn 327 subjects into
+// 395, every one of the extra ones a line that says nothing.
+func TestInstallsFoldsABundledLineInEitherOrder(t *testing.T) {
+	ref := model.MustParseRef("npm:ansi-regex@5.0.1")
+	bundled := Entry{Ref: ref, Source: SourceUnknown, Bundled: true, Line: 12}
+	fetched := Entry{Ref: ref, Source: SourceRegistry, Resolved: "https://registry.npmjs.org/ansi-regex/-/ansi-regex-5.0.1.tgz", Integrity: "sha512-ansi", Direct: true, Line: 340}
+
+	for _, tt := range []struct {
+		name     string
+		entries  []Entry
+		wantLine int
+	}{
+		{name: "the fetched line first", entries: []Entry{fetched, bundled}, wantLine: 340},
+		{name: "the bundled line first", entries: []Entry{bundled, fetched}, wantLine: 340},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			lf := &Lockfile{Ecosystem: model.NPM, Entries: tt.entries}
+			got := lf.Installs()
+			if len(got) != 1 {
+				t.Fatalf("Installs() = %d entries, want one", len(got))
+			}
+			if got[0].Line != tt.wantLine {
+				t.Errorf("Installs()[0].Line = %d, want %d, the line that says where the version comes from", got[0].Line, tt.wantLine)
+			}
+			if !got[0].Direct || got[0].Bundled {
+				t.Errorf("Installs()[0] = direct %v, bundled %v, want direct and not bundled", got[0].Direct, got[0].Bundled)
+			}
+		})
+	}
+}
+
+// A parser that leaves the source empty has not vouched for the registry, and the
+// checks read it that way too, so the grouping has to agree or one file written by
+// two hands reports a package twice for nothing.
+func TestInstallsReadsAnUnstatedSourceAsUnknown(t *testing.T) {
+	ref := model.MustParseRef("npm:left-pad@1.3.0")
+	lf := &Lockfile{Ecosystem: model.NPM, Entries: []Entry{
+		{Ref: ref, Resolved: "https://tarballs.example.com/left-pad.tgz", Line: 12},
+		{Ref: ref, Source: SourceUnknown, Resolved: "https://tarballs.example.com/left-pad.tgz", Line: 340},
+	}}
+	if got := lf.Installs(); len(got) != 1 {
+		t.Fatalf("Installs() = %d entries, want one: neither line claims the registry", len(got))
+	}
+}
+
+func TestInstallsFillsInTheFilesEcosystem(t *testing.T) {
+	lf := &Lockfile{Ecosystem: model.Cargo}
+	lf.Add(Entry{Ref: model.PackageRef{Name: "serde", Version: "1.0.210"}, Source: SourceRegistry, Integrity: "sha256-ser"})
+	if got := lf.Installs(); len(got) != 1 || got[0].Ref.Ecosystem != model.Cargo {
+		t.Fatalf("Installs() = %+v, want the file's ecosystem filled in", got)
+	}
+	if len((*Lockfile)(nil).Installs()) != 0 {
+		t.Error("Installs() of a nil lockfile is not empty")
+	}
+}

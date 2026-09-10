@@ -446,9 +446,10 @@ func baselineWritten(path string, observed int, dropped []baseline.Entry, merged
 
 // driftSubjects turns the maintainer set changes into the report a person reads.
 //
-// This is the shape the runner has no room for. A run evaluates one subject per
-// package version, and a maintainer set that changed while the locked version
-// stayed put moves no version and therefore produces no subject; the baseline
+// This is the shape the runner has no room for. A run evaluates a package
+// version only where a lockfile line installs it, and a maintainer set that
+// changed while the locked version stayed put moves no version and therefore
+// produces no subject; the baseline
 // command has one for every package it observed, so it reports the change itself,
 // as the finding TD003 would have made, with the level and the allow list the
 // policy gives that check.

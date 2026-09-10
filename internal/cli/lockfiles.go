@@ -126,9 +126,6 @@ func (a *App) writeNotes(lines []string) error {
 	return nil
 }
 
-// inputFor turns one lockfile entry into a subject to evaluate. path is the
-// lockfile as the report should name it, slash separated. The entry is copied,
-// so the input owns the entry the checks read.
 // baseEntry copies the base side of a changed pair so the input owns it, filling in
 // the ecosystem the file states when the entry left it empty. It does for the base
 // entry what inputFor does for the head one, so the check that compares the two
@@ -141,6 +138,9 @@ func baseEntry(eco model.Ecosystem, e *lockfile.Entry) *lockfile.Entry {
 	return &entry
 }
 
+// inputFor turns one lockfile entry into a subject to evaluate. path is the
+// lockfile as the report should name it, slash separated. The entry is copied,
+// so the input owns the entry the checks read.
 func inputFor(path string, eco model.Ecosystem, e *lockfile.Entry) checks.Input {
 	entry := *e
 	if entry.Ref.Ecosystem == "" {
@@ -154,27 +154,18 @@ func inputFor(path string, eco model.Ecosystem, e *lockfile.Entry) checks.Input 
 	}
 }
 
-// entryInputs turns the entries of one lockfile into inputs, dropping the repeats
-// of one exact version: a lockfile that installs a package at the same version in
-// several places, which npm does routinely, is one subject to evaluate. The first
-// entry wins, the one on the earliest line, and the package counts as direct if
-// any of its copies is. This is the rule gitdiff.Diff applies to the two sides of
-// a diff, so diff and scan report the same subjects for the same file.
+// entryInputs turns the entries of one lockfile into inputs. A lockfile installs a
+// package at the same version in several places, which npm does routinely, and those
+// places are one subject to evaluate as long as they agree about what they install;
+// a copy the file resolves from somewhere else, or leaves unguarded, is a subject of
+// its own on its own line. lockfile.Installs applies that rule, and gitdiff.Diff
+// applies the same one to the two sides of a diff, so diff and scan report the same
+// subjects for the same file.
 func entryInputs(path string, lf *lockfile.Lockfile) []checks.Input {
-	inputs := make([]checks.Input, 0, len(lf.Entries))
-	at := make(map[model.PackageRef]int, len(lf.Entries))
-	for i := range lf.Entries {
-		e := &lf.Entries[i]
-		in := inputFor(path, lf.Ecosystem, e)
-		if j, seen := at[in.Ref]; seen {
-			if in.Direct {
-				inputs[j].Direct = true
-				inputs[j].Lock.Direct = true
-			}
-			continue
-		}
-		at[in.Ref] = len(inputs)
-		inputs = append(inputs, in)
+	entries := lf.Installs()
+	inputs := make([]checks.Input, 0, len(entries))
+	for i := range entries {
+		inputs = append(inputs, inputFor(path, lf.Ecosystem, &entries[i]))
 	}
 	return inputs
 }

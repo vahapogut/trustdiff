@@ -6,6 +6,10 @@ Levels come from the policy. The defaults quoted in each section are what a run 
 
 A check never passes for lack of data. When a registry, OSV, deps.dev or the download counts could not be fetched, or when the registry does not record what the check needs, the check reports `skipped` with the reason, the human report lists it under the card, and the JSON report lists it in `skipped`. A version with no evaluated check gets the verdict `skipped`, not `ok`.
 
+A lockfile names a version once per place it installs it, and those places are one subject as long as they agree about where the
+version comes from and what guards it. A line that resolves the same version from somewhere else, or drops its hash, is a subject
+of its own reported on its own line, because that is a different install however the version reads.
+
 Evidence keys are part of the JSON report (`schema/report.v1.json`, schema `trustdiff.report/1`). Within a schema version keys are added, never renamed or removed. The example under each check is the human report as `trustdiff check` prints it, captured against the live registries on 2026-09-09 unless the section says otherwise.
 
 Ecosystems: npm, PyPI and crates.io from 0.1.0, JSR from 0.4.0. A `jsr:` ref runs the checks JSR carries the data for and reports the rest as skipped with the reason; the applicability table lives in the package comment of `internal/registry/jsr`.

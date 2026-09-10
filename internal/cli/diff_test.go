@@ -833,3 +833,49 @@ func TestDiffReportsASameVersionIntegritySwap(t *testing.T) {
 		t.Errorf("integrity = %v, want the hash the head file records", got)
 	}
 }
+
+// TestDiffReportsARepointedNestedCopy is the diff half of finding F3 of
+// docs/review-2026-09-10.md. The change leaves the hoisted copy of the version
+// alone and repoints the copy nested under another package at an archive of its
+// own, with no hash. Before the fix both copies of both files collapsed into the
+// first of them, the two files then held the same one entry, and the run said
+// nothing had changed. The base file holds one entry for the version because its
+// two copies did agree, so the repointed copy arrives as an install that is new.
+func TestDiffReportsARepointedNestedCopy(t *testing.T) {
+	base := readRegressionFixture(t, "f3-nested-duplicate-divergent-copy", "base", "package-lock.json")
+	head := readRegressionFixture(t, "f3-nested-duplicate-divergent-copy", "head", "package-lock.json")
+	useFakeLoader(t)
+	dir := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(dir))
+	writeFile(t, dir, "base/package-lock.json", base)
+	writeFile(t, dir, "head/package-lock.json", head)
+	chdir(t, dir)
+
+	code, stdout, stderr := run(t, "--format", "json", "diff",
+		"--base-file", "base/package-lock.json", "head/package-lock.json")
+	if code != ExitFindings {
+		t.Fatalf("exit = %d, want %d (stderr %q)\n%s", code, ExitFindings, stderr, stdout)
+	}
+	rep := decodeReport(t, stdout)
+	if len(rep.Subjects) != 1 {
+		t.Fatalf("subjects = %v, want the repointed copy alone: nothing else in the file moved", refsOf(&rep))
+	}
+	s := rep.Subjects[0]
+	if s.Ref.String() != "npm:trustdiff-fixture-lib@1.0.0" {
+		t.Fatalf("subject = %s, want the nested copy of the library", s.Ref)
+	}
+	want := lineOf(t, head, "node_modules/trustdiff-fixture-wrapper/node_modules/trustdiff-fixture-lib")
+	if s.Location == nil || s.Location.Line != want {
+		t.Fatalf("location = %+v, want the nested line %d", s.Location, want)
+	}
+	found := map[string]model.Level{}
+	for i := range s.Findings {
+		found[s.Findings[i].ID] = s.Findings[i].Level
+	}
+	if found["TD013"] != model.LevelBlock {
+		t.Errorf("TD013 = %s, want block (findings %v, skipped %v)", found["TD013"], found, s.Skipped)
+	}
+	if found["TD014"] != model.LevelWarn {
+		t.Errorf("TD014 = %s, want warn (findings %v, skipped %v)", found["TD014"], found, s.Skipped)
+	}
+}

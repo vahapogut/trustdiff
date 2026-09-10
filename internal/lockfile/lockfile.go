@@ -104,7 +104,11 @@ func (l *Lockfile) Drop(format string, args ...any) {
 	l.Dropped = append(l.Dropped, fmt.Sprintf(format, args...))
 }
 
-// Refs returns the refs of every entry, deduplicated, in first-seen order.
+// Refs returns the refs of every entry, deduplicated, in first-seen order. This is
+// the coarser of the two rules in this file, and deliberately so: it says what the
+// run has to fetch, and one registry answer serves every line that locks a version,
+// however many of them there are and whatever they install. Installs is the one that
+// decides what gets evaluated, and it keeps two lines apart when they disagree.
 func (l *Lockfile) Refs() []model.PackageRef {
 	seen := make(map[model.PackageRef]bool, len(l.Entries))
 	out := make([]model.PackageRef, 0, len(l.Entries))
@@ -114,6 +118,126 @@ func (l *Lockfile) Refs() []model.PackageRef {
 		}
 		seen[e.Ref] = true
 		out = append(out, e.Ref)
+	}
+	return out
+}
+
+// artifactKey identifies what one entry installs: the exact version, where it comes
+// from, the hash that guards it and, for everything the ecosystem's own registry does
+// not serve, the location itself. A registry entry's location is left out because
+// moving a project to a mirror rewrites every one of them without changing a byte of
+// what is installed, which is the exemption internal/gitdiff and TD016 both make.
+//
+// The hash is compared as written, which is stricter than TD016's hashesDisagree, and
+// deliberately so. This key decides whether two lines are one thing to evaluate:
+// keeping a copy that turns out to be the same artifact costs one card in the report,
+// and folding one that is not hides whatever that line installs. TD016 reports rather
+// than groups, and a false block is expensive, so it errs the other way.
+//
+// An Entry field that belongs to the artifact belongs in here too, or two lines that
+// disagree about it quietly become one.
+type artifactKey struct {
+	ref       model.PackageRef
+	source    Source
+	integrity string
+	resolved  string
+}
+
+func (e *Entry) artifactKey() artifactKey {
+	k := artifactKey{ref: e.Ref, source: e.Source, integrity: e.Integrity}
+	if k.source == "" {
+		// A parser that stated no source has not vouched for the registry, which is
+		// how the checks read an empty one too.
+		k.source = SourceUnknown
+	}
+	if k.source != SourceRegistry {
+		k.resolved = e.Resolved
+	}
+	return k
+}
+
+// SameArtifact reports whether two entries install the same thing. It is the question
+// behind both readers of this package: whether two lines of one file are one install
+// to evaluate, and whether the entry a change left behind and the entry it wrote are
+// the same artifact under one version.
+func SameArtifact(a, b *Entry) bool {
+	return a.artifactKey() == b.artifactKey()
+}
+
+// statesItsArtifact reports whether the entry says anything about what it installs. A
+// bundled entry never does: npm records neither a location nor a hash for a dependency
+// whose bytes ship inside the archive of the package that carries it, and npm's own
+// lockfile bundles two thirds of its entries. Nor does a line with no location, no
+// hash and no stated source, which is the same thing written by a parser that has no
+// flag for it.
+func (e *Entry) statesItsArtifact() bool {
+	if e.Bundled {
+		return false
+	}
+	return e.Resolved != "" || e.Integrity != "" || (e.Source != "" && e.Source != SourceUnknown)
+}
+
+// Installs returns the entries of the file, with the ecosystem of a format that states
+// it once filled in and the lines that install one artifact collapsed into one entry,
+// in the order the file first mentions them.
+//
+// A lockfile names a version once per place it is installed at: npm writes the hoisted
+// package and every nested copy of it, which is one thing to evaluate however many
+// lines it takes. What decides whether two lines are one thing is not the version but
+// the artifact. A copy repointed at another archive installs other bytes under the
+// same version, and folding it into the clean copy above it is how that goes unseen.
+//
+// A line that states nothing about its artifact is not a disagreement, and folds into
+// whatever the file does state for that version wherever in the file it says it. It
+// speaks for the version only when nothing else does. Reading npm's bundled lines as
+// separate installs would be one subject per line for lines that say nothing.
+//
+// The entry kept for a version is the first line that states its artifact, or the
+// first line of all when none does, and it counts as direct if any line of the group
+// is. A nil receiver returns nothing: that is the side a change which adds or deletes
+// a lockfile has.
+func (l *Lockfile) Installs() []Entry {
+	if l == nil {
+		return nil
+	}
+	// at holds the entry kept for one artifact. first holds the entry kept for a
+	// version, which a line that states nothing folds into and which the first line
+	// that does state something takes over.
+	at := make(map[artifactKey]int, len(l.Entries))
+	first := make(map[model.PackageRef]int, len(l.Entries))
+	out := make([]Entry, 0, len(l.Entries))
+	for i := range l.Entries {
+		e := l.Entries[i]
+		if e.Ref.Ecosystem == "" {
+			e.Ref.Ecosystem = l.Ecosystem
+		}
+		if !e.statesItsArtifact() {
+			if j, seen := first[e.Ref]; seen {
+				out[j].Direct = out[j].Direct || e.Direct
+				continue
+			}
+			first[e.Ref] = len(out)
+			out = append(out, e)
+			continue
+		}
+		k := e.artifactKey()
+		if j, seen := at[k]; seen {
+			out[j].Direct = out[j].Direct || e.Direct
+			continue
+		}
+		if j, seen := first[e.Ref]; seen && !out[j].statesItsArtifact() {
+			// The version was first met on a line that says nothing about where it
+			// comes from. This one does, so this is the line to report it at.
+			e.Direct = e.Direct || out[j].Direct
+			out[j] = e
+			at[k] = j
+			continue
+		}
+		if _, seen := first[e.Ref]; !seen {
+			first[e.Ref] = len(out)
+		}
+		at[k] = len(out)
+		out = append(out, e)
 	}
 	return out
 }

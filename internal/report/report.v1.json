@@ -18,7 +18,7 @@
       "$ref": "#/definitions/policy"
     },
     "subjects": {
-      "description": "One entry per evaluated package version, in the order the run evaluated them: command line order for check, lockfile order for diff and scan.",
+      "description": "One entry per evaluated subject, in the order the run evaluated them: command line order for check, lockfile order for diff and scan. A lockfile that installs one version from two different places is two subjects, one per line, so a copy repointed at another archive is not hidden by a clean one.",
       "type": "array",
       "items": {
         "$ref": "#/definitions/subject"

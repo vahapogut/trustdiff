@@ -42,8 +42,9 @@ func (c Changes) Empty() bool {
 //
 // Within one name, versions both files lock are matched first, so a file that
 // locks the same package at several versions, which npm does routinely, reports
-// only the version that moved. What is left over is paired in file order, and
-// the remainder is added or removed.
+// only the version that moved. Within one version, a copy is matched with the copy
+// of itself that installs the same artifact. What is left over is paired in file
+// order, and the remainder is added or removed.
 //
 // An entry at the same version counts as changed when its source or its
 // integrity hash differs. TD013 and TD014 judge the entry as it stands, an
@@ -57,45 +58,67 @@ func (c Changes) Empty() bool {
 // installed: the same version repointed at another repository, another tarball or
 // another directory installs other code, and nothing else in the entry says so.
 //
-// Entries repeating one exact version are collapsed into the first of them, the
-// one the earliest line mentions, and the package counts as direct if any of
-// them is.
+// Lines that install one artifact are one entry, the first of them, and the
+// package counts as direct if any of them is; lines that disagree about the
+// artifact are entries of their own, each matched with the copy of itself on the
+// other side, so a change that repoints one copy and leaves the other alone is one
+// change and not a change to both. internal/lockfile.Installs decides which lines
+// are which.
 func Diff(base, head *lockfile.Lockfile) Changes {
-	baseEntries := normalize(base)
-	headEntries := normalize(head)
+	baseEntries := base.Installs()
+	headEntries := head.Installs()
 
-	byVersion := make(map[versionKey]int, len(baseEntries))
+	byVersion := make(map[versionKey][]int, len(baseEntries))
 	byName := make(map[key][]int, len(baseEntries))
 	for i := range baseEntries {
 		e := &baseEntries[i]
-		byVersion[versionKeyOf(e)] = i
+		vk := versionKeyOf(e)
+		byVersion[vk] = append(byVersion[vk], i)
 		k := keyOf(e)
 		byName[k] = append(byName[k], i)
 	}
 
 	// partner[i] is the base entry the head entry i corresponds to, or -1 when the
-	// head entry is new; taken marks the base entries already spoken for.
+	// head entry is new; taken marks the base entries already spoken for. The three
+	// passes go from the most certain pairing to the least, and each takes only what
+	// the one before it left, so a copy that did not move is claimed by itself before
+	// a copy that did can reach for it.
 	partner := make([]int, len(headEntries))
 	taken := make([]bool, len(baseEntries))
-	pending := make([]int, 0, len(headEntries))
 	for i := range headEntries {
 		partner[i] = -1
-		if j, ok := byVersion[versionKeyOf(&headEntries[i])]; ok {
+	}
+	// A version the base locks at more than one place has one entry per artifact, so
+	// the base copy that installs the same thing is the one this head entry is a later
+	// reading of. Without this a change touching one copy would read as a change to
+	// the other and a removal of this one.
+	for i := range headEntries {
+		if j, ok := twinOf(baseEntries, byVersion[versionKeyOf(&headEntries[i])], taken, &headEntries[i]); ok {
 			partner[i] = j
 			taken[j] = true
+		}
+	}
+	// What is left over at one version is paired in file order: two copies that both
+	// moved are still one pair each.
+	for i := range headEntries {
+		if partner[i] >= 0 {
 			continue
 		}
-		pending = append(pending, i)
+		if j, ok := nextFree(byVersion[versionKeyOf(&headEntries[i])], taken); ok {
+			partner[i] = j
+			taken[j] = true
+		}
 	}
 	// A head entry with no twin at its own version takes the next entry of the
 	// same name the base still has: that pair is the version bump.
-	for _, i := range pending {
-		j, ok := nextFree(byName[keyOf(&headEntries[i])], taken)
-		if !ok {
+	for i := range headEntries {
+		if partner[i] >= 0 {
 			continue
 		}
-		partner[i] = j
-		taken[j] = true
+		if j, ok := nextFree(byName[keyOf(&headEntries[i])], taken); ok {
+			partner[i] = j
+			taken[j] = true
+		}
 	}
 
 	changes := Changes{}
@@ -107,8 +130,7 @@ func Diff(base, head *lockfile.Lockfile) Changes {
 			continue
 		}
 		b := &baseEntries[j]
-		if b.Ref.Version != h.Ref.Version || b.Source != h.Source || b.Integrity != h.Integrity ||
-			(h.Source != lockfile.SourceRegistry && b.Resolved != h.Resolved) {
+		if !lockfile.SameArtifact(b, h) {
 			changes.Changed = append(changes.Changed, Change{Base: *b, Head: *h})
 		}
 	}
@@ -141,31 +163,15 @@ func versionKeyOf(e *lockfile.Entry) versionKey {
 	return versionKey{key: keyOf(e), version: e.Ref.Version}
 }
 
-// normalize copies the file's entries in order, fills in the ecosystem from the
-// file for a format that states it once, and collapses entries repeating one
-// exact version into the first of them.
-func normalize(lf *lockfile.Lockfile) []lockfile.Entry {
-	if lf == nil {
-		return nil
-	}
-	seen := make(map[versionKey]int, len(lf.Entries))
-	out := make([]lockfile.Entry, 0, len(lf.Entries))
-	for i := range lf.Entries {
-		e := lf.Entries[i]
-		if e.Ref.Ecosystem == "" {
-			e.Ref.Ecosystem = lf.Ecosystem
+// twinOf returns the base entry among these candidates that installs the same
+// artifact as the head entry and nothing has claimed yet.
+func twinOf(baseEntries []lockfile.Entry, candidates []int, taken []bool, h *lockfile.Entry) (int, bool) {
+	for _, i := range candidates {
+		if !taken[i] && lockfile.SameArtifact(&baseEntries[i], h) {
+			return i, true
 		}
-		vk := versionKeyOf(&e)
-		if j, ok := seen[vk]; ok {
-			if e.Direct {
-				out[j].Direct = true
-			}
-			continue
-		}
-		seen[vk] = len(out)
-		out = append(out, e)
 	}
-	return out
+	return 0, false
 }
 
 // nextFree returns the first of these base entries that nothing has claimed yet.

@@ -50,6 +50,15 @@ func onLine(n int) func(*lockfile.Entry) {
 
 func asDirect(e *lockfile.Entry) { e.Direct = true }
 
+// asBundled is npm's inBundle entry: bytes that ship inside another package's
+// archive, which the file records with neither a location nor a hash.
+func asBundled(e *lockfile.Entry) {
+	e.Source = lockfile.SourceUnknown
+	e.Resolved = ""
+	e.Integrity = ""
+	e.Bundled = true
+}
+
 // withoutEcosystem is what a single-ecosystem format may leave to the file.
 func withoutEcosystem(e *lockfile.Entry) { e.Ref.Ecosystem = "" }
 
@@ -219,9 +228,9 @@ func TestDiffWithOnlyOneFile(t *testing.T) {
 
 // TestDiffCollapsesAnEntryThatAppearsTwice covers the lockfiles that list one
 // version in several places: a package-lock.json names a hoisted package once
-// per path it was installed at. The change is one entry to evaluate, reported on
-// the first line that mentions it, and it counts as direct if any of the places
-// is a direct dependency.
+// per path it was installed at. Where those places agree about what they install
+// the change is one entry to evaluate, reported on the first line that mentions
+// it, and it counts as direct if any of the places is a direct dependency.
 func TestDiffCollapsesAnEntryThatAppearsTwice(t *testing.T) {
 	head := file(model.NPM, []lockfile.Entry{
 		entry("npm:left-pad@1.3.0", "sha512-pad", onLine(12)),
@@ -235,6 +244,80 @@ func TestDiffCollapsesAnEntryThatAppearsTwice(t *testing.T) {
 	added := got.Added[0]
 	if added.Line != 12 {
 		t.Errorf("Added[0].Line = %d, want 12, the first line the file mentions it on", added.Line)
+	}
+	if !added.Direct {
+		t.Error("Added[0].Direct = false, want true: one of the two places is a direct dependency")
+	}
+}
+
+// TestDiffKeepsACopyThatInstallsSomethingElse is the differ's half of finding F3 of
+// docs/review-2026-09-10.md. The hoisted copy is untouched and the copy nested under
+// another package is repointed at an archive of its own. The base file has one entry
+// for the version because its two copies did agree, so the repointed copy is an
+// install that is new rather than one that changed, and it is reported on its own line.
+func TestDiffKeepsACopyThatInstallsSomethingElse(t *testing.T) {
+	base := file(model.NPM, []lockfile.Entry{
+		entry("npm:left-pad@1.3.0", "sha512-pad", onLine(12)),
+		entry("npm:left-pad@1.3.0", "sha512-pad", onLine(340)),
+	})
+	head := file(model.NPM, []lockfile.Entry{
+		entry("npm:left-pad@1.3.0", "sha512-pad", onLine(12)),
+		entry("npm:left-pad@1.3.0", "", fromURL("https://tarballs.example.com/left-pad.tgz"), onLine(340)),
+	})
+
+	got := Diff(base, head)
+	if len(got.Added) != 1 || len(got.Changed) != 0 || len(got.Removed) != 0 {
+		t.Fatalf("Added = %q, Changed = %q, Removed = %q, want the repointed copy added and nothing else",
+			refs(got.Added), pairs(got.Changed), refs(got.Removed))
+	}
+	if got.Added[0].Line != 340 {
+		t.Errorf("Added[0].Line = %d, want 340, the line the repointed copy sits on", got.Added[0].Line)
+	}
+}
+
+// A version locked at two places that both files write, in the order each file
+// happens to write them, is two pairs and not four. Matching by artifact before
+// matching by file order is what keeps the copy that did not move from being claimed
+// by the copy that did, which would report a change to a line nobody touched and a
+// removal of one that is still there.
+func TestDiffMatchesACopyWithTheCopyOfItself(t *testing.T) {
+	base := file(model.NPM, []lockfile.Entry{
+		entry("npm:left-pad@1.3.0", "sha512-pad", onLine(12)),
+		entry("npm:left-pad@1.3.0", "", fromURL("https://old.example.com/left-pad.tgz"), onLine(340)),
+	})
+	head := file(model.NPM, []lockfile.Entry{
+		entry("npm:left-pad@1.3.0", "", fromURL("https://tarballs.example.com/left-pad.tgz"), onLine(12)),
+		entry("npm:left-pad@1.3.0", "sha512-pad", onLine(340)),
+	})
+
+	got := Diff(base, head)
+	if len(got.Changed) != 1 || len(got.Added) != 0 || len(got.Removed) != 0 {
+		t.Fatalf("Added = %q, Changed = %q, Removed = %q, want the repointed copy alone",
+			refs(got.Added), pairs(got.Changed), refs(got.Removed))
+	}
+	c := got.Changed[0]
+	if c.Base.Resolved != "https://old.example.com/left-pad.tgz" || c.Head.Resolved != "https://tarballs.example.com/left-pad.tgz" {
+		t.Errorf("Changed[0] = %s -> %s, want the copy that moved paired with the copy it moved from",
+			c.Base.Resolved, c.Head.Resolved)
+	}
+}
+
+// A bundled line records neither a location nor a hash because the bytes ship inside
+// another package's archive, so it is not a copy that installs something else and
+// reading it as one would turn minimatch's 327 subjects into 395.
+func TestDiffFoldsABundledCopy(t *testing.T) {
+	head := file(model.NPM, []lockfile.Entry{
+		entry("npm:ansi-regex@5.0.1", "", onLine(12), asBundled),
+		entry("npm:ansi-regex@5.0.1", "sha512-ansi", onLine(340), asDirect),
+	})
+
+	got := Diff(nil, head)
+	if len(got.Added) != 1 {
+		t.Fatalf("Added = %q, want one entry", refs(got.Added))
+	}
+	added := got.Added[0]
+	if added.Line != 340 {
+		t.Errorf("Added[0].Line = %d, want 340, the line that says where the version comes from", added.Line)
 	}
 	if !added.Direct {
 		t.Error("Added[0].Direct = false, want true: one of the two places is a direct dependency")

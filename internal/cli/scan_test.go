@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/vahapogut/trustdiff/internal/model"
 )
 
 // cargoLock is a second format, so a scan proves it reads whatever a parser is
@@ -59,7 +61,6 @@ func scanFixture(t *testing.T) string {
 	return dir
 }
 
-// writeFile puts content at a path relative to dir, creating directories.
 // readRegressionFixture reads a file under testdata/regressions, which is where the
 // scenario of each review finding is pinned so it cannot come back. Call it before a
 // test changes directory: the path is relative to this package, and scanFixture moves
@@ -75,6 +76,7 @@ func readRegressionFixture(t *testing.T, elem ...string) string {
 	return string(data)
 }
 
+// writeFile puts content at a path relative to dir, creating directories.
 func writeFile(t *testing.T, dir, rel, content string) {
 	t.Helper()
 	path := filepath.Join(dir, filepath.FromSlash(rel))
@@ -124,8 +126,9 @@ func TestScanEvaluatesEveryLockfile(t *testing.T) {
 	}
 	subjectFor(t, &rep, "cargo:trustdiff-fixture-crate@0.1.0")
 
-	// The same version locked twice in one file is one subject, on the earliest
-	// line, and it counts as direct because one of the two copies is.
+	// The same version locked twice in one file is one subject as long as the two
+	// copies agree about what they install, on the earliest line, and it counts as
+	// direct because one of the two copies is.
 	nested := subjectFor(t, &rep, "npm:trustdiff-fixture-lib@2.0.0")
 	if nested.Location.Path != "web/package-lock.json" {
 		t.Fatalf("location = %s, want the nested lockfile", nested.Location.Path)
@@ -376,5 +379,63 @@ func TestScanJudgesTheLockfileEntryOfAnUnknownPackage(t *testing.T) {
 		if sk.Check == "TD013" || sk.Check == "TD014" {
 			t.Errorf("%s was skipped: %s", sk.Check, sk.Reason)
 		}
+	}
+}
+
+// TestScanKeepsACopyThatInstallsSomethingElse pins finding F3 of
+// docs/review-2026-09-10.md. A lockfile names a version once per place it installs
+// it, and those places are one subject only while they agree about what they
+// install. Before the fix every repeat of a version collapsed into the first of
+// them, so a copy nested under another package, repointed at an archive of its own
+// and stripped of its hash, was folded into the clean copy above it and neither
+// TD013 nor TD014 was ever shown the line that carried it.
+func TestScanKeepsACopyThatInstallsSomethingElse(t *testing.T) {
+	lock := readRegressionFixture(t, "f3-nested-duplicate-divergent-copy", "head", "package-lock.json")
+	dir := scanFixture(t)
+	writeFile(t, dir, "package-lock.json", lock)
+
+	code, stdout, stderr := run(t, "--format", "json", "scan")
+	if code != ExitFindings {
+		t.Fatalf("exit = %d, want %d (stderr %q)\n%s", code, ExitFindings, stderr, stdout)
+	}
+	rep := decodeReport(t, stdout)
+
+	const ref = "npm:trustdiff-fixture-lib@1.0.0"
+	var copies []int
+	for i := range rep.Subjects {
+		if rep.Subjects[i].Ref.String() == ref {
+			copies = append(copies, i)
+		}
+	}
+	if len(copies) != 2 {
+		t.Fatalf("%s has %d subjects, want the copy the file resolves from the registry and the one it does not (subjects %s)",
+			ref, len(copies), strings.Join(refsOf(&rep), ", "))
+	}
+	clean, nested := rep.Subjects[copies[0]], rep.Subjects[copies[1]]
+
+	// Each copy is reported on its own line, which is the line a reviewer has to read.
+	if want := lineOf(t, lock, "node_modules/trustdiff-fixture-lib"); clean.Location == nil || clean.Location.Line != want {
+		t.Errorf("the first copy is at %+v, want line %d", clean.Location, want)
+	}
+	if want := lineOf(t, lock, "node_modules/trustdiff-fixture-wrapper/node_modules/trustdiff-fixture-lib"); nested.Location == nil || nested.Location.Line != want {
+		t.Errorf("the repointed copy is at %+v, want line %d", nested.Location, want)
+	}
+	for i := range clean.Findings {
+		if id := clean.Findings[i].ID; id == "TD013" || id == "TD014" {
+			t.Errorf("%s reported the copy the file resolves from the registry under its hash: %s", id, clean.Findings[i].Title)
+		}
+	}
+
+	found := map[string]model.Level{}
+	for i := range nested.Findings {
+		found[nested.Findings[i].ID] = nested.Findings[i].Level
+	}
+	if found["TD013"] != model.LevelBlock {
+		t.Errorf("TD013 = %s, want block: the copy resolves from a URL of its own, which is what exotic-source exists to report (findings %v, skipped %v)",
+			found["TD013"], found, nested.Skipped)
+	}
+	if found["TD014"] != model.LevelWarn {
+		t.Errorf("TD014 = %s, want warn: nothing guards whatever that URL serves (findings %v, skipped %v)",
+			found["TD014"], found, nested.Skipped)
 	}
 }
