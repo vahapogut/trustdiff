@@ -115,10 +115,17 @@ func (c td004) Run(ctx context.Context, s *Subject) Result {
 		compared, comparedBy, with = baseProvenance, baseBy, base
 	}
 	if compared.Strength() <= current.Strength() {
-		// No predecessor that was read carried more. A base version nobody could
-		// reach may have carried more than either of them, which is the half of the
-		// question that stays open.
-		return cleanOrSkip(c, s, SourceBase)
+		// No predecessor that was read carried more. Two things could still have
+		// been true and were not read: a base version nobody could reach, and a
+		// predecessor's attestation only deps.dev could have verified.
+		if res := cleanOrSkip(c, s, SourceBase); res.Skipped != nil {
+			return res
+		}
+		predecessors := []model.Provenance{previous}
+		if base != nil {
+			predecessors = append(predecessors, baseProvenance)
+		}
+		return c.unverifiedByOutage(s, current, predecessors...)
 	}
 
 	title := fmt.Sprintf("Provenance weaker than %s: %s before, %s now",
@@ -201,6 +208,32 @@ func predecessorProvenance(ctx context.Context, s *Subject, v *model.VersionInfo
 		}
 	}
 	return p, ""
+}
+
+// unverifiedByOutage reports the one shape a deps.dev outage can hide from this
+// check, and nothing else. deps.dev lifts exactly one thing the strength order
+// ranks: an attestation the registry stored without verifying. So the check goes on
+// as a pass unless verifying a predecessor's attestation would itself have produced
+// the downgrade, which is the only case where the answer turned on a request that
+// did not happen. A package with no attestation, or one the registry verified
+// itself, is settled by what was read.
+func (c td004) unverifiedByOutage(s *Subject, current model.Provenance, predecessors ...model.Provenance) Result {
+	err := s.Unavailable[SourceDepsDev]
+	if err == nil || definite(err) {
+		return Result{}
+	}
+	for _, p := range predecessors {
+		if p.Kind != model.ProvenanceAttestation || p.Verified {
+			continue
+		}
+		verified := p
+		verified.Verified = true
+		if verified.Strength() > current.Strength() {
+			return skipOutage(c, fmt.Sprintf("%s carries an attestation the registry did not verify, and deps.dev is the only other place that could have", p.Kind),
+				sourceProblem(SourceDepsDev, err))
+		}
+	}
+	return Result{}
 }
 
 // verification decides whether provenance counts as verified and by whom. An

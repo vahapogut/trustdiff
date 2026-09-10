@@ -148,7 +148,8 @@ func (s *Subject) Skipped(source string) (string, bool) {
 // outageReasons returns the reasons Skipped gives for the sources that could not
 // be consulted, leaving out definite answers, together with the facets a registry
 // client could not gather, sorted. The runner uses them to tell which skipped
-// checks on_data_unavailable: fail should count.
+// checks on_data_unavailable: fail should count, along with Result.Unavailable for
+// the checks whose own requests fail outside this map.
 func (s *Subject) outageReasons() []string {
 	var out []string
 	for source, err := range s.Unavailable {
@@ -216,6 +217,13 @@ func definite(err error) bool {
 type Result struct {
 	Findings []model.Finding
 	Skipped  *model.Skipped
+	// Unavailable says the skip is data this run did not have, rather than an
+	// answer. The runner reads it beside Subject.outageReasons, for the checks that
+	// reach a source through the Loader instead of through Subject.Unavailable and
+	// whose failure therefore never reaches that map: a check knows what it could
+	// not read, and saying so is surer than hoping its prose matches a string the
+	// runner built. Set it through skipOutage rather than by hand.
+	Unavailable bool
 }
 
 // cleanOrSkip is what a check returns when every source it read reported nothing.
@@ -234,12 +242,23 @@ func cleanOrSkip(c Check, s *Subject, sources ...string) Result {
 	if len(reasons) == 0 {
 		return Result{}
 	}
-	return Skip(c.ID(), strings.Join(reasons, "; "))
+	return skipOutage(c, reasons...)
 }
 
 // Skip builds a Result that reports the check as skipped.
 func Skip(check, reason string) Result {
 	return Result{Skipped: &model.Skipped{Check: check, Reason: reason}}
+}
+
+// skipOutage is Skip for a source that could not be consulted, joining the reasons
+// the way every other skip in this package joins them. It marks the result as data
+// the run did not have, which is what on_data_unavailable reacts to, and is the one
+// way a check that asked the Loader itself can say so: the runner's own list is
+// built from Subject.Unavailable, and a request a check made is not in it.
+func skipOutage(c Check, reasons ...string) Result {
+	res := Skip(c.ID(), strings.Join(reasons, "; "))
+	res.Unavailable = true
+	return res
 }
 
 // Check is one trust check. ID is the stable TDnnn identifier, Name the policy

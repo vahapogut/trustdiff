@@ -351,7 +351,7 @@ func (rn *run) runOne(ctx context.Context, out *Outcome, s *Subject, c Check, ou
 		// The report schema wants the TD id, whatever the check wrote.
 		skipped.Check = c.ID()
 		out.Subject.Skipped = append(out.Subject.Skipped, skipped)
-		if unfinished || namesOutage(skipped.Reason, outages) {
+		if unfinished || result.Unavailable || namesOutage(skipped.Reason, outages) {
 			out.Unavailable = true
 		}
 		return
@@ -397,7 +397,9 @@ func (rn *run) skipAll(ctx context.Context, out *Outcome, s *Subject, applicable
 }
 
 // namesOutage reports whether a check's skip reason carries the wording of
-// something the run could not read. The list holds two kinds of string. A source
+// something the run could not read. A check that asked a source itself says so on
+// the Result instead, because its request never reached Subject.Unavailable and
+// there is nothing here to match. The list holds two kinds of string. A source
 // that did not answer is worded by Subject.Skipped and checks build their reasons
 // from it, so that match is exact: a reason that merely uses the word "unavailable"
 // does not count, and a definite answer such as not found never does. A facet a

@@ -43,7 +43,16 @@ func (c td001) Run(_ context.Context, s *Subject) Result {
 		publishedAt, source = s.DepsDev.PublishedAt, SourceDepsDev
 	}
 	if publishedAt.IsZero() {
-		return Skip(c.ID(), fmt.Sprintf("publish time of %s is unknown", evaluatedRef(s).Version))
+		// The registry carried no time and deps.dev is the only other place it
+		// could have come from, so the skip names whichever of the two failed. A
+		// reason that named neither could not be counted by on_data_unavailable,
+		// although an outage was exactly why the time was unknown.
+		reason := fmt.Sprintf("publish time of %s is unknown", evaluatedRef(s).Version)
+		if res := cleanOrSkip(c, s, SourceRegistry, SourceDepsDev); res.Skipped != nil {
+			res.Skipped.Reason = reason + "; " + res.Skipped.Reason
+			return res
+		}
+		return Skip(c.ID(), reason)
 	}
 	cooldown := s.Settings.Cooldown
 	if cooldown <= 0 {

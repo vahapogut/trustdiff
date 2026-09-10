@@ -142,8 +142,15 @@ func (c *typosquatSuspect) Run(ctx context.Context, s *Subject) Result {
 	}
 	candidate := typosquat.Canonical(eco, name)
 	match, suspect := typosquat.Suspect(eco, name, set)
-	neighbor := c.crossCheck(ctx, s, candidate, set)
+	neighbor, crossCheckDown := c.crossCheck(ctx, s, candidate, set)
 	if !suspect && neighbor == "" {
+		if crossCheckDown != "" {
+			// The popular list is embedded and cannot fail, so a name it does not
+			// resemble is half an answer: the cross-check is what catches a
+			// look-alike the list has no entry for, and it did not run. Saying the
+			// name is clean would be saying that machinery cleared it.
+			return skipOutage(c, "the popular list matched nothing and the deps.dev cross-check could not be made", crossCheckDown)
+		}
 		return Result{}
 	}
 
@@ -197,19 +204,31 @@ func describeRule(m typosquat.Match) string {
 	}
 }
 
-// crossCheck asks deps.dev for similarly named packages and returns the first
-// one that is much more popular than the candidate: a member of the popular
-// list first, then, for at most maxDepsDevNeighborLookups neighbors, one whose
-// weekly downloads are depsDevNeighborFactor times the candidate's. Anything
-// unavailable (no Loader, a deps.dev error, unknown download counts) means no
-// cross-check.
-func (c *typosquatSuspect) crossCheck(ctx context.Context, s *Subject, candidate string, set *typosquat.Set) string {
+// crossCheck asks deps.dev for similarly named packages and returns the first one
+// that is much more popular than the candidate: a member of the popular list
+// first, then, for at most maxDepsDevNeighborLookups neighbors, one whose weekly
+// downloads are depsDevNeighborFactor times the candidate's.
+//
+// down is the reason deps.dev could not answer the similar-names question at all,
+// and only for an outage: an ecosystem it does not index, a run built without it
+// and a name it has never seen are answers, and the popular list is then the whole
+// of what there was to know. Everything else that can come up short here, no
+// Loader, an unknown download count, a neighbor lookup that failed, leaves the
+// cross-check with no neighbor to offer and is not reported: the list still
+// answered and those are not this check's deps.dev half.
+func (c *typosquatSuspect) crossCheck(ctx context.Context, s *Subject, candidate string, set *typosquat.Set) (neighbor, down string) {
 	if s.Loader == nil {
-		return ""
+		return "", ""
 	}
 	similar, err := s.Loader.SimilarNames(ctx, s.Ref.Ecosystem, s.Ref.Name)
-	if err != nil || len(similar) == 0 {
-		return ""
+	if err != nil {
+		if definite(err) {
+			return "", ""
+		}
+		return "", sourceProblem(SourceDepsDev, err)
+	}
+	if len(similar) == 0 {
+		return "", ""
 	}
 	neighbors := make([]string, 0, len(similar))
 	for _, sim := range similar {
@@ -218,12 +237,12 @@ func (c *typosquatSuspect) crossCheck(ctx context.Context, s *Subject, candidate
 			continue
 		}
 		if set.Has(n) {
-			return n
+			return n, ""
 		}
 		neighbors = append(neighbors, n)
 	}
 	if s.Downloads < 0 {
-		return ""
+		return "", ""
 	}
 	floor := depsDevNeighborFactor * max(s.Downloads, 1)
 	for i, n := range neighbors {
@@ -232,8 +251,8 @@ func (c *typosquatSuspect) crossCheck(ctx context.Context, s *Subject, candidate
 		}
 		downloads, err := s.Loader.Downloads(ctx, s.Ref.Ecosystem, n)
 		if err == nil && downloads >= floor {
-			return n
+			return n, ""
 		}
 	}
-	return ""
+	return "", ""
 }

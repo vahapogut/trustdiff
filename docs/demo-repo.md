@@ -94,6 +94,7 @@ npm:demo-crypto-helper@1.0.2  WARN  (testdata/demo-repo/head/package-lock.json:3
   skipped TD004: no earlier release to compare with
   skipped TD005: no earlier release to compare with
   skipped TD007: no earlier release to compare with
+  skipped TD008: the popular list matched nothing and the deps.dev cross-check could not be made; deps.dev unavailable: ...
   skipped TD009: osv unavailable: ...; deps.dev unavailable: ...
   skipped TD010: osv unavailable: ...
   skipped TD011: deps.dev unavailable: ...
@@ -102,11 +103,11 @@ npm:demo-crypto-helper@1.0.2  WARN  (testdata/demo-repo/head/package-lock.json:3
   skipped TD016: no entry in the base lockfile to compare with: the entry is new, or the run compared against no base
   skipped TD017: no entry in the base lockfile to compare with: the entry is new, or the run compared against no base
 
-1 subject, 0 block, 2 warn, 0 info, 12 skipped checks. Exit code 0 (no blocking findings).
+1 subject, 0 block, 2 warn, 0 info, 13 skipped checks. Exit code 0 (no blocking findings).
 ```
 
-Six of the skipped lines are shortened above, at the `...`. Two of them name the
-baseline file this run had not been given; the other four name OSV, deps.dev and
+Seven of the skipped lines are shortened above, at the `...`. Two of them name the
+baseline file this run had not been given; the other five name OSV, deps.dev and
 the download counts API, all of which the demo forbids by running offline. An
 offline run that cannot reach an advisory source says so; it never reports a clean
 package it did not check, and a check that reads two sources says so even when one
@@ -132,7 +133,7 @@ into two annotations on the added lockfile line.
 request:
 
 ```
-## trustdiff: 1 subject, 0 block, 2 warn, 0 info, 12 skipped checks
+## trustdiff: 1 subject, 0 block, 2 warn, 0 info, 13 skipped checks
 
 | Package | Level | Check | Finding | Location |
 | --- | --- | --- | --- | --- |

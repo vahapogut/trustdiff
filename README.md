@@ -284,7 +284,7 @@ trustdiff diff --format markdown
 ```
 
 ```
-## trustdiff: 1 subject, 0 block, 2 warn, 0 info, 12 skipped checks
+## trustdiff: 1 subject, 0 block, 2 warn, 0 info, 13 skipped checks
 
 | Package | Level | Check | Finding | Location |
 | --- | --- | --- | --- | --- |

@@ -551,3 +551,45 @@ func TestScanReportsAnUnhashedRequirementsPin(t *testing.T) {
 		t.Errorf("the run says something was not read:\n%s", stderr)
 	}
 }
+
+// TestScanSaysSoWhenOnlyTheCrossCheckWasDown is the rest of finding F4 of
+// docs/review-2026-09-10.md. Three checks reach deps.dev through the loader rather
+// than through Subject.Unavailable, so the rule F4 gave the others could not see
+// their failures. A name nothing on the popular list resembles was reported as
+// evaluated although the half of the detection that would have caught a look-alike
+// the list has no entry for never ran, and young-version skipped for a publish time
+// deps.dev was the only place left to read, in a sentence that named no source at
+// all, so on_data_unavailable could not count it.
+func TestScanSaysSoWhenOnlyTheCrossCheckWasDown(t *testing.T) {
+	lock := readRegressionFixture(t, "f4-one-source-down", "package-lock.json")
+	dir := scanFixture(t)
+	useDownLoader(t, map[string]bool{checks.SourceDepsDev: true})
+	writeFile(t, dir, "package-lock.json", lock)
+	writePolicy(t, "version: 1\non_data_unavailable: fail\n")
+
+	code, stdout, stderr := run(t, "--format", "json", "scan")
+	if code != ExitUnavailable {
+		t.Fatalf("exit = %d, want %d (stderr %q)\n%s", code, ExitUnavailable, stderr, stdout)
+	}
+	rep := decodeReport(t, stdout)
+	s := subjectFor(t, &rep, "npm:trustdiff-fixture-lib@1.0.0")
+	reasons := map[string]string{}
+	for _, sk := range s.Skipped {
+		reasons[sk.Check] = sk.Reason
+	}
+	// TD008's own list answered and matched nothing; only the cross-check is
+	// missing, and the reason has to say which half ran.
+	if slices.Contains(s.Evaluated, "TD008") {
+		t.Errorf("TD008 is evaluated although the deps.dev cross-check could not be made")
+	}
+	for _, want := range []string{"the popular list matched nothing", "deps.dev unavailable: connection refused"} {
+		if !strings.Contains(reasons["TD008"], want) {
+			t.Errorf("TD008 skipped with %q, want it to contain %q", reasons["TD008"], want)
+		}
+	}
+	// The fixture's registry answer carries a publish time, so TD001 still runs.
+	// What it must never do again is skip without naming what was missing.
+	if r := reasons["TD001"]; r != "" && !strings.Contains(r, checks.SourceDepsDev) {
+		t.Errorf("TD001 skipped with %q, want the source it could not read named", r)
+	}
+}

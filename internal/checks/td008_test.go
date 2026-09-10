@@ -229,13 +229,38 @@ func TestTyposquatSuspect(t *testing.T) {
 			calls: []string{"similar npm:exprss"},
 		},
 		{
-			name: "deps.dev error alone finds nothing",
+			// The popular list is embedded and cannot fail, so a name it does not
+			// resemble is only half an answer while the cross-check is down: that
+			// half is what catches a look-alike the list has no entry for.
+			name: "deps.dev down and the list matched nothing is not a clean name",
 			ref:  "npm:unrelated-thing@1.0.0",
 			loader: &fakeLoaderT{
 				similarErr: errors.New("deps.dev: 503"),
 			},
+			down:    -1,
+			skipped: "the popular list matched nothing and the deps.dev cross-check could not be made; deps.dev unavailable: deps.dev: 503",
+		},
+		{
+			// An ecosystem deps.dev does not index is an answer, not an outage, and
+			// the popular list is then the whole of what there was to know.
+			name: "deps.dev does not index the ecosystem, so the list settles it",
+			ref:  "npm:unrelated-thing@1.0.0",
+			loader: &fakeLoaderT{
+				similarErr: fmt.Errorf("deno: %w", depsdev.ErrUnsupported),
+			},
 			down: -1,
 			want: 0,
+		},
+		{
+			// A name the list does resemble stands on the list alone, so the
+			// cross-check being down cannot change the verdict and does not skip it.
+			name: "a rule matched, so the cross-check being down changes nothing",
+			ref:  "npm:exprss@1.0.0",
+			loader: &fakeLoaderT{
+				similarErr: errors.New("deps.dev: 503"),
+			},
+			down: -1,
+			want: 1,
 		},
 		{
 			name: "download lookups are bounded",

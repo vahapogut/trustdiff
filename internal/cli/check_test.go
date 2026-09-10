@@ -158,6 +158,9 @@ func (f *fakeLoader) DepsDev(context.Context, model.PackageRef) (*depsdev.Versio
 }
 
 func (f *fakeLoader) SimilarNames(context.Context, model.Ecosystem, string) ([]depsdev.Similar, error) {
+	if f.down[checks.SourceDepsDev] {
+		return nil, errRegistryDown
+	}
 	return nil, nil
 }
 
