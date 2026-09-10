@@ -201,23 +201,25 @@ func TestParseReadsEverySourceKind(t *testing.T) {
 	if lf.Version != "1" {
 		t.Errorf("Version = %q, want 1", lf.Version)
 	}
-	// Seventeen packages, three of which are the project and two members of it.
-	if len(lf.Entries) != 14 {
-		t.Fatalf("read %d entries, want 14", len(lf.Entries))
+	// Seventeen packages, two of which are the repository: the virtual project and
+	// the member [manifest] names.
+	if len(lf.Entries) != 15 {
+		t.Fatalf("read %d entries, want 15", len(lf.Entries))
 	}
 	wantDrop := `line 24: "example-project" is the project itself (virtual = "."), not an installed package`
-	if len(lf.Dropped) != 3 || lf.Dropped[1] != wantDrop {
-		t.Errorf("dropped %v, want the project and its two members, one of them [%s]", lf.Dropped, wantDrop)
+	if len(lf.Dropped) != 2 || lf.Dropped[0] != wantDrop {
+		t.Errorf("dropped %v, want the project and the member [manifest] names, one of them [%s]", lf.Dropped, wantDrop)
 	}
-	// The members go with it: editable-member has an editable source and
-	// member-package is named in [manifest] members with a directory source. Both
-	// are this repository's own code, and neither is a package it acquired.
-	for _, own := range []string{"editable-member", "member-package"} {
-		for _, e := range lf.Entries {
-			if e.Ref.Name == own {
-				t.Errorf("%s is an entry, and it is a member of this workspace", own)
-			}
+	for _, e := range lf.Entries {
+		if e.Ref.Name == "member-package" {
+			t.Error("member-package is an entry, and [manifest] names it a member of this workspace")
 		}
+	}
+	// An editable source at any other path is a dependency, not the repository: a
+	// directory somewhere on the machine, possibly outside this project altogether,
+	// which is what exotic-source is for. It stays.
+	if got := entryOf(t, lf, "pypi:editable-member@0.2.0"); got.Source != lockfile.SourcePath {
+		t.Errorf("editable-member = %+v, want an entry resolved from a path", got)
 	}
 
 	tests := []struct {

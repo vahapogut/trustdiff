@@ -121,7 +121,7 @@ func (Parser) Parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 	for i := range packages {
 		p := &packages[i]
 		switch {
-		case p.project(members):
+		case p.repositoryItself(members):
 			// The project uv locked, and every workspace member beside it, is the
 			// repository being scanned rather than something it acquired. uv writes
 			// it as a package like any other, with a virtual source when there is no
@@ -309,6 +309,21 @@ func (s *source) describe() string {
 // workspace members, whose dependencies are the project's own.
 func (p *decodedPackage) project(members map[string]bool) bool {
 	return p.Source.Virtual != "" || p.Source.Editable != "" || members[p.Name]
+}
+
+// repositoryItself is the narrower question the entries ask: whether the lockfile
+// says this package is the repository being scanned, rather than something the
+// project acquired from anywhere. That is the project itself, which uv writes with
+// a source naming its own directory, and the members [manifest] names. uv writes a
+// virtual source for nothing else.
+//
+// An editable source at any other path is a dependency, not the project: it is a
+// directory somewhere on the machine, quite possibly outside this repository, and a
+// committed lockfile that builds from one is exactly what exotic-source is for. So
+// this is narrower than project(), which asks whose dependency list is being read.
+func (p *decodedPackage) repositoryItself(members map[string]bool) bool {
+	return p.Source.Virtual != "" || members[p.Name] ||
+		p.Source.Editable == "." || p.Source.Directory == "." || p.Source.Path == "."
 }
 
 // isProject is project() for a table whose name is not normalized yet, which is

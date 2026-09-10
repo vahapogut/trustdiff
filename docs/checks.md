@@ -618,7 +618,7 @@ The finding sits on the entry nearest the top of the file among the ones the run
 
 Two entries are exempt because no hash could be there to begin with. A local directory is built from the working tree: nothing is downloaded, so nothing could be verified, and a hash a lockfile cannot record is not one it is missing. That such a dependency comes from a directory rather than a registry is worth reporting, and [exotic-source](#td013-exotic-source) reports it, at `info`. An npm bundled dependency is the other: the lockfile writes it with no location and no hash because its bytes ship inside the archive of the package that carries it, and that package's own entry holds the hash for both. An entry that states no origin at all is not exempt and is worth a glance in a pull request; the `source` key is there so telling these apart does not mean opening the lockfile.
 
-The repository's own code is not an entry at all. uv writes the project it locked into the lockfile with an editable or a virtual source, Cargo writes the root package and every workspace member with no source, and none of them is a dependency the project acquired: the parser drops them and says so in the lockfile's dropped list.
+The repository's own code is not an entry at all. uv writes the project it locked into the lockfile with a source naming its own directory, Cargo writes the root package and every workspace member with no source, and none of them is a dependency the project acquired: the parser drops them and says so in the lockfile's dropped list. A directory dependency at any other path is a dependency and stays one.
 
 **Evidence.**
 
