@@ -20,9 +20,11 @@ func init() {
 	Register(yarnHardenedMode)
 }
 
-// A bare number is minutes here, like pnpm. Yarn 4.11 also accepts a duration
-// string ("3d"), and 4.15 raised the default to one day. The rule writes the
-// number, because a project on 4.10 reads a string as nothing at all.
+// A bare number is minutes here, like pnpm. Yarn 4.11 turned the setting into a
+// duration and 4.15 made 1d its default, so "3d" is both a value Yarn reads and the
+// spelling Yarn's own documentation uses; YarnMinimalAgeGate reads it against the
+// version that will read it. The fix still writes the number, because that is the
+// one spelling every version reads the same way.
 var yarnMinimalAgeGate = &Rule{
 	ID:      "DR020",
 	Name:    "yarn-minimal-age-gate",
@@ -35,12 +37,12 @@ var yarnMinimalAgeGate = &Rule{
 		Key:      configfile.Key{"npmMinimalAgeGate"},
 		CreateIf: true,
 	}},
-	Desired:  MinimumAge{Unit: Minutes, Default: 24 * time.Hour, DefaultSince: "4.15.0"},
+	Desired:  YarnMinimalAgeGate{Default: 24 * time.Hour, DefaultSince: "4.15.0", DurationSince: "4.11.0"},
 	Level:    model.LevelWarn,
 	Docs:     "https://yarnpkg.com/configuration/yarnrc",
-	Verified: "2026-09-09",
+	Verified: "2026-09-11",
 	Fixable:  true,
-	Note:     "A number is minutes. Yarn 4.11 and later also read a duration such as 3d, and 4.10 silently ignores one. npmPreapprovedPackages takes the packages that skip the wait, and the gate can be set per scope under npmScopes.",
+	Note:     "A number is minutes. Yarn 4.11 and later also read a duration such as 3d, and 4.10 reads that with parseInt, so it waits three minutes. npmPreapprovedPackages takes the packages that skip the wait, and the gate can be set per scope under npmScopes.",
 }
 
 // Yarn stopped running dependency build scripts by default in 4.14, so this rule

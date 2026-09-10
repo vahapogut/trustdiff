@@ -110,7 +110,7 @@ releases.
 | DR013 | pnpm | `onlyBuiltDependencies` | `pnpm-workspace.yaml` | list | 10.0.0 to 11 | info |
 | DR014 | pnpm | `blockExoticSubdeps` | `pnpm-workspace.yaml` | boolean | 10.26.0 | info |
 | DR015 | pnpm | `trustPolicy` | `pnpm-workspace.yaml` | `no-downgrade`/`off` | 10.21.0 | warn |
-| DR020 | Yarn | `npmMinimalAgeGate` | `.yarnrc.yml` | minutes | 4.10.0 | warn |
+| DR020 | Yarn | `npmMinimalAgeGate` | `.yarnrc.yml` | minutes or a duration | 4.10.0 | warn |
 | DR021 | Yarn | `enableScripts` | `.yarnrc.yml` | boolean | | warn |
 | DR022 | Yarn | `checksumBehavior` | `.yarnrc.yml` | `throw`/`update`/`ignore`/`reset` | | warn |
 | DR023 | Yarn | `enableHardenedMode` | `.yarnrc.yml` | boolean | | info |
@@ -152,10 +152,17 @@ maps a package to true or false. doctor judges whichever key your pnpm version r
 so a project on pnpm 10 is never told to write a key its pnpm rejects, and one on 11
 is never told about a key that is gone.
 
-**Yarn reads a bare number as minutes.** Yarn 4.11 and later also accept a duration
-such as `3d`, and 4.10 silently ignores one, which is why the fix writes the number.
-Yarn 4.15 raised the default to one day. `npmPreapprovedPackages` takes the packages
-that skip the wait, and the gate can also be set per scope under `npmScopes`.
+**Yarn reads a bare number as minutes**, and from 4.11 a duration such as `3d` or
+`12h` as well, which is the spelling Yarn's own examples and its own default use.
+Both are read here, against the version the run found. On 4.10 the setting is a
+plain number read with `parseInt`, and `parseInt("3d")` is 3: a file asking for
+three days waits three minutes, and nothing anywhere says so, which is why that one
+case is reported as wrong rather than as a shorter wait. Where the Yarn version
+could not be established, a duration is reported as weak, because crediting the
+longer reading is what would hide those three minutes. The fix writes the number,
+the one spelling every version reads the same way. Yarn 4.15 made `1d` the default.
+`npmPreapprovedPackages` takes the packages that skip the wait, and the gate can
+also be set per scope under `npmScopes`.
 
 **Bun counts seconds**, the only manager here that does.
 
