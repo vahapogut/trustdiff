@@ -551,4 +551,14 @@ var checkRules = []checkRule{
 			"being rearranged. A registry entry's resolved location is not compared at all, because moving a " +
 			"project to a mirror rewrites every one of them without changing what is installed.",
 	},
+	{
+		ID: "TD017", Name: "version-downgraded",
+		Short: "A lockfile entry whose version went backwards: the head file locks a release that sorts below the one the base file locked.",
+		Full: "Both releases are real and both check out, so every other check reads the version in " +
+			"front of it and agrees it is fine. The change is the direction, and every release in " +
+			"between is no longer installed, fixes included. The order is the ecosystem's own, PEP 440 " +
+			"for PyPI and semantic versions elsewhere; a pair neither scheme can order is reported as " +
+			"skipped, never as a pass. Info by default, because going back a release is a thing a " +
+			"project does on purpose and the finding asks why.",
+	},
 }

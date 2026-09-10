@@ -227,6 +227,7 @@ var checkDefaults = []checkDefault{
 	{"integrity-missing", CheckSetting{Level: model.LevelWarn}},
 	{"version-anomaly", CheckSetting{Level: model.LevelInfo}},
 	{"lockfile-entry-changed", CheckSetting{Level: model.LevelBlock}},
+	{"version-downgraded", CheckSetting{Level: model.LevelInfo}},
 }
 
 // CheckNames lists the policy names of every check in the order of the brief.

@@ -52,7 +52,7 @@ import (
 //	base_source     the source the base entry named, for source-changed
 //	source          the source the head entry names, for source-changed
 //	base_resolved   the location the base entry named, for resolved-changed
-//	resolved        the location the head entry names, for resolved-changed
+//	resolved        the location the head entry names, when it names one
 //	lockfile        the lockfile the head entry came from, absent when it carries no location
 
 type lockfileEntryChanged struct{}
@@ -79,7 +79,7 @@ func (c lockfileEntryChanged) Run(_ context.Context, s *Subject) Result {
 		return Skip(c.ID(), lockEntryMissing(s))
 	}
 	if s.BaseLock == nil {
-		return Skip(c.ID(), "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base")
+		return Skip(c.ID(), baseEntryMissing())
 	}
 	if s.BaseLock.Ref.Version != s.Lock.Ref.Version {
 		// The version moved, which is what every other check is about.

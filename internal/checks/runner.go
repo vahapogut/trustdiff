@@ -42,11 +42,13 @@ type Input struct {
 	Direct   bool
 	// Lock is the lockfile entry the subject came from, nil for a ref named on
 	// the command line. The runner puts it on Subject.Lock, where the checks that
-	// judge the lockfile rather than the registry (TD013, TD014, TD016) read it.
+	// judge the lockfile rather than the registry (TD013, TD014, TD016, TD017)
+	// read it.
 	Lock *lockfile.Entry
-	// BaseLock is the entry the base lockfile held for the same package, set by
-	// diff for an entry whose version did not move and nil everywhere else. The
-	// runner puts it on Subject.BaseLock, where TD016 compares the two.
+	// BaseLock is the entry the base lockfile held for the same package, set by diff
+	// for every entry it classified as changed and nil everywhere else. The runner
+	// puts it on Subject.BaseLock, where TD016 compares what the two entries install
+	// and TD017 compares which way the version moved.
 	BaseLock *lockfile.Entry
 	// BaseVersion is the version the base lockfile locked, when diff evaluates an
 	// entry whose version moved. It is the version the project actually had,

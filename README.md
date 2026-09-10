@@ -10,7 +10,7 @@ Version 0.4.1 ships `check` for single packages and for a manifest read at the v
 
 The same two commands in text, because a GIF cannot be searched, copied or read by
 anyone using a screen reader, and because these are what the release checklist
-verifies against a live run. Captured on 2026-09-09. The six lines about a lockfile entry that a ref named on the command line does not have are trimmed here:
+verifies against a live run. Captured on 2026-09-10. The twelve lines about a lockfile entry that a ref named on the command line does not have are trimmed here:
 
 ```
 $ trustdiff check npm:express@4.19.2 pypi:requests cargo:serde
@@ -27,7 +27,7 @@ cargo:serde@1.0.229  WARN
       crate
   skipped TD003: cargo records no maintainer set per version; the run read no baseline
 
-3 subjects, 0 block, 1 warn, 0 info, 9 skipped checks. Exit code 0 (no blocking findings).
+3 subjects, 0 block, 1 warn, 0 info, 15 skipped checks. Exit code 0 (no blocking findings).
 ```
 
 `flatmap-stream@0.1.1` is the package that carried the 2018 event-stream backdoor. npm removed it from the registry, so the history checks have nothing to compare and say so; the advisory and download checks still run (the other nine skipped lines are trimmed here):
@@ -57,7 +57,7 @@ npm:flatmap-stream@0.1.1  BLOCK
   skipped TD001: registry: version info of npm:flatmap-stream@0.1.1: npm: flatmap-stream@0.1.1: not found in the registry
   ...
 
-1 subject, 3 block, 0 warn, 1 info, 10 skipped checks. Exit code 1 (blocking findings).
+1 subject, 3 block, 0 warn, 1 info, 12 skipped checks. Exit code 1 (blocking findings).
 ```
 
 ## Install
@@ -163,7 +163,7 @@ npm:event-stream@3.3.5  BLOCK
       3.3.4 listed dominictarr as maintainer; 3.3.5 lists dominictarr and right9ctrl: added
       right9ctrl
 
-1 subject, 1 block, 1 warn, 0 info, 0 skipped checks. Exit code 1 (blocking findings).
+1 subject, 1 block, 1 warn, 0 info, 4 skipped checks. Exit code 1 (blocking findings).
 ```
 
 The exit code is for scripts: 0 means no blocking findings, 1 means at least one finding at or above `--fail-on` (default `block`), 2 a usage or configuration error, 3 that a required data source was unavailable and the policy says `on_data_unavailable: fail`. Findings are never hidden by an error; what could not be evaluated is listed as skipped.
@@ -222,6 +222,10 @@ $ trustdiff --format json check cargo:serde@1.0.210
         {
           "check": "TD016",
           "reason": "no lockfile entry for cargo:serde@1.0.210: the ref was named directly, not read from a lockfile"
+        },
+        {
+          "check": "TD017",
+          "reason": "no lockfile entry for cargo:serde@1.0.210: the ref was named directly, not read from a lockfile"
         }
       ],
       "findings": [
@@ -256,7 +260,7 @@ $ trustdiff --format json check cargo:serde@1.0.210
       "info": 0,
       "warn": 1
     },
-    "skipped": 3,
+    "skipped": 4,
     "exit_code": 0,
     "exit_meaning": "no blocking findings"
   }
@@ -280,7 +284,7 @@ trustdiff diff --format markdown
 ```
 
 ```
-## trustdiff: 1 subject, 0 block, 2 warn, 0 info, 11 skipped checks
+## trustdiff: 1 subject, 0 block, 2 warn, 0 info, 12 skipped checks
 
 | Package | Level | Check | Finding | Location |
 | --- | --- | --- | --- | --- |
@@ -370,6 +374,7 @@ Every check has a stable id, a name used in the policy file, a default level and
 | [TD014](docs/checks.md#td014-integrity-missing) | `integrity-missing` | lockfile entry without a hash, or over plain http | warn | all |
 | [TD015](docs/checks.md#td015-version-anomaly) | `version-anomaly` | version number jumps past the package's cadence or is published out of order | info | all |
 | [TD016](docs/checks.md#td016-lockfile-entry-changed) | `lockfile-entry-changed` | same version, another integrity hash, source or resolved location | block | all |
+| [TD017](docs/checks.md#td017-version-downgraded) | `version-downgraded` | the locked version sorts below the one it replaces | info | all |
 
 An expired `allow` entry produces a warning of its own, [TD000](docs/checks.md#td000-expired-allow). Any check whose data is missing reports skipped with the reason, never a pass.
 

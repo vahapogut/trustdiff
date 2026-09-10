@@ -129,6 +129,8 @@
 //	TD015  yes    the version list with publish times, ordered as semantic versions
 //	TD016  yes    the two lockfile entries only; skipped for a ref named on the command
 //	              line and for an entry the base lockfile did not hold
+//	TD017  yes    the same two entries, ordered as semantic versions, which is what
+//	              JSR requires of a published release
 //
 // The two facts behind the TD009 and TD010 rows, both verified 2026-09-09 against
 // the live services rather than assumed:

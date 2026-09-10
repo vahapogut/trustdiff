@@ -1031,3 +1031,55 @@ func TestDiffComparesWithThePreviousReleaseWhenTheBaseVersionIsGone(t *testing.T
 		}
 	}
 }
+
+// TestDiffReportsAVersionThatWentBackwards pins finding F11 of
+// docs/review-2026-09-10.md. The change locks a release that sorts below the one the
+// base file locked. Both releases are real and both check out, so every check read
+// the version in front of it and agreed it was fine, and it was: the change is the
+// direction, and the direction was the one thing nothing looked at. TD016 holds both
+// entries and returned an empty result for a pair whose version moved, so the report
+// listed it among the checks that had judged the pair.
+func TestDiffReportsAVersionThatWentBackwards(t *testing.T) {
+	base := readRegressionFixture(t, "f11-version-downgraded", "base", "package-lock.json")
+	head := readRegressionFixture(t, "f11-version-downgraded", "head", "package-lock.json")
+	useFakeLoader(t)
+	dir := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(dir))
+	writeFile(t, dir, "base/package-lock.json", base)
+	writeFile(t, dir, "head/package-lock.json", head)
+	chdir(t, dir)
+
+	// info is not a level --fail-on accepts, so a downgrade alone does not fail the
+	// gate. It is a thing a project does on purpose; the finding asks for the
+	// sentence in the pull request that says why.
+	code, stdout, stderr := run(t, "--format", "json", "diff",
+		"--base-file", "base/package-lock.json", "head/package-lock.json")
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want %d (stderr %q)\n%s", code, ExitFindings, stderr, stdout)
+	}
+	rep := decodeReport(t, stdout)
+	s := subjectFor(t, &rep, "npm:trustdiff-fixture-lib@1.0.0")
+
+	var found *model.Finding
+	for i := range s.Findings {
+		if s.Findings[i].ID == "TD017" {
+			found = &s.Findings[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("no TD017 finding for a version that went backwards; evaluated %v, findings %+v, skipped %v",
+			s.Evaluated, s.Findings, s.Skipped)
+	}
+	if found.Level != model.LevelInfo {
+		t.Errorf("level = %s, want info: going back a release is a thing a project does on purpose, and the finding asks why", found.Level)
+	}
+	if got := found.Evidence["base_version"]; got != "2.0.0" {
+		t.Errorf("base_version = %v, want 2.0.0", got)
+	}
+	if got := found.Evidence["version"]; got != "1.0.0" {
+		t.Errorf("version = %v, want 1.0.0", got)
+	}
+	if want := lineOf(t, head, "node_modules/trustdiff-fixture-lib"); s.Location == nil || s.Location.Line != want {
+		t.Errorf("location = %+v, want the lockfile line %d", s.Location, want)
+	}
+}

@@ -89,16 +89,16 @@ type Subject struct {
 
 	// Lock is the lockfile entry the subject came from, nil for a ref named on the
 	// command line. The checks that judge the lockfile rather than the registry
-	// (exotic-source, integrity-missing, lockfile-entry-changed) read it and skip
-	// themselves without it.
+	// (exotic-source, integrity-missing, lockfile-entry-changed, version-downgraded)
+	// read it and skip themselves without it.
 	Lock *lockfile.Entry
 
-	// BaseLock is the entry the base lockfile held for the same package, set only
-	// when diff evaluates an entry whose version did not move. It is nil for an
-	// added entry, for scan, and for a ref named on the command line.
-	// lockfile-entry-changed is the one check that reads it, and it is the only
-	// way anything can see a change that kept the version and moved the hash, the
-	// source or the location.
+	// BaseLock is the entry the base lockfile held for the same package, set for
+	// every entry diff classified as changed. It is nil for an added entry, for
+	// scan, and for a ref named on the command line. Two checks read it, and they
+	// divide the pair between them: lockfile-entry-changed is about the entry that
+	// kept its version and moved its hash, its source or its location, and
+	// version-downgraded is about the version itself moving backwards.
 	BaseLock *lockfile.Entry
 
 	// Version is the evaluated version in full detail.

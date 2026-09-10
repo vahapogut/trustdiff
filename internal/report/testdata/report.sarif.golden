@@ -195,6 +195,17 @@
                 "text": "A published release is immutable on every registry this tool reads, so one version under two hashes means the file was written against bytes that were not that release. Four signals: integrity-changed, integrity-removed, source-changed and resolved-changed. Only the two sides of a diff can be compared, so an added entry and a scan report the check as skipped. An entry that moved onto the registry, and a directory that moved to another directory, are reported at info: the first is a project that stopped vendoring a dependency and the second is a workspace being rearranged. A registry entry's resolved location is not compared at all, because moving a project to a mirror rewrites every one of them without changing what is installed."
               },
               "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td016-lockfile-entry-changed"
+            },
+            {
+              "id": "TD017",
+              "name": "version-downgraded",
+              "shortDescription": {
+                "text": "A lockfile entry whose version went backwards: the head file locks a release that sorts below the one the base file locked."
+              },
+              "fullDescription": {
+                "text": "Both releases are real and both check out, so every other check reads the version in front of it and agrees it is fine. The change is the direction, and every release in between is no longer installed, fixes included. The order is the ecosystem's own, PEP 440 for PyPI and semantic versions elsewhere; a pair neither scheme can order is reported as skipped, never as a pass. Info by default, because going back a release is a thing a project does on purpose and the finding asks why."
+              },
+              "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td017-version-downgraded"
             }
           ]
         }

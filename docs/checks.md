@@ -729,3 +729,34 @@ allow:
     reason: "vendored fork republished under the same version while the upstream fix lands"
     expires: 2027-01-01
 ```
+
+## TD017 version-downgraded
+
+**Detects.** A lockfile entry whose version went backwards: the head file locks a release that sorts below the one the base file locked. Default `info`, every ecosystem.
+
+It reads the two lockfile entries and nothing else, so it needs both sides of a diff. A ref named on the command line has no entry, an added entry has no base entry, and `scan` reads one file with nothing to compare it to; each of those is reported as skipped with which case it was.
+
+The order is the ecosystem's own: PEP 440 for PyPI, semantic versions everywhere else, which is what each registry requires of a published release ([npm](https://docs.npmjs.com/cli/v11/configuring-npm/package-json), [cargo](https://doc.rust-lang.org/cargo/reference/manifest.html), [JSR](https://jsr.io/docs/package-configuration), [PyPI](https://packaging.python.org/en/latest/specifications/version-specifiers/), all read 10 September 2026). A lockfile can still hold a version string none of those orders, because an entry that installs from somewhere other than the registry records the specifier where the version goes (`workspace:packages/bun-types`, `github:example/pkg#<sha>`). Such a pair is reported as skipped naming both spellings, never as a pass.
+
+One shape produces a finding a reviewer will want to dismiss, and it is why the default is `info` rather than `warn`. A lockfile that holds one name at several major versions pairs its entries by name once the versions themselves do not match, so a change that drops a 5.x copy and keeps a 4.x one can read as a downgrade of the entry that stayed. The finding names both versions, so it is one line to check and one line to answer.
+
+**Why it matters.** Rolling a dependency back is how a project unships a fix. Every release between the two is gone, including security fixes with no advisory filed yet, and that is precisely the window this tool exists for: `vulnerability` reports the older release only once OSV knows about it. A rollback is also what an attacker does with write access to a lockfile and no need to publish anything, since both releases are genuine and every other check reads the version in front of it and agrees it is fine.
+
+**Evidence.**
+
+| Key | Meaning |
+|---|---|
+| `base_version` | the version the base lockfile locked |
+| `version` | the version the head lockfile locks |
+| `resolved` | the location the head entry names, when it names one |
+| `lockfile` | the file and line the head entry sits on |
+
+**Fix or allow.** Say why in the pull request, or move forward instead. A rollback held for longer than a review is what an allow entry with a reason and an expiry is for:
+
+```yaml
+allow:
+  - check: version-downgraded
+    package: "npm:some-lib"
+    reason: "4.x until the 5.x regression upstream is fixed, tracked in #412"
+    expires: 2027-01-01
+```

@@ -47,6 +47,7 @@ body:
         - TD014 integrity-missing
         - TD015 version-anomaly
         - TD016 lockfile-entry-changed
+        - TD017 version-downgraded
     validations:
       required: true
   - type: textarea

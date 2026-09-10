@@ -168,13 +168,21 @@ func sourceNoun(source lockfile.Source) string {
 	}
 }
 
-// The helpers below are shared by the two checks that judge the lockfile entry
-// rather than the registry, TD013 and TD014.
+// The helpers below are shared by the checks that judge the lockfile entry rather
+// than the registry: TD013 and TD014 read the head entry, TD016 and TD017 read both
+// sides of a diff.
 
 // lockEntryMissing words the skip of a lockfile check for a subject with no entry
 // behind it, which is every ref named on the command line.
 func lockEntryMissing(s *Subject) string {
 	return fmt.Sprintf("no lockfile entry for %s: the ref was named directly, not read from a lockfile", s.Ref)
+}
+
+// baseEntryMissing words the skip of a check that needs both sides of a diff and
+// was given one. It says the same thing for TD016 and TD017, which is what the demo
+// output and the README sample both print, so it is said once.
+func baseEntryMissing() string {
+	return "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
 }
 
 // entrySource reads an entry's source and takes the zero value for unknown: a

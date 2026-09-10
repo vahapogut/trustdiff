@@ -38,6 +38,7 @@ checks:
   integrity-missing: warn            # TD014 lockfile entry without a hash, or fetched over plain http
   version-anomaly: info              # TD015 version number far outside the package's cadence
   lockfile-entry-changed: block      # TD016 same version, another hash, source or resolved location
+  version-downgraded: info           # TD017 the locked version sorts below the one it replaces
 
 # Reviewed exceptions. Each needs the check, the package pattern and a reason; an
 # expiry date is strongly recommended. An expired entry stops applying and is itself

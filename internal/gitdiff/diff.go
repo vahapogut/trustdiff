@@ -48,8 +48,9 @@ func (c Changes) Empty() bool {
 //
 // An entry at the same version counts as changed when its source or its
 // integrity hash differs. TD013 and TD014 judge the entry as it stands, an
-// exotic source and a missing hash; TD016 is the one that reads both sides and
-// says the version stayed while the hash, the source or the location moved.
+// exotic source and a missing hash. The two that read both sides divide the pair:
+// TD016 says the version stayed while the hash, the source or the location moved,
+// and TD017 says the version itself went backwards.
 //
 // The resolved location is compared for every entry the ecosystem's own registry
 // does not serve. For a registry entry it is ignored, because moving a project to
