@@ -35,7 +35,7 @@
 # can be created from here. docs/releasing.md section 8 has the steps:
 #   1. The npm organisation named trustdiff, which is what makes the scope
 #      @trustdiff usable. A personal account only ever owns the scope matching
-#      its own name, so @vahapogut is free and @trustdiff needs the org.
+#      its own name, so no personal account can publish under @trustdiff.
 #   2. Version 0.4.0 published by hand, once. npm cannot create a package through
 #      trusted publishing: npm/cli issue 8544, "Allow publishing initial version
 #      with OIDC", was still open on 2026-09-10, so the first version has to come

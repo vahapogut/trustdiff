@@ -393,7 +393,8 @@ confirmed against npm's own documentation on 2026-09-10.
 This is the one step nothing can do for you.
 
 The scope has to exist and it cannot be a personal one. npm gives every account the
-scope matching its own name, so `vahapogut` owns `@vahapogut` and nothing else;
+scope matching its own name, and the npm account here is `vahapogut1`, so it owns
+`@vahapogut1` and nothing else;
 `@trustdiff` requires an organisation literally named `trustdiff`. Organisations are
 created on npmjs.com only. `npm org` manages the members of one that already exists
 and cannot create it, and there is no API for it.
@@ -403,7 +404,7 @@ Turn on two-factor authentication on the account first: the next two steps both
 require it.
 
 If the name `trustdiff` turns out to be taken, the fallbacks are
-`@vahapogut/bun-scanner`, which needs no organisation at all, or the unscoped
+`@vahapogut1/bun-scanner`, which needs no organisation at all, or the unscoped
 `trustdiff-bun-scanner`. Either means editing `name` in
 `integrations/bun-scanner/package.json`, the four references in its README, the
 `bunfig.toml` example in the root README, and the tarball assertion in the publish
