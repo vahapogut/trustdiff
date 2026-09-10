@@ -182,21 +182,24 @@ place.
 skip_upload: '{{ if isEnvSet "TAP_GITHUB_TOKEN" }}auto{{ else }}true{{ end }}'
 ```
 
+Both repositories exist as of 2026-09-10 and both already serve v0.4.0. What the
+token adds is that the release job writes them itself, instead of somebody doing
+it by hand afterwards.
+
 **When `TAP_GITHUB_TOKEN` is not set, the release still succeeds.** goreleaser
 writes the cask to `dist/homebrew/Casks/trustdiff.rb` and the manifest to
 `dist/scoop/bucket/trustdiff.json`, logs `brew.skip_upload is set` and
 `scoop.skip_upload is set`, and moves on. Neither file is uploaded anywhere, and
-nothing else in the pipeline depends on them. This is the current state of the
-project: the two repositories do not exist yet, so the guard is what keeps every
-release green until they do.
+nothing else in the pipeline depends on them.
 
-Three things need the owner's own hands, in this order. None of them can be done
-from this repository.
+One thing needs the owner's own hands, and it is the token in 6.2. A fine grained
+personal access token cannot be minted through an API, by design, so nothing here
+can create it.
 
-### 6.1 Manual: create the two repositories
+### 6.1 Create the two repositories
 
-One command creates both, makes them public, and gives each an initial commit
-holding a README and the project's LICENSE:
+Done on 2026-09-10. Both exist, are public, and have `main` as their default
+branch. To recreate them, or to set up a tap under another account:
 
 ```sh
 sh scripts/create-taps.sh
@@ -272,6 +275,18 @@ off again without editing the configuration. That is not incidental. goreleaser'
 implementation would return true for the empty string a missing secret expands
 to, and the guard would invert itself and try an authenticated push with no
 token on every release.
+
+### 6.3.1 What v0.4.0 did instead
+
+v0.4.0 was released before the token existed, so its cask and manifest were put
+into the two repositories by hand rather than by the release job. They are the
+files goreleaser generates, with every digest taken from the release's own
+`checksums.txt` after cosign verified it, and all six archives were downloaded
+from the URLs in those files and checked against them before either was
+committed. The commits are named the way goreleaser names its own, so the history
+reads the same once the job takes over.
+
+Nothing needs undoing. The first release with the token overwrites both files.
 
 ### 6.4 What the first release with the token looks like
 

@@ -64,20 +64,22 @@ With a Go toolchain (1.26 or newer):
 go install github.com/vahapogut/trustdiff/cmd/trustdiff@latest
 ```
 
-Homebrew and Scoop are built on every release and uploaded only once the tap repositories and their token exist, which is a step the repository owner takes by hand ([docs/releasing.md](docs/releasing.md)). Until then the lines below do nothing.
+With a package manager:
 
 ```sh
-# macOS, once the tap exists
+# macOS
 brew install --cask vahapogut/tap/trustdiff
 
-# Windows, once the bucket exists
+# Windows
 scoop bucket add trustdiff https://github.com/vahapogut/scoop-bucket
 scoop install trustdiff
 ```
 
+Both point at [vahapogut/homebrew-tap](https://github.com/vahapogut/homebrew-tap) and [vahapogut/scoop-bucket](https://github.com/vahapogut/scoop-bucket), which hold one generated file each and nothing else.
+
 The Homebrew line names the cask in full on purpose. Since Homebrew 6.0 a tap that is not one of Homebrew's own has to be trusted before its code will run, and installing a fully qualified name trusts that one cask and nothing else. `brew tap vahapogut/tap` followed by the short name needs a separate `brew trust --cask vahapogut/tap/trustdiff`, and `brew trust vahapogut/tap` accepts everything the tap ever holds, which is more than anyone should hand a third party.
 
-The way that works today, on every platform and without a Go toolchain, is to download a release from the [releases page](https://github.com/vahapogut/trustdiff/releases). Every release ships one archive per platform (`trustdiff_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows), `checksums.txt`, its cosign bundle `checksums.txt.sigstore.json`, an SPDX SBOM per archive and GitHub build provenance. Download the archive for your platform together with the two checksum files and verify before you unpack; substitute the archive you downloaded for `trustdiff_0.4.0_linux_amd64.tar.gz`.
+The route that works on every platform, and the only one that lets you check the signature and the provenance yourself, is to download a release from the [releases page](https://github.com/vahapogut/trustdiff/releases). Every release ships one archive per platform (`trustdiff_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows), `checksums.txt`, its cosign bundle `checksums.txt.sigstore.json`, an SPDX SBOM per archive and GitHub build provenance. Download the archive for your platform together with the two checksum files and verify before you unpack; substitute the archive you downloaded for `trustdiff_0.4.0_linux_amd64.tar.gz`.
 
 1. Verify the signature on the checksum file (cosign v3 or later). The identity is the release workflow of this repository, running on a version tag.
 
@@ -135,7 +137,7 @@ Do not double-click the binary in Finder to run it. Finder hands a command line 
 
 The last two rows are what notarization would fix and nothing else would, which is the whole content of that decision. None of this was tested on a Mac; this environment has none, and it is read off Apple's and Homebrew's own documentation.
 
-If any step fails, do not run the binary; [SECURITY.md](SECURITY.md) says where to report it. These three steps stay the recommended install even after the tap and the bucket exist, because they are the only route that lets you check the signature and the provenance yourself. [docs/releasing.md](docs/releasing.md) describes how a release is built and what is left to do before `brew` and `scoop` work.
+If any step fails, do not run the binary; [SECURITY.md](SECURITY.md) says where to report it. These three steps stay the recommended install even though the tap and the bucket work, because they are the only route that lets you check the signature and the provenance yourself. [docs/releasing.md](docs/releasing.md) describes how a release is built.
 
 ## Three ways to use it
 
