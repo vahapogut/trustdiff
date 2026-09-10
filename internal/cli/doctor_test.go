@@ -18,11 +18,17 @@ import (
 // be installed would pass or fail depending on the developer's laptop.
 var doctorFixture = map[string]string{
 	// npm 12 through the packageManager field, with an .npmrc that says nothing
-	// about the wait.
+	// about the wait. The allowScripts object is what makes strict-allow-scripts a
+	// line worth writing: this project has reviewed which of its dependencies may
+	// run an install script, so turning the remaining silence into an error costs
+	// it nothing. A project that has reviewed none is told to review them first.
 	"package.json": `{
   "name": "acceptance",
   "packageManager": "npm@12.0.2",
-  "workspaces": ["apps/*"]
+  "workspaces": ["apps/*"],
+  "allowScripts": {
+    "esbuild": true
+  }
 }
 `,
 	".npmrc":            "; the project's registry settings\nregistry=https://registry.npmjs.org/\n",

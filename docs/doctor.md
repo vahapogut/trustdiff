@@ -141,6 +141,16 @@ setting is a line in an install log nobody reads. `strict-npmrc`, from npm 12, t
 that into a failure. Turn it on last: it fails on every unrecognized key in the file,
 including one an older npm on another machine needs.
 
+**`strict-allow-scripts` waits for a review.** It turns npm's install-script policy
+from a warning into a hard error: a dependency with install scripts that
+`allowScripts` does not cover fails the install instead of being skipped quietly.
+On a project that has reviewed its scripts that is the line that closes the gap. On
+one that has not, it is every dependency with a `postinstall` failing at once, so
+the rule reports it as advice there and writes nothing. Review them with `npm
+approve-scripts`, which fills in the `allowScripts` object of `package.json`, and
+the row becomes one a fix can write. A package explicitly denied with `false` is
+skipped in silence by design and is not what the setting is about.
+
 **pnpm reads these from `pnpm-workspace.yaml`, not from `.npmrc`.** pnpm reads only
 authentication and registry settings from an `.npmrc`, so a `minimumReleaseAge`
 written there does nothing at all. From pnpm 12, an unrecognized key in

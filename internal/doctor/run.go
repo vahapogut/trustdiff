@@ -185,6 +185,12 @@ func evaluateRule(root string, m *Manager, rule *Rule, params *Params) ([]Result
 func evaluateTargets(root string, m *Manager, rule *Rule, params *Params) ([]Result, []string) {
 	var notes []string
 	var fallback *Result
+	desired := rule.Desired
+	if c, ok := desired.(Contextual); ok {
+		// A rule that reads a second file reads it once, before any of its own
+		// targets, so every branch below judges against the same answer.
+		desired = c.Bind(root, m)
+	}
 	for _, target := range rule.Targets {
 		rel, full := targetPath(root, m, target)
 		data, err := readConfig(full)
@@ -213,22 +219,22 @@ func evaluateTargets(root string, m *Manager, rule *Rule, params *Params) ([]Res
 			}
 			continue
 		}
-		status, detail := rule.Desired.Judge(&value, params)
+		status, detail := desired.Judge(&value, params)
 		return []Result{{
 			Status:  status,
 			Detail:  detail,
 			File:    rel,
 			Line:    value.Line,
 			Current: strings.TrimSpace(value.Raw),
-			Want:    rule.Desired.Describe(params),
+			Want:    desired.Describe(params),
 			target:  target,
 		}}, notes
 	}
 
 	// No file states the key. The judgment still runs, because a manager whose own
 	// default already does what the rule asks is not missing anything.
-	status, detail := rule.Desired.Judge(&configfile.Value{}, params)
-	res := Result{Status: status, Detail: detail, Want: rule.Desired.Describe(params)}
+	status, detail := desired.Judge(&configfile.Value{}, params)
+	res := Result{Status: status, Detail: detail, Want: desired.Describe(params)}
 	if fallback != nil {
 		res.File, res.target = fallback.File, fallback.target
 	} else if len(rule.Targets) > 0 {

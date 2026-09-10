@@ -324,6 +324,19 @@ func (r *Rule) Applies(m *Manager) (bool, string) {
 	return true, ""
 }
 
+// Contextual is a Desired whose judgment depends on more of the repository than the
+// key it reads. The run binds it before judging, so what it read is settled once
+// and the judgment itself stays a function of a value and the params. npm's
+// strict-allow-scripts is the case it exists for: the value is hardening on a
+// project that has reviewed its install scripts and a failed install on one that
+// has not, and the review lives in package.json.
+type Contextual interface {
+	Desired
+	// Bind returns the judge carrying what it read under root for this manager.
+	// The receiver is a value, so binding never changes the package level rule.
+	Bind(root string, m *Manager) Desired
+}
+
 // Scanner is how a rule that is not one key in one file looks at a repository. It
 // returns one result per thing it judged, with Rule, Manager and Level left zero:
 // the caller fills those in, so that a scanner cannot report a rule other than its

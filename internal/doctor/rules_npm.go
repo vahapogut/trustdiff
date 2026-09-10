@@ -48,7 +48,9 @@ var npmMinReleaseAge = &Rule{
 // package can do, and npm 12 blocks them by default. strict-allow-scripts is what
 // turns the remaining silence into a failure: without it a dependency outside
 // allowScripts is skipped and mentioned at the end of the install, which is where
-// nobody looks.
+// nobody looks. It is also the one setting here whose safe value depends on a
+// second file, which is why NpmStrictAllowScripts reads package.json before it
+// answers.
 var npmStrictAllowScripts = &Rule{
 	ID:      "DR002",
 	Name:    "npm-strict-allow-scripts",
@@ -61,12 +63,12 @@ var npmStrictAllowScripts = &Rule{
 		Key:      configfile.Key{"strict-allow-scripts"},
 		CreateIf: true,
 	}},
-	Desired:  BoolSetting{On: true, Defaulted: true, Default: false},
+	Desired:  NpmStrictAllowScripts{},
 	Level:    model.LevelWarn,
 	Docs:     "https://docs.npmjs.com/cli/v12/commands/npm-install-scripts",
-	Verified: "2026-09-09",
+	Verified: "2026-09-11",
 	Fixable:  true,
-	Note:     "The packages allowed to run a script live in the allowScripts object of package.json, which npm approve-scripts writes. ignore-scripts=true is the blunter option: it stops every script, including the project's own.",
+	Note:     "The packages allowed to run a script live in the allowScripts object of package.json, which npm approve-scripts writes. Until that object has something in it there is nothing to be strict about, so the rule reports and writes nothing. ignore-scripts=true is the blunter option: it stops every script, including the project's own.",
 }
 
 // allow-git and allow-remote are npm 12 defaults, which makes them a rule about
