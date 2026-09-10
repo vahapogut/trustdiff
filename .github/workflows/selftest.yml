@@ -4,9 +4,11 @@
 #
 # This workflow deliberately does not use action.yml. The action downloads a
 # published release, which would test the previous version against this pull
-# request; "go run ./cmd/trustdiff" tests what the pull request contains.
-# action.yml is exercised on this repository by the self-test the release step of
-# task 2.12 adds, once a release with a diff command exists.
+# request; the binary built below tests what the pull request contains.
+# action.yml is exercised by .github/workflows/action-selftest.yml, which runs it
+# from ./ on all three runner families against a two commit lockfile change. That
+# one needs the live network, so it runs on a schedule and on dispatch rather than
+# on every pull request, the same rule the integration job in ci.yml follows.
 #
 # Every "uses:" reference is pinned to a full commit SHA and the trailing comment
 # names the tag. Pins were resolved on 2026-09-09 with

@@ -188,6 +188,13 @@ anything at run time. That table can only be written after the release exists.
    `pinned_version=` changed, the two example snippets in the header comment
    changed, nothing else.
 6. Commit as `chore(action): pin v0.4.0 and checksums`.
+7. Dispatch the `action-selftest` workflow on the default branch, once the commit
+   above is pushed. It runs `action.yml` from `./` on ubuntu, macos and windows,
+   on both verification routes, against the release that commit just pinned. That
+   is the first time the new table and the new archives are read by the code that
+   reads them for everybody else, and the pinned leg fails rather than falls back
+   when the table does not cover the default version. Dispatch it on the branch
+   and not on the tag: only the branch carries the pin commit.
 
 One thing this ordering cannot fix: the tag is pushed before this commit exists,
 so the action at tag `vX.Y.Z` always defaults to the release before it. That is why

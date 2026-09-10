@@ -1,0 +1,138 @@
+# action.yml, run the way a caller runs it, on all three runner families.
+#
+# selftest.yml runs the code of a pull request over this repository. It cannot also
+# test action.yml, because the action downloads a published release: pointing it at a
+# pull request would report on the previous version. This workflow tests the other
+# half, the plumbing that gets a released binary onto a runner and runs it, which is
+# the part that runs with other people's tokens and had never been executed on any
+# runner. Finding F21 of docs/review-2026-09-10.md.
+#
+# What each leg proves:
+#   * the archive name is built for that runner's os and arch,
+#   * it downloads, and its checksum matches by the route the matrix asked for,
+#   * it extracts, which on Windows is the zip branch: "shell: bash" there is Git for
+#     Windows, whose /usr/bin holds unzip and a GNU tar that cannot read a zip,
+#   * the binary lands on PATH and answers "version",
+#   * "diff" runs against a real two commit change and reports an exit code.
+#
+# Live network, so the trigger is schedule plus dispatch, the same rule ci.yml's
+# integration job follows: this never runs for a push or a pull request. A release
+# dispatches it by hand, which docs/releasing.md section 5 says when.
+#
+# Every "uses:" reference is pinned to a full commit SHA and the trailing comment
+# names the tag it was resolved from, the same as every other workflow here.
+#   actions/checkout v7.0.1   3d3c42e5aac5ba805825da76410c181273ba90b1
+name: action-selftest
+
+on:
+  schedule:
+    # Mondays, an hour after the integration job, so a broken release surfaces in the
+    # same week rather than at the next release.
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  action:
+    name: action.yml (${{ matrix.os }}, ${{ matrix.verify }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      # One failing runner must not hide the other five: a zip that Windows cannot
+      # read and a cosign identity that stopped matching are different bugs.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        verify: [pinned, cosign]
+        # verify is a matrix key above rather than only an include key, so these two
+        # objects extend the six combinations by matching on it. An include object
+        # whose keys are all new is added to every combination instead, and the
+        # second would overwrite the first, which would leave all six on one route.
+        include:
+          - verify: pinned
+            # Empty means the action's own default, which is the only version whose
+            # sha256 table it embeds. Any other value takes the cosign route.
+            version: ""
+          - verify: cosign
+            # An explicit older tag, so the release's signed checksums.txt is fetched
+            # and cosign verify-blob runs against the certificate identity of
+            # release.yml at that tag.
+            version: v0.4.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The action has one mode, the git diff, and no way to be pointed at a
+      # directory: a composite action's run steps work in $GITHUB_WORKSPACE and the
+      # caller's defaults.run never reaches them. So the change under evaluation has
+      # to be the workspace itself. Two commits on top of the checkout do it, holding
+      # the demo repository's base lockfile and then its head, which is a real
+      # lockfile change of the shape the action exists for. The checkout stays where
+      # it is, because "uses: ./" reads action.yml out of the workspace when the step
+      # runs; a workspace emptied to make room for a fixture would take the action
+      # under test with it. The repository has no package-lock.json of its own, so
+      # nothing is overwritten and nothing else in the tree changes.
+      - name: Commit a lockfile change on top of the checkout
+        id: fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.email selftest@example.invalid
+          git config user.name "action selftest"
+          cp testdata/demo-repo/base/package-lock.json package-lock.json
+          git add package-lock.json
+          git commit --quiet -m "the lockfile before the change"
+          base=$(git rev-parse HEAD)
+          cp testdata/demo-repo/head/package-lock.json package-lock.json
+          git commit --quiet -am "the lockfile after the change"
+          echo "base=${base}" >> "$GITHUB_OUTPUT"
+          echo "comparing ${base} with $(git rev-parse HEAD)"
+
+      - name: Run the action
+        id: trustdiff
+        uses: ./
+        with:
+          version: ${{ matrix.version }}
+          base: ${{ steps.fixture.outputs.base }}
+          # never, because this leg is about the plumbing and not about what the
+          # fixture happens to contain: a finding must not fail the job that proves
+          # the action can run at all.
+          fail-on: never
+          format: sarif
+          # No security-events write here, and a synthetic fixture has no business in
+          # this repository's code scanning alerts. The action prints the report in
+          # the log instead, which is what makes that switch honest.
+          upload-sarif: "false"
+
+      - name: Check what the action reported
+        shell: bash
+        env:
+          CODE: ${{ steps.trustdiff.outputs.exit-code }}
+          REPORT: ${{ steps.trustdiff.outputs.report }}
+          VERIFICATION: ${{ steps.trustdiff.outputs.verification }}
+          WANT_VERIFICATION: ${{ matrix.verify }}
+        run: |
+          set -euo pipefail
+          # The pinned route quietly becomes the cosign route when the embedded table
+          # is empty or still says pending, and it says so only in a notice. Without
+          # this the pinned leg would pass while testing the other route.
+          if [ "$VERIFICATION" != "$WANT_VERIFICATION" ]; then
+            echo "::error::the archive was verified by the ${VERIFICATION} route, and this leg is the ${WANT_VERIFICATION} one"
+            exit 1
+          fi
+          if [ "$CODE" != 0 ]; then
+            echo "::error::trustdiff exited ${CODE} under --fail-on never, which means it could not run rather than that it found something"
+            exit 1
+          fi
+          if [ -z "$REPORT" ] || [ ! -s "$REPORT" ]; then
+            echo "::error::the action reported no SARIF file, so nothing was written"
+            exit 1
+          fi
+          # A SARIF document, not an empty file that happens to exist.
+          head -c 200 "$REPORT"
+          echo
+          grep -q '"version": "2.1.0"' "$REPORT"
+          echo "action.yml ran on ${RUNNER_OS}/${RUNNER_ARCH}, verified by ${VERIFICATION}, and wrote ${REPORT}"

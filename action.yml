@@ -84,6 +84,16 @@ inputs:
     description: "Report format: sarif, json, markdown or human. SARIF is uploaded to code scanning, markdown is added to the job summary."
     required: false
     default: sarif
+  upload-sarif:
+    description: >-
+      Whether to upload the SARIF report to code scanning: true or false. Set it
+      to false where the job's token cannot write code scanning results, or where
+      the findings should stay in the log. A pull request from a fork is the only
+      case the action can recognize and skip on its own. When the upload does not
+      happen the report is printed in the log instead, so the findings are never
+      nowhere.
+    required: false
+    default: "true"
 
 outputs:
   exit-code:
@@ -92,6 +102,14 @@ outputs:
   report:
     description: Path of the report file, empty when trustdiff wrote nothing.
     value: ${{ steps.run.outputs.report }}
+  verification:
+    description: >-
+      How the archive was verified: "pinned" against the sha256 table embedded in
+      this file, or "cosign" against the release's signed checksums.txt. The
+      pinned route silently becomes the cosign route when the table is not filled
+      in yet, so a caller that means to exercise one of them can check which it
+      got.
+    value: ${{ steps.asset.outputs.verify }}
 
 runs:
   using: composite
@@ -104,10 +122,24 @@ runs:
       run: |
         set -euo pipefail
 
+        # The version this file embeds a sha256 table for, which is also what an
+        # unset input resolves to. It is updated after every release, in a commit
+        # named "chore(action): pin <tag> and checksums", together with the table
+        # below and the default of the version input.
+        pinned_version=v0.4.1
+
+        # An empty version is the default, not an error. A caller writing
+        # version: ${{ inputs.trustdiff_version }} sends the empty string when that
+        # variable is unset, and an input the caller did not mean to set should get
+        # what leaving it out gets rather than a message about a tag shape.
+        version="$VERSION"
+        if [ -z "$version" ]; then
+          version="$pinned_version"
+        fi
+
         # The version reaches a URL and a file name below, never a command line,
         # but it is an input: hold it to the shape of a tag this repository
         # publishes, so a typo is a message here rather than a 404 later.
-        version="$VERSION"
         if ! [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
           echo "::error::version must be a release tag such as v0.4.1 or v0.4.1-rc.1; got '${version}'"
           exit 1
@@ -144,7 +176,6 @@ runs:
         # signature. An entry left as "pending" falls back to the cosign route
         # below, which proves the same thing by a longer path, so the action keeps
         # working before the table is filled in.
-        pinned_version=v0.4.1
         sha=""
         if [ "$version" = "$pinned_version" ]; then
           case "${os}_${arch}" in
@@ -318,6 +349,7 @@ runs:
         FORMAT: ${{ inputs.format }}
         HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         POLICY: ${{ inputs.policy }}
+        UPLOAD_SARIF: ${{ inputs.upload-sarif }}
       run: |
         # No -e here: trustdiff's exit code is the result of this step, not a
         # failure of it, so the report and the SARIF upload still happen when it
@@ -370,15 +402,23 @@ runs:
           echo "report=${written}"
         } >> "$GITHUB_OUTPUT"
 
-        # A pull request from a fork carries a read-only token, which the caller's
-        # permissions cannot elevate, so the upload below is skipped for it. The
-        # findings would then be nowhere, and a SARIF file is not a report a
-        # reviewer can read in passing: print it here so the pull request still
-        # says what trustdiff found.
-        if [ "$FORMAT" = sarif ] && [ "${GITHUB_EVENT_NAME-}" = pull_request ] && \
-           [ "${HEAD_REPO}" != "${GITHUB_REPOSITORY-}" ]; then
-          echo "::notice::this pull request comes from a fork, whose token cannot write code scanning results; the findings are in this log instead"
-          cat "$report"
+        # There are two ways the upload below does not happen: a pull request from
+        # a fork, whose read-only token the caller's permissions cannot elevate, and
+        # a caller that asked for no upload. Either way the findings would be
+        # nowhere, and a SARIF file is not a report a reviewer reads in passing, so
+        # it is printed here instead.
+        if [ "$FORMAT" = sarif ]; then
+          fork=false
+          if [ "${GITHUB_EVENT_NAME-}" = pull_request ] && [ "${HEAD_REPO}" != "${GITHUB_REPOSITORY-}" ]; then
+            fork=true
+          fi
+          if [ "$fork" = true ]; then
+            echo "::notice::this pull request comes from a fork, whose token cannot write code scanning results; the findings are in this log instead"
+            cat "$report"
+          elif [ "$UPLOAD_SARIF" != true ]; then
+            echo "::notice::upload-sarif is false, so the findings are in this log instead of in code scanning"
+            cat "$report"
+          fi
         fi
 
     - name: Upload the SARIF report
@@ -386,7 +426,8 @@ runs:
       # let it fail the job with a 403 the caller cannot do anything about. The
       # step above prints the report in the log when this is skipped.
       if: >-
-        inputs.format == 'sarif' && steps.run.outputs.report != '' &&
+        inputs.format == 'sarif' && inputs.upload-sarif == 'true' &&
+        steps.run.outputs.report != '' &&
         (github.event_name != 'pull_request' ||
          github.event.pull_request.head.repo.full_name == github.repository)
       uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
@@ -400,14 +441,23 @@ runs:
       env:
         CODE: ${{ steps.run.outputs.exit-code }}
         FAIL_ON: ${{ inputs.fail-on }}
+        FORMAT: ${{ inputs.format }}
+        UPLOAD_SARIF: ${{ inputs.upload-sarif }}
       run: |
         set -uo pipefail
+        # Where the SARIF was uploaded the findings are in code scanning; where it
+        # was not, the step above printed them here. Naming both would send half
+        # the readers to a place that holds nothing.
+        where="in the report above"
+        if [ "$FORMAT" = sarif ] && [ "$UPLOAD_SARIF" = true ]; then
+          where="in the code scanning alerts of this commit"
+        fi
         case "$CODE" in
           0)
             echo "trustdiff found nothing at or above the ${FAIL_ON} level"
             ;;
           1)
-            echo "::error::trustdiff found findings at or above the ${FAIL_ON} level. Read them in the report above, in the code scanning alerts of this commit, or allow them with a reason and an expiry date in .trustdiff.yaml."
+            echo "::error::trustdiff found findings at or above the ${FAIL_ON} level. Read them ${where}, or allow them with a reason and an expiry date in .trustdiff.yaml."
             exit 1
             ;;
           2)
