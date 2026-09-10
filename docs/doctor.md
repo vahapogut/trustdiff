@@ -119,7 +119,7 @@ releases.
 | DR040 | Deno | `minimumDependencyAge` | `deno.json` | ISO 8601, minutes or a cutoff | 2.6 | warn |
 | DR041 | Deno | `lock.frozen` | `deno.json` | boolean | | warn |
 | DR042 | Deno | `lock` | `deno.json` | boolean or object | | warn |
-| DR050 | uv | `exclude-newer` | `pyproject.toml`, `uv.toml` | words | 0.9.17 | warn |
+| DR050 | uv | `exclude-newer` | `pyproject.toml`, `uv.toml` | words or a cutoff | 0.9.17 | warn |
 | DR051 | uv | `audit.malware-check` | `pyproject.toml`, `uv.toml` | boolean | 0.11.31 | info |
 | DR060 | pip | `uploaded-prior-to` | `pip.conf` | ISO 8601 | 26.1 | warn |
 | DR061 | pip | `require-hashes` | `pip.conf` | boolean | | info |
@@ -177,8 +177,13 @@ misread as another manager's unit. Deno 2.9 waits a day even with the key absent
 
 **uv measures upload time, not release date**, and resolves the duration into
 `uv.lock` when the lock is written. The relative form arrived in 0.9.17; before that
-the key took an absolute timestamp only. `exclude-newer-package` exempts named
-packages.
+the key took an absolute timestamp only, and both are read here, along with the ISO
+8601 duration and the abbreviated `3d` that uv's duration parser also takes. A
+timestamp or a date is the strongest thing this key holds, a fixed point every
+resolution is measured against, so it is read as the wait it buys by the time of the
+run rather than as a duration somebody spelled wrong. `false` turns the wait off,
+which uv documents, and is reported as weak. `exclude-newer-package` exempts named
+packages and is a key of its own.
 
 **pip's configuration belongs to the machine**, not to the repository. A `pip.conf`
 committed to a repository does nothing until `PIP_CONFIG_FILE` names it. In CI, pass

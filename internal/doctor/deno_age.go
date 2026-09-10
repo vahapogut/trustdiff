@@ -23,12 +23,7 @@ import (
 // mistakes, and told a writer who had correctly used Deno's own minutes that they
 // had written pnpm's unit by accident.
 //
-// A cutoff is a point in time where the policy asks for a length of one, so the
-// two are compared through the run clock: a cutoff blocks everything published
-// after it, so what it buys today is at least Now minus the cutoff. That
-// understates it, since it also blocks releases older than the wait but newer than
-// the cutoff, and understating in the direction of asking for more is the side to
-// err on.
+// The absolute spellings are read by cutoff.go, which uv's rule shares.
 type DenoMinimumAge struct {
 	// Default is what Deno waits when the key is absent, and DefaultSince the
 	// version that arrived in, read the same way MinimumAge reads them.
@@ -164,30 +159,17 @@ func denoWait(text string, now time.Time) (wait time.Duration, spelling string, 
 	if d, err := ISO8601.Parse(text); err == nil {
 		return d, "", nil
 	}
-	cutoff, err := denoCutoff(text)
+	wait, cutoff, err := cutoffWait(text, now)
 	if err != nil {
 		return 0, "", err
 	}
-	if now.IsZero() {
-		return 0, "", fmt.Errorf("no run clock to compare a cutoff with")
-	}
-	wait = now.Sub(cutoff)
 	if wait < 0 {
+		// A cutoff nothing has reached yet excludes nothing, which is a wait of no
+		// time rather than a negative one.
 		wait = 0
 	}
-	return wait, fmt.Sprintf(" of waiting, counted from the cutoff %s", cutoff.UTC().Format("2006-01-02")), nil
+	return wait, cutoffSpelling(cutoff), nil
 }
 
 // maxDuration is the longest time.Duration, about 292 years.
 const maxDuration = time.Duration(1<<63 - 1)
-
-// denoCutoff reads the two absolute spellings: a plain date, which Deno documents
-// as 2025-09-16, and an RFC 3339 timestamp.
-func denoCutoff(text string) (time.Time, error) {
-	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
-		if t, err := time.Parse(layout, text); err == nil {
-			return t, nil
-		}
-	}
-	return time.Time{}, fmt.Errorf("not a date or an RFC 3339 timestamp")
-}

@@ -26,6 +26,7 @@ func init() {
 
 // uv writes the wait as words, "3 days", and resolves it into uv.lock when the
 // lock is written, which is the one implementation here that records what it did.
+// It also takes a point in time, and UvExcludeNewer reads both.
 var uvExcludeNewer = &Rule{
 	ID:      "DR050",
 	Name:    "uv-exclude-newer",
@@ -36,12 +37,12 @@ var uvExcludeNewer = &Rule{
 		{Name: "pyproject.toml", Format: configfile.FormatTOML, Key: configfile.Key{"tool", "uv", "exclude-newer"}},
 		{Name: "uv.toml", Format: configfile.FormatTOML, Key: configfile.Key{"exclude-newer"}, CreateIf: true},
 	},
-	Desired:  MinimumAge{Unit: Words, Quoted: true},
+	Desired:  UvExcludeNewer{},
 	Level:    model.LevelWarn,
 	Docs:     "https://docs.astral.sh/uv/reference/settings/#exclude-newer",
-	Verified: "2026-09-09",
+	Verified: "2026-09-10",
 	Fixable:  true,
-	Note:     "uv 0.9.17 added the relative form; before that the key took an absolute timestamp only. It is measured against the time a file was uploaded to the index, not the version's release date, and exclude-newer-package exempts named packages.",
+	Note:     "uv 0.9.17 added the relative form; before that the key took an absolute timestamp only, and both are read here. It is measured against the time a file was uploaded to the index, not the version's release date, and exclude-newer-package exempts named packages.",
 }
 
 // uv can ask OSV about a package before installing it, which is the check TD009
