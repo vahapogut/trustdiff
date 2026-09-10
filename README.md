@@ -267,7 +267,7 @@ $ trustdiff --format json check cargo:serde@1.0.210
 }
 ```
 
-If you install with Bun, the same evaluation can run before anything is written to disk. Bun hands every package it is about to fetch, transitive dependencies included, to the scanner named in `bunfig.toml`, and [`@trustdiff/bun-scanner`](integrations/bun-scanner/README.md) is such a scanner: it runs the binary you already have and cancels the install on a blocking finding. It has no dependencies and no network of its own, and a package it could not check is reported rather than passed over, because an install where nothing could be checked should not look like an install where nothing was wrong.
+If you install with Bun, the same evaluation can run before anything is written to disk. Bun hands every package it is about to fetch, transitive dependencies included, to the scanner named in `bunfig.toml`, and [`@trustdiff/bun-scanner`](integrations/bun-scanner/README.md) is such a scanner: it runs the binary you already have and cancels the install on a blocking finding. It has no dependencies and no network of its own, and a package it could not check is reported rather than passed over, because an install where nothing could be checked should not look like an install where nothing was wrong. That holds for the binary itself: where it is not installed, the whole install is reported as unchecked, which Bun asks about on a terminal and cancels on in CI.
 
 ```toml
 # bunfig.toml

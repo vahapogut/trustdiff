@@ -510,6 +510,90 @@ export function advisoriesForUnchecked(
 }
 
 /**
+ * unansweredRefs names the refs that were asked about and that no subject came back
+ * for. It exists because advisoriesFrom walks report.subjects and nothing compared
+ * the two lists, so a document that simply left a package out was indistinguishable
+ * from one that found nothing wrong with it, which is the outcome parseReport already
+ * refuses for a document it cannot read at all.
+ *
+ * The trustdiff binary of this release answers about every ref it is given, so this
+ * finds nothing today. That is the point: it costs a Set, and it cannot quietly stop
+ * being true when a future release, or a binary somebody replaced, answers about
+ * fewer. The comparison is on the whole ref, because the scanner formats both sides
+ * itself and npm names are carried through unchanged.
+ */
+export function unansweredRefs(
+  asked: readonly string[],
+  reports: readonly TrustdiffReport[],
+): UncheckedPackage[] {
+  const answered = new Set<string>();
+  for (const report of reports) {
+    for (const subject of report?.subjects ?? []) {
+      const ref = subject?.ref;
+      if (!ref || typeof ref.name !== "string" || typeof ref.version !== "string") continue;
+      answered.add(`${ref.ecosystem}:${ref.name}@${ref.version}`);
+    }
+  }
+  const missing: UncheckedPackage[] = [];
+  for (const ref of asked) {
+    if (answered.has(ref)) continue;
+    missing.push({
+      name: nameOfRef(ref),
+      reason: `trustdiff was asked about ${ref} and its report came back without it`,
+    });
+  }
+  return missing;
+}
+
+/**
+ * nameOfRef reads the package name back out of a ref this module formatted. A scoped
+ * npm name carries an "@" of its own, so the version is taken from the last one.
+ */
+function nameOfRef(ref: string): string {
+  const withoutEcosystem = ref.slice(ref.indexOf(":") + 1);
+  const at = withoutEcosystem.lastIndexOf("@");
+  return at <= 0 ? withoutEcosystem : withoutEcosystem.slice(0, at);
+}
+
+/**
+ * unscannedAdvisory turns everything that was asked about and not answered into one
+ * advisory rather than one per package. Bun prints a block for every advisory it is
+ * given, so a tree of nine hundred packages scanned by a binary that is not installed
+ * would print nine hundred copies of one sentence and bury anything else in the list.
+ * reportPartialSkips already prints a count rather than a line per subject, for the
+ * same reason.
+ *
+ * The level is whatever the project set for a package that could not be checked, so a
+ * missing binary is answered the same way as every other gap and through a variable
+ * the README already documents. At the default that is "warn", which Bun prompts
+ * about where stdin is a terminal and cancels on everywhere else, CI included.
+ */
+export function unscannedAdvisory(
+  missing: readonly UncheckedPackage[],
+  policy: UncheckedPolicy = DEFAULT_UNCHECKED,
+): BunAdvisory[] {
+  if (policy === "ignore" || missing.length === 0) return [];
+  // An advisory reaches the user through a package name, so it is hung on the first
+  // one that has a name; the sentence says how many it stands for.
+  const named = missing.find((p) => p.name !== "");
+  if (named === undefined) return [];
+  const count = missing.length;
+  const packages = count === 1 ? "1 package" : `${count} packages`;
+  const reason =
+    count === 1
+      ? missing[0]!.reason
+      : `${packages} of this install went unchecked, starting with ${named.name}`;
+  return [
+    {
+      level: policy,
+      package: named.name,
+      url: CHECKS_DOC,
+      description: `trustdiff did not check ${packages} of this install: ${reason}. An install where nothing could be checked is not an install where nothing was wrong.`,
+    },
+  ];
+}
+
+/**
  * parseReport reads one "trustdiff check --format json" document and refuses anything
  * that is not one. It exists because silently accepting unrecognised output would turn a
  * broken or replaced binary into a clean bill of health, which is the one outcome a
@@ -569,13 +653,23 @@ async function scanPackages({ packages }: { packages: BunPackage[] }): Promise<B
     }
   } catch (error) {
     if (error instanceof BinaryNotFoundError && !config.requireBinary) {
-      // Skipped, and said out loud. Bun shows the scanner's stderr, so the person running
-      // the install learns that nothing was checked instead of assuming it was clean. The
-      // advisories built above are dropped with it: naming the one package that had no
-      // version, on a run where no package was checked at all, would be a strange thing
-      // to single out.
+      // Said out loud, and reported. Bun's own contract reads an empty list as every
+      // package being clean, so returning one here made an install where nothing could
+      // be checked look exactly like an install where nothing was wrong, and in CI
+      // nobody reads the stderr line at all. What went unchecked is reported through
+      // TRUSTDIFF_BUN_UNCHECKED like every other gap, which at its default is warn:
+      // Bun asks about that on a terminal and cancels on it everywhere else.
+      //
+      // The binary is resolved once per batch, so it can go missing after some batches
+      // have answered. Those answers are kept, and only the refs they did not cover are
+      // counted, so the sentence is true whichever batch it broke on.
       console.error(error.message);
-      return [];
+      reportPartialSkips(reports);
+      return [
+        ...advisories,
+        ...advisoriesFrom(reports, config.unchecked),
+        ...unscannedAdvisory(unansweredRefs(plan.refs, reports), config.unchecked),
+      ];
     }
     // Throwing cancels the install, which is the right outcome, but Bun shows an exception
     // and not a returned list, so everything the runs that did finish found would go with
@@ -585,7 +679,19 @@ async function scanPackages({ packages }: { packages: BunPackage[] }): Promise<B
     throw error;
   }
   reportPartialSkips(reports);
-  return [...advisories, ...advisoriesFrom(reports, config.unchecked)];
+  // A ref that no subject came back for is reported rather than read as clean. Where
+  // any batch exited 3 the whole run could not reach a source the policy requires, and
+  // an unanswered ref belongs to no batch, so the more severe reading is taken: it
+  // cannot be attributed to the report that would have decided it.
+  const unanswered = unansweredRefs(plan.refs, reports);
+  const unansweredPolicy = reports.some((r) => r?.summary?.exit_code === EXIT_DATA_UNAVAILABLE)
+    ? "fatal"
+    : config.unchecked;
+  return [
+    ...advisories,
+    ...advisoriesFrom(reports, config.unchecked),
+    ...unscannedAdvisory(unanswered, unansweredPolicy),
+  ];
 }
 
 // runCheck runs the binary once over one batch of refs and returns the report it wrote.

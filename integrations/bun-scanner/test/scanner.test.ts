@@ -15,6 +15,7 @@ import {
   DEFAULT_UNCHECKED,
   ENV_BINARY,
   ENV_REQUIRE_BINARY,
+  unansweredRefs,
   ENV_TIMEOUT_MS,
   ENV_UNCHECKED,
   parseReport,
@@ -133,13 +134,28 @@ describe("a warning finding", () => {
   });
 });
 
+// Finding F19 of docs/review-2026-09-10.md. A missing binary printed one line to
+// stderr and returned an empty list, and Bun's own contract reads an empty list as
+// every package being clean, so an install where nothing was checked went through
+// exactly as one where nothing was wrong. In CI nobody sees the stderr line at all.
+// The README has promised the opposite since this scanner shipped.
 describe("the binary is missing", () => {
-  test("says so on stderr and lets the install go on, because that is a setup gap and not a finding", async () => {
+  test("says so on stderr and reports the install as one nothing was checked on", async () => {
     const errors = spyOn(console, "error").mockImplementation(() => {});
     try {
       process.env[ENV_BINARY] = "trustdiff-that-is-definitely-not-installed";
-      const advisories = await scanner.scan({ packages: [pkg("express", "4.19.2")] });
-      expect(advisories).toEqual([]);
+      const advisories = await scanner.scan({
+        packages: [pkg("express", "4.19.2"), pkg("lodash", "4.17.21")],
+      });
+      // One advisory, not one per package: Bun prints a block for each, and a tree of
+      // nine hundred would print nine hundred copies of one sentence.
+      expect(advisories).toHaveLength(1);
+      const advisory = advisories[0]!;
+      // warn is what Bun prompts about on a terminal and cancels on in CI, which is
+      // the promise the README makes.
+      expect(advisory.level).toBe("warn");
+      expect(advisory.package).toBe("express");
+      expect(advisory.description).toContain("2 packages");
       expect(errors).toHaveBeenCalledTimes(1);
       const message = String(errors.mock.calls[0]![0]);
       expect(message).toContain("was not found, so no package was scanned");
@@ -153,7 +169,34 @@ describe("the binary is missing", () => {
     const errors = spyOn(console, "error").mockImplementation(() => {});
     try {
       process.env[ENV_BINARY] = `${import.meta.dir}/no-such-directory/trustdiff`;
+      const advisories = await scanner.scan({ packages: [pkg("express", "4.19.2")] });
+      expect(advisories).toHaveLength(1);
+      expect(advisories[0]!.level).toBe("warn");
+      expect(errors).toHaveBeenCalledTimes(1);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  test("stops the install with no question asked where the project says so", async () => {
+    const errors = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      process.env[ENV_BINARY] = "trustdiff-that-is-definitely-not-installed";
+      process.env[ENV_UNCHECKED] = "fatal";
+      const advisories = await scanner.scan({ packages: [pkg("express", "4.19.2")] });
+      expect(advisories.map((a) => a.level)).toEqual(["fatal"]);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  test("is let through only where the project asked for that in writing", async () => {
+    const errors = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      process.env[ENV_BINARY] = "trustdiff-that-is-definitely-not-installed";
+      process.env[ENV_UNCHECKED] = "ignore";
       expect(await scanner.scan({ packages: [pkg("express", "4.19.2")] })).toEqual([]);
+      // The line is still printed: an install nobody checked says so either way.
       expect(errors).toHaveBeenCalledTimes(1);
     } finally {
       errors.mockRestore();
@@ -166,6 +209,55 @@ describe("the binary is missing", () => {
     const promise = scanner.scan({ packages: [pkg("express", "4.19.2")] });
     await expect(promise).rejects.toThrow(BinaryNotFoundError);
     await expect(promise).rejects.toThrow(/was not found, so no package was scanned/);
+  });
+
+  test("keeps what the batches that did run found, and counts only what they did not", async () => {
+    // The binary is resolved per batch, so it can go missing after some batches have
+    // already answered. Everything those found is worth reading, and the sentence
+    // about what went unchecked has to be about the rest and not about all of it.
+    const errors = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const answered = unansweredRefs(["npm:express@4.19.2", "npm:lodash@4.17.21"], [
+        JSON.parse(report([finding("warn")])) as never,
+      ]);
+      expect(answered.map((u) => u.name)).toEqual(["lodash"]);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+});
+
+// The other half of F19. advisoriesFrom walks report.subjects and nothing compared
+// the refs that came back with the refs that were asked about, so a document that
+// simply left a package out read as a package with no findings. The trustdiff
+// binary of this release always answers about every ref, which is what makes this
+// the cheap kind of invariant to hold: it costs a Set and it cannot be true one day
+// and false the next without a test saying so.
+describe("a ref the report never answered about", () => {
+  test("names only the refs no subject came back for", () => {
+    const document = JSON.parse(report([finding("warn")])) as never;
+    expect(unansweredRefs(["npm:express@4.19.2"], [document])).toEqual([]);
+    const missing = unansweredRefs(["npm:express@4.19.2", "npm:left-pad@1.3.0"], [document]);
+    expect(missing).toHaveLength(1);
+    expect(missing[0]!.name).toBe("left-pad");
+    expect(missing[0]!.reason).toContain("left-pad@1.3.0");
+  });
+
+  test("reads a scoped name back out of the ref it was asked with", () => {
+    const missing = unansweredRefs(["npm:@types/node@22.5.0"], []);
+    expect(missing).toHaveLength(1);
+    expect(missing[0]!.name).toBe("@types/node");
+  });
+
+  test("is reported as unchecked rather than read as clean", async () => {
+    // The stub answers about express only, while the install asks about two.
+    const advisories = await scanWith({ stdout: report([]), exitCode: 0 }, [
+      pkg("express", "4.19.2"),
+      pkg("left-pad", "1.3.0"),
+    ]);
+    expect(advisories).toHaveLength(1);
+    expect(advisories[0]!.level).toBe("warn");
+    expect(advisories[0]!.package).toBe("left-pad");
   });
 });
 
