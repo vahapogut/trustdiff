@@ -3,6 +3,7 @@ package checks
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -32,6 +33,17 @@ import (
 // set, because blocking a gate on a name a project has installed for years is a
 // cost with no finding behind it. A fact the run could not read never lowers the
 // level: the demotion is the claim, and an unread half cannot make it.
+//
+// One thing takes that demotion back: the distance to the name the candidate
+// resembles. crossenv is nine years old and still collects enough scanner traffic
+// to clear a low-usage threshold, so age and users alone called the 2017 npm
+// malware a package a project lives with. What tells it apart from a name that
+// really is lived with is that cross-env has fourteen thousand times its
+// downloads. A package a hundred times behind the name it imitates is where a typo
+// lands, whatever its age, so the demotion does not apply to it. Both counts have
+// to come from the registry's own weekly figures, which is one window for both
+// names; a neighbor nobody could count vetoes nothing, for the same reason an
+// unread half cannot demote.
 //
 // As a cross-check, deps.dev's similarly named packages are consulted through the
 // Loader: a neighbor that is much more popular (it is in the popular list, or its
@@ -68,6 +80,11 @@ const (
 	// depsDevNeighborFactor is how many times more weekly downloads a deps.dev
 	// neighbor needs than the candidate to count as much more popular.
 	depsDevNeighborFactor = 100
+	// popularityGapFactor is how far behind the name it resembles a candidate has
+	// to be before its own age and users stop counting for anything. It is the same
+	// hundredfold, because it is the same question asked of the same numbers: is
+	// this name the one people meant, or the one they mistyped.
+	popularityGapFactor = 100
 	// maxDepsDevNeighborLookups bounds the download lookups per subject.
 	maxDepsDevNeighborLookups = 5
 	// listDateLayout is the format of the list_fetched evidence.
@@ -188,7 +205,7 @@ func (c *typosquatSuspect) Run(ctx context.Context, s *Subject) Result {
 			explanation += fmt.Sprintf("; deps.dev also lists the much more popular %q as a similarly named package", neighbor)
 		}
 	}
-	standing, clause := c.standing(s)
+	standing, clause := c.standing(ctx, s, resembled(match, suspect, neighbor), evidence)
 	evidence["standing"] = standing
 	explanation += clause
 	f := NewFinding(c, s, title, explanation, evidence)
@@ -201,11 +218,12 @@ func (c *typosquatSuspect) Run(ctx context.Context, s *Subject) Result {
 // The standing of a candidate: what the run could tell about how long it has been
 // around and how many people install it.
 const (
-	standingEstablished = "established"
-	standingYoung       = "young"
-	standingLowUsage    = "low-usage"
-	standingAgeUnknown  = "age-unknown"
-	standingUsageUnkown = "usage-unknown"
+	standingEstablished  = "established"
+	standingOvershadowed = "overshadowed"
+	standingYoung        = "young"
+	standingLowUsage     = "low-usage"
+	standingAgeUnknown   = "age-unknown"
+	standingUsageUnkown  = "usage-unknown"
 )
 
 // establishedAge is how old a package has to be before this check stops treating it
@@ -225,7 +243,7 @@ const establishedAge = 365 * 24 * time.Hour
 // here, so it rests on something somebody read; the other polarity would let a cold
 // cache or a registry outage quietly downgrade the one check whose default is
 // block, and nothing in the report would tell the two apart.
-func (c *typosquatSuspect) standing(s *Subject) (string, string) {
+func (c *typosquatSuspect) standing(ctx context.Context, s *Subject, resembles []string, evidence map[string]any) (string, string) {
 	if s.Package == nil {
 		return standingAgeUnknown, ". The level stays at the configured one because the registry did not say when the package first appeared"
 	}
@@ -245,6 +263,12 @@ func (c *typosquatSuspect) standing(s *Subject) (string, string) {
 			return standingLowUsage, fmt.Sprintf(". The package has been on the registry since %s, but %d weekly downloads is below the low-usage threshold of %d",
 				first.UTC().Format(time.RFC3339), s.Downloads, threshold)
 		}
+		if name, theirs, gap := c.popularityGap(ctx, s, resembles); gap {
+			evidence["weekly_downloads"] = s.Downloads
+			evidence["neighbor_weekly_downloads"] = theirs
+			return standingOvershadowed, fmt.Sprintf(". The package has been on the registry since %s and has %d weekly downloads, but %q has %d, which is %d times as many. A package that far behind the name it resembles is where a typo lands whatever its age, so the level stays at the configured one",
+				first.UTC().Format(time.RFC3339), s.Downloads, name, theirs, theirs/max(s.Downloads, 1))
+		}
 		return standingEstablished, fmt.Sprintf(". The level is lowered to warn because the package is one a project has been living with: it has been on the registry since %s and has %d weekly downloads, at or above the low-usage threshold of %d",
 			first.UTC().Format(time.RFC3339), s.Downloads, threshold)
 	}
@@ -255,6 +279,43 @@ func (c *typosquatSuspect) standing(s *Subject) (string, string) {
 		return standingLowUsage, ". deps.dev reports the package as low usage, and the registry publishes no counts of its own"
 	}
 	return standingUsageUnkown, ". The level stays at the configured one because nothing said how often the package is installed"
+}
+
+// resembled is the names this candidate was reported for looking like: the popular
+// one a rule matched, and the one deps.dev named. Either may be absent and they may
+// be the same package, so the caller reads whichever is there, once.
+func resembled(match typosquat.Match, suspect bool, neighbor string) []string {
+	var names []string
+	if suspect && match.Neighbor != "" {
+		names = append(names, match.Neighbor)
+	}
+	if neighbor != "" && !slices.Contains(names, neighbor) {
+		names = append(names, neighbor)
+	}
+	return names
+}
+
+// popularityGap asks the registry how many people install the name this candidate
+// resembles, and reports the first neighbor with popularityGapFactor times the
+// candidate's own weekly downloads.
+//
+// Both counts come from the same registry's weekly figures, so they cover the same
+// window and the ratio means something. A count the registry did not give is not a
+// small count: the lookup simply found no gap, and the candidate keeps whatever its
+// own age and users earned it. The candidate's own count is known here already,
+// because a candidate with no count never reaches this far.
+func (c *typosquatSuspect) popularityGap(ctx context.Context, s *Subject, resembles []string) (name string, theirs int64, gap bool) {
+	if s.Loader == nil || s.Downloads < 0 {
+		return "", 0, false
+	}
+	floor := popularityGapFactor * max(s.Downloads, 1)
+	for _, n := range resembles {
+		downloads, err := s.Loader.Downloads(ctx, s.Ref.Ecosystem, n)
+		if err == nil && downloads >= floor {
+			return n, downloads, true
+		}
+	}
+	return "", 0, false
 }
 
 // hasDepsDevFinding reports whether deps.dev returned a finding of this type.

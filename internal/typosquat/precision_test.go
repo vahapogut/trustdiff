@@ -33,8 +33,9 @@ const precisionCorpus = "../lockfile/npm/testdata/superset-frontend-package-lock
 // nothing about registries, so what a run does with a match is measured next door:
 // internal/checks TestTyposquatSuspectDoesNotBlockTheSupersetNames reads the same
 // five names against their registry facts and asserts every one is reported at
-// warn. All five have been on npm for years with real users, and that is what the
-// level turns on.
+// warn. All five have been on npm for years with real users, and none is far enough
+// behind the name it resembles for that to be taken back: the furthest, at fifteen
+// times, is css-font-parser against cssfontparser.
 var supersetFlagged = []string{
 	"css-font-parser",
 	"js-yaml-loader",

@@ -584,17 +584,24 @@ func TestTyposquatSuspectLevelNeedsAnUnestablishedCandidate(t *testing.T) {
 // five is a package with years of history and real users, which is what the level
 // now turns on.
 func TestTyposquatSuspectDoesNotBlockTheSupersetNames(t *testing.T) {
-	// Weekly downloads read from the registries on 2026-09-10, rounded down. Every
-	// one of these packages first appeared years before that.
+	// Weekly downloads read from the npm registry on 2026-09-11, rounded down.
+	// Every one of these packages first appeared years before that, and each
+	// neighbor is the name the embedded list actually matches it against. The gap
+	// between the two is what the popularity veto reads: the widest of the five is
+	// css-font-parser at fifteen times behind cssfontparser, which is nowhere near
+	// the hundredfold the veto asks for. TestTyposquatSuspectBlocksANameItsNeighborDwarfs
+	// holds the other end of that scale.
 	for _, tt := range []struct {
 		ref       string
 		downloads int64
+		neighbor  string
+		theirs    int64
 	}{
-		{"npm:css-font-parser@1.0.0", 100_902},
-		{"npm:js-yaml-loader@1.2.2", 44_264},
-		{"npm:lz4js@0.2.0", 356_985},
-		{"npm:rison@0.1.1", 52_287},
-		{"npm:webpack-visualizer-plugin2@1.1.0", 12_561},
+		{"npm:css-font-parser@1.0.0", 100_902, "cssfontparser", 1_562_359},
+		{"npm:js-yaml-loader@1.2.2", 44_264, "yaml-loader", 311_520},
+		{"npm:lz4js@0.2.0", 356_985, "lz4", 433_022},
+		{"npm:rison@0.1.1", 52_287, "jison", 87_673},
+		{"npm:webpack-visualizer-plugin2@1.1.0", 12_561, "webpack-visualizer-plugin", 18_365},
 	} {
 		t.Run(tt.ref, func(t *testing.T) {
 			// The embedded lists, because these five are what the real npm list
@@ -602,7 +609,8 @@ func TestTyposquatSuspectDoesNotBlockTheSupersetNames(t *testing.T) {
 			c := &typosquatSuspect{lists: typosquat.Embedded(), load: func(time.Time) *typosquat.Lists {
 				panic("load must not be called when lists are set")
 			}}
-			s := subjectT(tt.ref, nil, tt.downloads)
+			loader := &fakeLoaderT{downloads: map[string]int64{tt.neighbor: tt.theirs}}
+			s := subjectT(tt.ref, loader, tt.downloads)
 			s.Package = &registry.VersionList{
 				Ecosystem: model.NPM,
 				Created:   s.Now.AddDate(-5, 0, 0),
@@ -611,8 +619,95 @@ func TestTyposquatSuspectDoesNotBlockTheSupersetNames(t *testing.T) {
 			if len(res.Findings) != 1 {
 				t.Fatalf("Run() returned %d findings, want the one the rules match: %+v", len(res.Findings), res.Findings)
 			}
-			if got := res.Findings[0].Level; got != model.LevelWarn {
+			f := &res.Findings[0]
+			// The neighbor the veto looks up has to be the one the rules matched,
+			// or the lookup misses and the level is right for the wrong reason.
+			if got := f.Evidence["neighbor"]; got != tt.neighbor {
+				t.Fatalf("neighbor = %v, want %s", got, tt.neighbor)
+			}
+			if got := f.Evidence["standing"]; got != standingEstablished {
+				t.Errorf("standing = %v, want %s", got, standingEstablished)
+			}
+			if got := f.Level; got != model.LevelWarn {
 				t.Errorf("level = %s, want warn: %s has been installed for years", got, tt.ref)
+			}
+		})
+	}
+}
+
+// crossenv is the 2017 npm malware this check is documented by. It is nine years
+// old and still collects scanner traffic, so age and a download count of its own
+// made it established and F8b lowered it to warn along with the names a project
+// really does live with. What tells it apart is the distance to the name it
+// imitates: 934 weekly downloads against cross-env's 13.4 million is fourteen
+// thousand times behind, and a package that far behind the name it resembles is
+// where a typo lands whatever its age. Follow-up F8c to finding F8 of
+// docs/review-2026-09-10.md.
+func TestTyposquatSuspectBlocksANameItsNeighborDwarfs(t *testing.T) {
+	// Weekly downloads read from the npm registry on 2026-09-11, rounded down.
+	const (
+		crossenvWeekly = 934
+		crossEnvWeekly = 13_403_836
+	)
+	tests := []struct {
+		name      string
+		downloads map[string]int64
+		want      model.Level
+		standing  string
+	}{
+		{
+			name:      "the gap is read and the level stays where the policy put it",
+			downloads: map[string]int64{"cross-env": crossEnvWeekly},
+			want:      model.LevelBlock,
+			standing:  standingOvershadowed,
+		},
+		{
+			// The veto is a claim like any other here, so an unread count cannot
+			// make it. A registry that did not answer for the neighbor leaves the
+			// package where its own age and users put it.
+			name:      "a neighbor nobody could count vetoes nothing",
+			downloads: nil,
+			want:      model.LevelWarn,
+			standing:  standingEstablished,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &typosquatSuspect{lists: typosquat.Embedded(), load: func(time.Time) *typosquat.Lists {
+				panic("load must not be called when lists are set")
+			}}
+			s := subjectT("npm:crossenv@6.1.1", &fakeLoaderT{downloads: tt.downloads}, crossenvWeekly)
+			s.Package = &registry.VersionList{
+				Ecosystem: model.NPM,
+				Created:   s.Now.AddDate(-9, 0, 0),
+			}
+			res := c.Run(context.Background(), s)
+			if len(res.Findings) != 1 {
+				t.Fatalf("Run() returned %d findings, want one: %+v", len(res.Findings), res.Findings)
+			}
+			f := &res.Findings[0]
+			if got := f.Evidence["neighbor"]; got != "cross-env" {
+				t.Fatalf("neighbor = %v, want cross-env", got)
+			}
+			if got := f.Evidence["standing"]; got != tt.standing {
+				t.Errorf("standing = %v, want %s", got, tt.standing)
+			}
+			if got := f.Level; got != tt.want {
+				t.Errorf("level = %s, want %s", got, tt.want)
+			}
+			if tt.want != model.LevelBlock {
+				return
+			}
+			for _, want := range []string{"13403836", "934", "cross-env"} {
+				if !strings.Contains(f.Explanation, want) {
+					t.Errorf("explanation does not say %q:\n%s", want, f.Explanation)
+				}
+			}
+			if got := f.Evidence["neighbor_weekly_downloads"]; got != int64(crossEnvWeekly) {
+				t.Errorf("neighbor_weekly_downloads = %v, want %d", got, crossEnvWeekly)
+			}
+			if got := f.Evidence["weekly_downloads"]; got != int64(crossenvWeekly) {
+				t.Errorf("weekly_downloads = %v, want %d", got, crossenvWeekly)
 			}
 		})
 	}
