@@ -201,8 +201,8 @@ func TestParseAGeneratedFile(t *testing.T) {
 func TestParseReadsEveryShapeOfEntry(t *testing.T) {
 	lf := parseFixture(t, "edge-cases.requirements.txt")
 
-	if len(lf.Entries) != 4 {
-		t.Fatalf("read %d entries, want 4: %+v", len(lf.Entries), lf.Entries)
+	if len(lf.Entries) != 6 {
+		t.Fatalf("read %d entries, want 6: %+v", len(lf.Entries), lf.Entries)
 	}
 	tests := []struct {
 		what string
@@ -249,6 +249,26 @@ func TestParseReadsEveryShapeOfEntry(t *testing.T) {
 				Line:      27,
 			},
 		},
+		{
+			// Integrity is left out here and below, so an entry that invented one
+			// fails: pip installs these two and verifies neither.
+			what: "a pin whose hash was cut off by a comment ending the continuation",
+			ref:  "pypi:urllib3@2.5.0",
+			want: lockfile.Entry{
+				Ref:    model.MustParseRef("pypi:urllib3@2.5.0"),
+				Source: lockfile.SourceRegistry,
+				Line:   31,
+			},
+		},
+		{
+			what: "a pin with no hash under it at all",
+			ref:  "pypi:certifi@2024.8.30",
+			want: lockfile.Entry{
+				Ref:    model.MustParseRef("pypi:certifi@2024.8.30"),
+				Source: lockfile.SourceRegistry,
+				Line:   54,
+			},
+		},
 	}
 	for _, tt := range tests {
 		if got := entryOf(t, lf, tt.ref); got != tt.want {
@@ -261,7 +281,9 @@ func TestParseReadsEveryShapeOfEntry(t *testing.T) {
 // every line that pins something the parser cannot turn into an entry, each with the
 // reason the package comment gives for it. The options at the top of the file, the
 // blank lines and the comments are not in this list, because they install nothing
-// and are ignored rather than dropped.
+// and are ignored rather than dropped. Neither are the two pins the file leaves
+// unguarded: a pin with no hash is an entry with no Integrity, which is what
+// TestParseReadsAFileThatHashesNothing reads a whole file of.
 func TestParseDropsWhatItCannotEvaluate(t *testing.T) {
 	lf := parseFixture(t, "edge-cases.requirements.txt")
 
@@ -269,15 +291,13 @@ func TestParseDropsWhatItCannotEvaluate(t *testing.T) {
 		what   string
 		reason string
 	}{
-		{what: "a comment ends a continuation, leaving the requirement above unguarded", reason: "line 31: urllib3==2.5.0 carries no --hash"},
 		{what: "a range", reason: `line 36: "django>=4.2" is not a name and one pinned version`},
 		{what: "a compound specifier", reason: `line 39: "jinja2==3.1.4,!=3.1.5" is not a name and one pinned version`},
 		{what: "a wildcard", reason: `line 42: "click==8.1.*" is not a name and one pinned version`},
 		{what: "arbitrary equality", reason: `line 45: "werkzeug===3.0.1" is not a name and one pinned version`},
 		{what: "a bare name", reason: `line 48: "pyyaml" is not a name and one pinned version`},
 		{what: "a marker with no pin", reason: `line 51: "tomli" is not a name and one pinned version`},
-		{what: "a pin with no hash", reason: "line 54: certifi==2024.8.30 carries no --hash"},
-		{what: "a hash with no algorithm, which pip would not accept either", reason: "line 57: packaging==24.2 carries no --hash"},
+		{what: "a hash with no algorithm, which pip would not accept either", reason: "line 57: packaging==24.2 names a --hash this parser could not read"},
 		{what: "a URL requirement", reason: `line 60: "https://files.example.com/wheels/wheel_only-1.0.0-py3-none-any.whl" is not a name and one pinned version`},
 		{what: "a URL requirement with a name in front of it", reason: `line 63: "sqlalchemy @ https://files.example.com/sqlalchemy-2.0.36.tar.gz" is not a name and one pinned version`},
 		{what: "an editable install of the project", reason: `line 66: "-e ." is an editable install`},
@@ -393,32 +413,41 @@ func TestHashesOfReadsBothSpellings(t *testing.T) {
 		what string
 		in   []string
 		want []string
+		// named is whether the requirement mentioned a hash at all. It is the
+		// difference between a pin that guards nothing, which is an entry, and one
+		// whose hash could not be read, which is a dropped line.
+		named bool
 	}{
 		{what: "no options at all", in: nil},
-		{what: "glued to the option", in: []string{"--hash=sha256:aa"}, want: []string{"sha256:aa"}},
-		{what: "a separate argument", in: []string{"--hash", "sha256:aa"}, want: []string{"sha256:aa"}},
+		{what: "glued to the option", in: []string{"--hash=sha256:aa"}, want: []string{"sha256:aa"}, named: true},
+		{what: "a separate argument", in: []string{"--hash", "sha256:aa"}, want: []string{"sha256:aa"}, named: true},
 		{
-			what: "several, in the order the file lists them",
-			in:   []string{"--hash=sha256:aa", "--hash=sha512:bb"},
-			want: []string{"sha256:aa", "sha512:bb"},
+			what:  "several, in the order the file lists them",
+			in:    []string{"--hash=sha256:aa", "--hash=sha512:bb"},
+			want:  []string{"sha256:aa", "sha512:bb"},
+			named: true,
 		},
 		{
 			what: "an option that only starts the same way is not a hash",
 			in:   []string{"--hash-algorithm=sha256"},
 		},
-		{what: "no algorithm, which pip would not accept", in: []string{"--hash=deadbeef"}},
-		{what: "no digest", in: []string{"--hash=sha256:"}},
-		{what: "nothing after the option", in: []string{"--hash"}},
+		{what: "no algorithm, which pip would not accept", in: []string{"--hash=deadbeef"}, named: true},
+		{what: "no digest", in: []string{"--hash=sha256:"}, named: true},
+		{what: "nothing after the option", in: []string{"--hash"}, named: true},
 		{
-			what: "other options are left alone",
-			in:   []string{"--no-binary", ":all:", "--hash=sha256:aa"},
-			want: []string{"sha256:aa"},
+			what:  "other options are left alone",
+			in:    []string{"--no-binary", ":all:", "--hash=sha256:aa"},
+			want:  []string{"sha256:aa"},
+			named: true,
 		},
 	}
 	for _, tt := range tests {
-		got := hashesOf(tt.in)
+		got, named := hashesOf(tt.in)
 		if strings.Join(got, " ") != strings.Join(tt.want, " ") {
 			t.Errorf("%s: hashesOf(%v) = %v, want %v", tt.what, tt.in, got, tt.want)
+		}
+		if named != tt.named {
+			t.Errorf("%s: hashesOf(%v) named = %v, want %v", tt.what, tt.in, named, tt.named)
 		}
 	}
 }
@@ -468,6 +497,73 @@ func TestSplitOptionsKeepsTheMarkerWithTheRequirement(t *testing.T) {
 		spec, options := splitOptions(tt.in)
 		if spec != tt.wantSpec || strings.Join(options, " ") != tt.wantOptions {
 			t.Errorf("splitOptions(%q) = %q, %v, want %q, %q", tt.in, spec, options, tt.wantSpec, tt.wantOptions)
+		}
+	}
+}
+
+// TestParseReadsAFileThatHashesNothing pins finding F5 of docs/review-2026-09-10.md.
+// A requirements file with no --hash anywhere is the file most Python projects have,
+// and pip installs every line of it. Each pin is an entry that records no Integrity,
+// so the checks that judge a version see it and integrity-missing is what says that
+// nothing guards it. Before the fix every one of them was dropped, on a rule about
+// what pip does with a file that hashes something, and there was nothing to evaluate
+// at all. The lines that pin no version are dropped here as anywhere.
+func TestParseReadsAFileThatHashesNothing(t *testing.T) {
+	lf := parseFixture(t, "unhashed.requirements.txt")
+
+	if len(lf.Entries) != 3 {
+		t.Fatalf("read %d entries, want 3: %+v", len(lf.Entries), lf.Entries)
+	}
+	tests := []struct {
+		what string
+		ref  string
+		want lockfile.Entry
+	}{
+		{
+			what: "the plainest line the format has, and the one the review named",
+			ref:  "pypi:requests@2.31.0",
+			want: lockfile.Entry{
+				Ref:    model.MustParseRef("pypi:requests@2.31.0"),
+				Source: lockfile.SourceRegistry,
+				Line:   6,
+			},
+		},
+		{
+			what: "extras and a marker, which change no more here than in a hashed file",
+			ref:  "pypi:requests-toolbelt@1.0.0",
+			want: lockfile.Entry{
+				Ref:    model.MustParseRef("pypi:requests-toolbelt@1.0.0"),
+				Source: lockfile.SourceRegistry,
+				Line:   7,
+			},
+		},
+		{
+			what: "a pin with the comment pip-compile writes under one",
+			ref:  "pypi:six@1.17.0",
+			want: lockfile.Entry{
+				Ref:    model.MustParseRef("pypi:six@1.17.0"),
+				Source: lockfile.SourceRegistry,
+				Line:   8,
+			},
+		},
+	}
+	for _, tt := range tests {
+		// Integrity is left out of every want above, so an entry that invented one
+		// fails here: an unhashed pin has no hash to record.
+		if got := entryOf(t, lf, tt.ref); got != tt.want {
+			t.Errorf("%s: entry %s =\n %+v\nwant\n %+v", tt.what, tt.ref, got, tt.want)
+		}
+	}
+	want := []string{
+		`line 11: "django>=4.2" is not a name and one pinned version`,
+		`line 12: "-e ." is an editable install`,
+	}
+	if len(lf.Dropped) != len(want) {
+		t.Fatalf("dropped %d lines, want %d:\n%s", len(lf.Dropped), len(want), strings.Join(lf.Dropped, "\n"))
+	}
+	for i, reason := range want {
+		if !strings.HasPrefix(lf.Dropped[i], reason) {
+			t.Errorf("drop %d = %q, want it to start with %q", i, lf.Dropped[i], reason)
 		}
 	}
 }

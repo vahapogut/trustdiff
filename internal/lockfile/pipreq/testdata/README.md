@@ -31,6 +31,12 @@ The hashes in the hand written files are the sha256 of the artifact name they st
 for rather than of any artifact, so a new one is
 `printf '%s' '<file name>' | openssl dgst -sha256`.
 
+`unhashed.requirements.txt` is the other half of the input space: a file that
+hashes nothing, which is what most requirements files are and what pip installs
+without checking. Three entries, each recording no integrity, and two lines that
+pin no version at all. Every other hand written fixture here carries hashes, which
+is why a file that carries none went unread until the review found it.
+
 To record another file, download it at a fixed commit and add a row above:
 
 ```

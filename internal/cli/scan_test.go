@@ -511,3 +511,43 @@ func TestScanSkipsAChecksWholeAnswerWhenOneSourceWasDown(t *testing.T) {
 		})
 	}
 }
+
+// TestScanReportsAnUnhashedRequirementsPin pins finding F5 of
+// docs/review-2026-09-10.md. A requirements.txt that pins versions and hashes nothing
+// is the file most Python projects have, and every line of it is a package an install
+// fetches with nothing to check the bytes against. Before the fix the parser dropped
+// every one of them, so the file produced no entry at all: it became a note beside
+// the report, integrity-missing never fired for pip, and no check ever saw a pin a
+// pull request had added.
+func TestScanReportsAnUnhashedRequirementsPin(t *testing.T) {
+	req := readRegressionFixture(t, "f5-requirements-without-hash", "requirements.txt")
+	dir := scanFixture(t)
+	writeFile(t, dir, "requirements.txt", req)
+
+	code, stdout, stderr := run(t, "--format", "json", "--fail-on", "warn", "scan")
+	if code != ExitFindings {
+		t.Fatalf("exit = %d, want %d (stderr %q)\n%s", code, ExitFindings, stderr, stdout)
+	}
+	rep := decodeReport(t, stdout)
+	s := subjectFor(t, &rep, "pypi:trustdiff-fixture-unhashed@1.0.0")
+	if s.Location == nil || s.Location.Path != "requirements.txt" || s.Location.Line != 6 {
+		t.Fatalf("location = %+v, want requirements.txt line 6", s.Location)
+	}
+	found := map[string]model.Level{}
+	for i := range s.Findings {
+		found[s.Findings[i].ID] = s.Findings[i].Level
+	}
+	if found["TD014"] != model.LevelWarn {
+		t.Errorf("TD014 = %s, want warn: a pin with no hash is what integrity-missing reports (findings %v)", found["TD014"], found)
+	}
+	// The pin is a subject like any other, so the checks that read PyPI report what
+	// PyPI said about it rather than never being asked.
+	if len(s.Skipped) == 0 {
+		t.Error("nothing was skipped, so no check was ever offered the pin")
+	}
+	// It is in the report rather than in a note beside it: nothing about this file
+	// went unread, and a note saying so would not be true.
+	if strings.Contains(stderr, "not read") {
+		t.Errorf("the run says something was not read:\n%s", stderr)
+	}
+}

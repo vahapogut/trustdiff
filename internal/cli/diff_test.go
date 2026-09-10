@@ -879,3 +879,44 @@ func TestDiffReportsARepointedNestedCopy(t *testing.T) {
 		t.Errorf("TD014 = %s, want warn (findings %v, skipped %v)", found["TD014"], found, s.Skipped)
 	}
 }
+
+// TestDiffReportsAHashStrippedFromARequirementsPin is the other half of finding F5 of
+// docs/review-2026-09-10.md, and the reason the parser reads an unhashed pin rather
+// than dropping it. A pull request takes the --hash off one line of a pip-compile
+// file. While such a line was dropped, the head entry simply ceased to exist, so
+// the run called it a removal and never compared anything: TD016
+// integrity-removed, the check written for exactly this, could not fire for pip.
+func TestDiffReportsAHashStrippedFromARequirementsPin(t *testing.T) {
+	base := readRegressionFixture(t, "f5-requirements-without-hash", "base", "requirements.txt")
+	head := readRegressionFixture(t, "f5-requirements-without-hash", "head", "requirements.txt")
+	useFakeLoader(t)
+	dir := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(dir))
+	writeFile(t, dir, "base/requirements.txt", base)
+	writeFile(t, dir, "head/requirements.txt", head)
+	chdir(t, dir)
+
+	code, stdout, stderr := run(t, "--format", "json", "diff",
+		"--base-file", "base/requirements.txt", "head/requirements.txt")
+	if code != ExitFindings {
+		t.Fatalf("exit = %d, want %d (stderr %q)\n%s", code, ExitFindings, stderr, stdout)
+	}
+	rep := decodeReport(t, stdout)
+	s := subjectFor(t, &rep, "pypi:trustdiff-fixture-unhashed@1.0.0")
+
+	var td016 *model.Finding
+	for i := range s.Findings {
+		if s.Findings[i].ID == "TD016" {
+			td016 = &s.Findings[i]
+		}
+	}
+	if td016 == nil {
+		t.Fatalf("no TD016 finding for a hash that was taken away; the report carried %+v and skipped %v", s.Findings, s.Skipped)
+	}
+	if td016.Level != model.LevelBlock {
+		t.Errorf("TD016 level = %s, want block", td016.Level)
+	}
+	if got := td016.Evidence["signal"]; got != "integrity-removed" {
+		t.Errorf("signal = %v, want integrity-removed", got)
+	}
+}

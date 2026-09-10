@@ -1,0 +1,5 @@
+#
+# pip-compile --generate-hashes output, as a project commits it.
+#
+trustdiff-fixture-unhashed==1.0.0 \
+    --hash=sha256:c2730c816acbc0dcf6dfc3824f3af0a90298c916d0c7f22786914e995fdd09ad

@@ -1,0 +1,12 @@
+#
+# Hand written for the parser tests: the requirements file most Python projects have,
+# with every version pinned and no --hash anywhere. pip installs every one of these
+# and verifies none of them.
+#
+requests==2.31.0
+Requests_Toolbelt[security]==1.0.0 ; python_version >= "3.9"
+six==1.17.0  # via -r requirements/main.in
+
+# Still not a pin, whatever the rest of the file does.
+django>=4.2
+-e .

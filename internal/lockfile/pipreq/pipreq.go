@@ -1,5 +1,6 @@
-// Package pipreq reads the hash pinned requirements files a Python project hands to
-// pip, the ones pip-compile and pip-tools write and the ones people write by hand:
+// Package pipreq reads the requirements files a Python project hands to pip, hash
+// pinned or not: the ones pip-compile and pip-tools write and the ones people write
+// by hand:
 // requirements.txt, requirements-dev.txt, requirements_dev.txt and the files inside
 // a requirements directory, apart from the documentation that sits in one too.
 // Detect says which names are claimed and why the documentation is left alone.
@@ -12,20 +13,31 @@
 //	    --hash=sha256:15ee7dbdc0f01f8e70b6c30fdc7e4c5c9e4b1a2e0a3f4e7d9c1b2a3f4e5d6c7b \
 //	    --hash=sha256:2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f80912
 //
-// That is a name, one exact version and at least one hash, and it is the only thing
-// this parser turns into an entry. Extras on the name and an environment marker
-// after a semicolon are read and set aside: they say when the requirement applies,
-// not which version is pinned, so a pinned requirement keeps its entry either way.
+// That is a name and one exact version, and it is the only thing this parser turns
+// into an entry. The hashes under it are what an install verifies against, and a file
+// that carries none is read all the same: the entry then records no Integrity, and
+// integrity-missing is the check whose job it is to say so. Extras on the name and an
+// environment marker after a semicolon are read and set aside: they say when the
+// requirement applies, not which version is pinned, so a pinned requirement keeps its
+// entry either way.
 //
 // Every other line is either dropped with a reason, because it pins something this
 // parser cannot evaluate and a silent parse would look complete, or ignored quietly,
 // because it is not a requirement at all:
 //
-//	name==1.2.3 with no --hash    dropped   a pin nothing guards. pip refuses to
-//	                                        install any unhashed requirement once one
-//	                                        requirement in the file carries a hash, so
-//	                                        in a hash pinned file this is an anomaly
-//	                                        worth showing rather than an entry.
+//	name==1.2.3 with no --hash    an entry with no Integrity. It is the
+//	                                        ordinary line of the file most Python
+//	                                        projects have: pip fetches it from an
+//	                                        index and verifies nothing, which is
+//	                                        exactly what integrity-missing exists to
+//	                                        report, and what lockfile-entry-changed
+//	                                        compares against when a change takes a
+//	                                        hash away.
+//	name==1.2.3 --hash=deadbeef   dropped   a hash this parser could not read, with
+//	                                        no algorithm in front of it. The file
+//	                                        does say something about the bytes, so an
+//	                                        entry recording no hash would be a
+//	                                        different claim than the file makes.
 //	name>=1.0, name~=1.0, name    dropped   a range or a bare name resolves to
 //	                                        whatever the index serves on the day, so
 //	                                        there is no version to evaluate.
@@ -76,16 +88,19 @@
 // lists, as written, "sha256:<hex>": a requirement carries one hash per artifact it
 // may be satisfied by, wheels for a dozen platforms and the sdist, and Entry.Integrity
 // holds one hash with nothing in the file saying which artifact an install will pick.
+// It is empty for a requirement in a file that hashes nothing, which is the case
+// integrity-missing exists for.
 // Dev stays false: requirements-dev.txt says so in its name, and Parser.Parse is
 // documented to use the path for messages only. Optional and Bundled have no meaning
 // here.
 //
 // Direct stays false on every entry, which Entry.Direct documents as what a parser
 // that cannot tell does. A requirements file is one flat list with no field
-// separating a requirement a person wrote from one pip-compile appended below it,
-// and a hash pinned file is nearly always pip-compile output, where most lines are
-// transitive. Marking everything direct would over-report on exactly the files this
-// parser exists to read.
+// separating a requirement a person wrote from one pip-compile appended below it.
+// Marking everything direct would over-report on pip-compile output, where most lines
+// are transitive, and leaving it false under-reports on a file somebody wrote by
+// hand, where most lines are not. False is the answer Entry.Direct gives a parser
+// that cannot tell, and this parser cannot tell which of the two it is reading.
 //
 // PyPI names are recorded PEP 503 normalized, as model.NormalizeName defines it,
 // because a requirements file spells a name however its author typed it.
@@ -194,7 +209,7 @@ const versionOperators = "<>=!~*, \t"
 
 func init() { lockfile.Register(Parser{}) }
 
-// Parser reads hash pinned requirements files. The zero value is ready to use.
+// Parser reads requirements files, hash pinned or not. The zero value is ready to use.
 type Parser struct{}
 
 // Name returns the format name, "requirements.txt".
@@ -371,19 +386,25 @@ func readLine(lf *lockfile.Lockfile, ll *logicalLine) {
 		lf.Drop("line %d: %q is not a name and one pinned version, so there is nothing to evaluate", ll.line, strings.TrimSpace(requirement))
 		return
 	}
-	hashes := hashesOf(options)
-	if len(hashes) == 0 {
-		lf.Drop("line %d: %s==%s carries no --hash, so nothing guards the bytes it installs", ll.line, name, version)
+	hashes, named := hashesOf(options)
+	if len(hashes) == 0 && named {
+		// The requirement does name a hash, and this parser could not read it. An
+		// entry recording no hash would say the file guards nothing, which is a
+		// different claim than the one the file makes.
+		lf.Drop("line %d: %s==%s names a --hash this parser could not read, so what the file says guards it is not something to evaluate", ll.line, name, version)
 		return
 	}
-	lf.Add(lockfile.Entry{
+	entry := lockfile.Entry{
 		Ref: model.PackageRef{Ecosystem: model.PyPI, Name: model.NormalizeName(model.PyPI, name), Version: version},
 		// A bare name and version is fetched from an index, and the file names no
 		// location of its own for it.
-		Source:    lockfile.SourceRegistry,
-		Integrity: hashes[0],
-		Line:      ll.line,
-	})
+		Source: lockfile.SourceRegistry,
+		Line:   ll.line,
+	}
+	if len(hashes) > 0 {
+		entry.Integrity = hashes[0]
+	}
+	lf.Add(entry)
 }
 
 // readOption handles a line that begins with a dash. The two kinds that install
@@ -429,26 +450,42 @@ func splitOptions(text string) (spec string, options []string) {
 }
 
 // hashesOf reads the hashes out of a requirement's options, as written. pip accepts
-// "--hash=sha256:..." and "--hash sha256:...", and a hash without an algorithm is
-// not one pip would accept either.
-func hashesOf(options []string) []string {
-	var hashes []string
+// "--hash=sha256:..." and "--hash sha256:...", and a hash without an algorithm is not
+// one pip would accept either.
+//
+// named reports whether the requirement mentioned a hash at all, which is not the
+// same as carrying one that could be read. A requirement with no --hash installs
+// whatever the index serves and is an entry with no Integrity; one whose --hash this
+// parser could not read is saying something about its bytes that such an entry would
+// contradict, and readLine drops it for that reason. Both answers come out of the one
+// walk, so there is only ever one rule here about what counts as a hash option.
+func hashesOf(options []string) (hashes []string, named bool) {
 	for i := 0; i < len(options); i++ {
-		var value string
-		switch {
-		case options[i] == hashOption && i+1 < len(options):
-			value = options[i+1]
-			i++
-		case strings.HasPrefix(options[i], hashOption+"="):
-			value = strings.TrimPrefix(options[i], hashOption+"=")
-		default:
+		if !isHashOption(options[i]) {
 			continue
+		}
+		named = true
+		value := strings.TrimPrefix(options[i], hashOption+"=")
+		if value == options[i] {
+			// The separated spelling: the value is the next argument, if there is one.
+			if i+1 >= len(options) {
+				continue
+			}
+			i++
+			value = options[i]
 		}
 		if algorithm, digest, ok := strings.Cut(value, ":"); ok && algorithm != "" && digest != "" {
 			hashes = append(hashes, value)
 		}
 	}
-	return hashes
+	return hashes, named
+}
+
+// isHashOption reports whether one argument of a requirement is a --hash, in either
+// of the two spellings pip accepts. An option that only begins the same way, such as
+// --hash-algorithm, is not one.
+func isHashOption(option string) bool {
+	return option == hashOption || strings.HasPrefix(option, hashOption+"=")
 }
 
 // splitPin reads "name==version" out of a requirement, with the extras the name may

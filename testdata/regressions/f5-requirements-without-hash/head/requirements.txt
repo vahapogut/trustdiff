@@ -1,0 +1,4 @@
+#
+# pip-compile --generate-hashes output, as a project commits it.
+#
+trustdiff-fixture-unhashed==1.0.0

@@ -593,6 +593,8 @@ allow:
 
 Like TD013 it reads the lockfile entry and is skipped for a ref named on the command line, and like TD013 it still runs for a package the registry does not know, so an entry nothing guards is reported whether or not the package was ever published.
 
+A `requirements.txt` that hashes nothing reports every pin it holds, one finding each. That is the file as it stands: pip fetches each of those from an index and verifies none of them. `pip-compile --generate-hashes`, or `--hash` lines written by hand, is what answers it; an allow entry for `integrity-missing` with a package glob is what silences it while that is being arranged.
+
 **Why it matters.** The hash is what makes a lockfile a lock. Without it, an install repeats the resolution rather than the result: a registry that serves different bytes for the same version, a compromised mirror, or a proxy in between changes what you get and nothing notices. Plain http makes that trivial for anyone on the path.
 
 Two entries carry their hash somewhere other than in the entry, and the explanation says so rather than claiming nothing guards them: a local directory, which has no artifact to hash, and an npm bundled dependency, which the lockfile writes without a location and without a hash because the package that carries it covers both. Neither is exempted, since the lockfile marks neither and an entry that states no origin is worth a glance in a pull request; the `source` key is there so telling them apart does not mean opening the lockfile.
@@ -702,6 +704,8 @@ A registry entry's resolved location is not compared at all. It names the mirror
 Two integrity strings that share no algorithm are a re-encoding, not a change. npm moved its lockfiles from sha1 to sha512, and a file rewritten by a newer installer carries the same artifact under the stronger one; only a shared algorithm with different digests is two different artifacts under one version.
 
 **Why it matters.** Keep `lodash` at 4.17.21 and swap its `integrity` for the hash of another tarball, and until this check existed every other check agreed the version was fine, because it was. The version is the one thing that did not move, and every other check is about a version. A registry cannot serve two artifacts for one release, so the second hash did not come from the registry.
+
+A `--hash` taken off one line of a `requirements.txt` is `integrity-removed` here, at `block`. pip refuses to install anything from a file once one requirement in it carries a hash, so such a change breaks the install as well as unguarding the line, and it is the shape a person stripping a hash by hand leaves behind.
 
 An allow entry for `exotic-source` does not silence this. That entry says a git dependency is deliberate; it says nothing about that dependency being repointed at another repository afterwards.
 

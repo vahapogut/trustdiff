@@ -1,0 +1,6 @@
+#
+# A requirements.txt of the shape most Python projects have: versions pinned with
+# "==" and no --hash anywhere, so pip installs whatever the index serves for them
+# and verifies nothing.
+#
+trustdiff-fixture-unhashed==1.0.0
