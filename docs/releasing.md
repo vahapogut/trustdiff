@@ -318,9 +318,11 @@ it leaves the tap alone. Download the cask and the manifest from the job's
 The first stable tag is the first real write. Afterwards:
 
 - `vahapogut/homebrew-tap` has a commit named `Brew cask update for trustdiff
-  version v0.4.0` adding `Casks/trustdiff.rb`.
-- `vahapogut/scoop-bucket` has a commit named `Scoop update for trustdiff
-  version v0.4.0` adding `bucket/trustdiff.json`.
+  version <the tag>` replacing `Casks/trustdiff.rb`. Both files are already there
+  from v0.4.0, which went in by hand, so what tells the job's commit from that one
+  is its author: goreleaserbot rather than you.
+- `vahapogut/scoop-bucket` has the matching `Scoop update for trustdiff version
+  <the tag>` replacing `bucket/trustdiff.json`.
 - `brew install --cask vahapogut/tap/trustdiff` on macOS, then `trustdiff
   version`. The name is given in full because Homebrew 6.0 requires a tap that is
   not one of its own to be trusted before its code runs, and a fully qualified

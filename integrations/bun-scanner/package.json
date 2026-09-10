@@ -1,6 +1,6 @@
 {
   "name": "@trustdiff/bun-scanner",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Bun security scanner that runs the trustdiff binary over the packages bun install is about to fetch.",
   "license": "Apache-2.0",
   "author": "Vahap Ogut <vahapogut@gmail.com>",
