@@ -85,8 +85,21 @@ func (c integrityMissing) Run(_ context.Context, s *Subject) Result {
 
 // missingHash reports an entry with no integrity hash, except a git entry that
 // pins a full commit sha.
+//
+// A file that asks for no hash at all is reported once rather than once per line.
+// pip decides hash checking per file, so a requirements file either verifies what
+// it installs or verifies none of it, and a file that verifies none of it is one
+// fact about the file: a project with two hundred plain pins was getting two
+// hundred copies of the same sentence, which is a report nobody reads. The finding
+// lands on the entry nearest the top of the file among the ones this run
+// evaluated, which is a package the claim is true of and the line a reader should
+// start at. Every other entry of the file is still a subject and still runs every
+// check; it simply has no integrity-missing finding of its own.
 func (c integrityMissing) missingHash(s *Subject) (model.Finding, bool) {
 	if strings.TrimSpace(s.Lock.Integrity) != "" {
+		return model.Finding{}, false
+	}
+	if s.Lock.FileHashesNothing && !s.FirstInFile {
 		return model.Finding{}, false
 	}
 	if s.Lock.Bundled {
@@ -105,6 +118,12 @@ func (c integrityMissing) missingHash(s *Subject) (model.Finding, bool) {
 	addLockEvidence(evidence, s)
 
 	var b strings.Builder
+	if s.Lock.FileHashesNothing {
+		evidence["signal"] = "file-hashes-nothing"
+		fmt.Fprintf(&b, "%s asks for no integrity hash at all, so pip installs everything it pins without verifying any of it. This is one finding for the file, reported on %s because its line is the topmost one this run evaluated; an allow entry naming that package therefore silences the file",
+			lockfileNoun(s), s.Ref.Package())
+		return NewFinding(c, s, "the lockfile guards nothing it installs", b.String(), evidence), true
+	}
 	fmt.Fprintf(&b, "%s records no integrity hash for %s", lockfileNoun(s), s.Ref)
 	if s.Lock.Resolved != "" {
 		fmt.Fprintf(&b, ", resolved from %s", s.Lock.Resolved)

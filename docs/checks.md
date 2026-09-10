@@ -598,11 +598,16 @@ allow:
 **Detects.** A lockfile entry with nothing to verify the download against. Two signals, each its own finding, both `warn` by default, every ecosystem:
 
 - `missing-hash`: the entry records no integrity hash. A git entry pinned to a full commit is not reported, because the commit is the hash.
+- `file-hashes-nothing`: nothing in the whole file asks for a hash, so it is reported once for the file rather than once per line. pip is the one manager whose hash rule is written per file, so this is a `requirements` file and nothing else.
 - `plain-http`: the entry is resolved over `http://`, so the download is neither confidential nor authenticated whatever the hash says.
 
 Like TD013 it reads the lockfile entry and is skipped for a ref named on the command line, and like TD013 it still runs for a package the registry does not know, so an entry nothing guards is reported whether or not the package was ever published.
 
-A `requirements.txt` that hashes nothing reports every pin it holds, one finding each. That is the file as it stands: pip fetches each of those from an index and verifies none of them. `pip-compile --generate-hashes`, or `--hash` lines written by hand, is what answers it; an allow entry for `integrity-missing` with a package glob is what silences it while that is being arranged.
+A `requirements.txt` that asks for no hash at all is one finding for the file, not one per pin. pip enters hash-checking mode for the whole file as soon as one requirement carries a `--hash` or a line says `--require-hashes`, and refuses every unhashed requirement in it from then on, so a file that hashes nothing is one fact about the file: it verifies none of what it installs. A project with two hundred plain pins was getting two hundred copies of that sentence.
+
+The finding sits on the entry nearest the top of the file among the ones the run evaluated, which is the line to start at, and every other pin of the file stays a subject in its own right and still runs every other check. Because it is one finding on one package, an allow entry naming that package silences it for the whole file, and the explanation says so. In a file that is hash checked, a requirement whose `--hash` was taken off is still reported on its own line, which is the case worth catching.
+
+`pip-compile --generate-hashes`, or `--hash` lines written by hand, is what answers it.
 
 **Why it matters.** The hash is what makes a lockfile a lock. Without it, an install repeats the resolution rather than the result: a registry that serves different bytes for the same version, a compromised mirror, or a proxy in between changes what you get and nothing notices. Plain http makes that trivial for anyone on the path.
 
@@ -612,7 +617,7 @@ Two entries carry their hash somewhere other than in the entry, and the explanat
 
 | Key | Meaning |
 |---|---|
-| `signal` | `missing-hash` or `plain-http` |
+| `signal` | `missing-hash`, `file-hashes-nothing` or `plain-http` |
 | `source` | where the entry was resolved from: `registry`, `git`, `url`, `path` or `unknown` |
 | `integrity` | the hash the entry records, absent when it records none |
 | `resolved` | the location as the lockfile records it, absent when the file states none |

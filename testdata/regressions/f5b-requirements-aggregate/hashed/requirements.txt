@@ -1,0 +1,10 @@
+#
+# pip-compile --generate-hashes output with one --hash taken off. pip reads the
+# whole file with hash checking on, so the stripped line is an anomaly of its
+# own and every other line still guards what it installs.
+#
+trustdiff-fixture-lib==1.0.0 \
+    --hash=sha256:c2730c816acbc0dcf6dfc3824f3af0a90298c916d0c7f22786914e995fdd09ad
+trustdiff-fixture-alpha==1.0.0
+trustdiff-fixture-beta==1.0.0 \
+    --hash=sha256:15ee7dbdc0f01f8e70b6c30fdc7e4c5c9e4b1a2e0a3f4e7d9c1b2a3f4e5d6c7b

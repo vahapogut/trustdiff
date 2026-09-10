@@ -1,0 +1,8 @@
+#
+# The requirements file most Python projects have: every version pinned, no
+# --hash anywhere, so pip installs all three and verifies none of them. One
+# fact about the file, not three about its packages.
+#
+trustdiff-fixture-lib==1.0.0
+trustdiff-fixture-alpha==1.0.0
+trustdiff-fixture-beta==1.0.0

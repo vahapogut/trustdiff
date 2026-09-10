@@ -70,6 +70,15 @@ type Entry struct {
 	// has no artifact of its own: nothing is fetched for it and the parent's hash
 	// is what guards its bytes.
 	Bundled bool
+	// FileHashesNothing is true when nothing in the file this entry came from asks
+	// for a hash. It is a fact about the file rather than the entry, and it rides
+	// here because a check is given one entry and never the file. Only the pip
+	// requirements parser sets it, because pip is the one manager whose hash rule
+	// is written per file: a requirements file either verifies what it installs or
+	// verifies none of it, so integrity-missing reports the file once rather than
+	// every line of it. It is deliberately not part of what an entry installs, so
+	// it stays out of SameArtifact.
+	FileHashesNothing bool
 	// Line is the 1-based line the entry starts on, for the SARIF location. Zero
 	// when the parser could not place it.
 	Line int

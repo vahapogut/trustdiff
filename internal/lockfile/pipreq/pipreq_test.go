@@ -523,33 +523,38 @@ func TestParseReadsAFileThatHashesNothing(t *testing.T) {
 			what: "the plainest line the format has, and the one the review named",
 			ref:  "pypi:requests@2.31.0",
 			want: lockfile.Entry{
-				Ref:    model.MustParseRef("pypi:requests@2.31.0"),
-				Source: lockfile.SourceRegistry,
-				Line:   6,
+				Ref:               model.MustParseRef("pypi:requests@2.31.0"),
+				Source:            lockfile.SourceRegistry,
+				FileHashesNothing: true,
+				Line:              6,
 			},
 		},
 		{
 			what: "extras and a marker, which change no more here than in a hashed file",
 			ref:  "pypi:requests-toolbelt@1.0.0",
 			want: lockfile.Entry{
-				Ref:    model.MustParseRef("pypi:requests-toolbelt@1.0.0"),
-				Source: lockfile.SourceRegistry,
-				Line:   7,
+				Ref:               model.MustParseRef("pypi:requests-toolbelt@1.0.0"),
+				Source:            lockfile.SourceRegistry,
+				FileHashesNothing: true,
+				Line:              7,
 			},
 		},
 		{
 			what: "a pin with the comment pip-compile writes under one",
 			ref:  "pypi:six@1.17.0",
 			want: lockfile.Entry{
-				Ref:    model.MustParseRef("pypi:six@1.17.0"),
-				Source: lockfile.SourceRegistry,
-				Line:   8,
+				Ref:               model.MustParseRef("pypi:six@1.17.0"),
+				Source:            lockfile.SourceRegistry,
+				FileHashesNothing: true,
+				Line:              8,
 			},
 		},
 	}
 	for _, tt := range tests {
 		// Integrity is left out of every want above, so an entry that invented one
-		// fails here: an unhashed pin has no hash to record.
+		// fails here: an unhashed pin has no hash to record. Every one of them
+		// carries the file's own answer instead, which is what integrity-missing
+		// reads to report the file once rather than once per line.
 		if got := entryOf(t, lf, tt.ref); got != tt.want {
 			t.Errorf("%s: entry %s =\n %+v\nwant\n %+v", tt.what, tt.ref, got, tt.want)
 		}

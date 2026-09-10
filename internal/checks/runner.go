@@ -50,6 +50,12 @@ type Input struct {
 	// puts it on Subject.BaseLock, where TD016 compares what the two entries install
 	// and TD017 compares which way the version moved.
 	BaseLock *lockfile.Entry
+	// FirstInFile is set by the runner, not by the caller: it marks the input
+	// nearest the top of the lockfile among the inputs this run took from that
+	// file. A check that reports one finding for a whole file needs one of its
+	// entries to carry it, and the run's own topmost entry is the one a reader
+	// should be sent to.
+	FirstInFile bool
 	// BaseVersion is the version the base lockfile locked, when diff evaluates an
 	// entry whose version moved. It is the version the project actually had,
 	// which is not always the release the registry calls previous: upgrading
@@ -158,6 +164,30 @@ func Subjects(outcomes []Outcome) []report.Subject {
 	return out
 }
 
+// markFirstInFile marks, for each lockfile these inputs came from, the one nearest
+// its top. It is elected among the inputs the run actually has rather than in the
+// parser, because a diff evaluates only what changed: a pull request that adds
+// three unguarded pins to a file whose first line did not move must still report
+// them, and a check that reports once per file would otherwise report nothing at
+// all. Inputs with no location, which is every ref named on the command line, are
+// left alone.
+func markFirstInFile(inputs []Input) {
+	first := make(map[string]int, len(inputs))
+	for i := range inputs {
+		inputs[i].FirstInFile = false
+		loc := inputs[i].Location
+		if loc == nil || loc.Path == "" {
+			continue
+		}
+		if j, seen := first[loc.Path]; !seen || loc.Line < inputs[j].Location.Line {
+			first[loc.Path] = i
+		}
+	}
+	for _, i := range first {
+		inputs[i].FirstInFile = true
+	}
+}
+
 // resolution is what the first phase of Evaluate decided for one input.
 type resolution struct {
 	ref model.PackageRef
@@ -180,6 +210,7 @@ type resolution struct {
 // early with the remaining checks skipped.
 func (r *Runner) Evaluate(ctx context.Context, inputs []Input) []Outcome {
 	rn := r.prepare()
+	markFirstInFile(inputs)
 	resolved := make([]resolution, len(inputs))
 	rn.forEach(len(inputs), func(i int) {
 		resolved[i] = rn.resolve(ctx, &inputs[i])
@@ -312,6 +343,7 @@ func (rn *run) evaluate(ctx context.Context, in *Input, res *resolution) Outcome
 		Direct:         in.Direct,
 		Lock:           in.Lock,
 		BaseLock:       in.BaseLock,
+		FirstInFile:    in.FirstInFile,
 		Now:            rn.now,
 		Settings:       rn.policy.Effective(res.ref.Ecosystem),
 		ResolvedLatest: res.latest,

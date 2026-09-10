@@ -101,6 +101,12 @@ type Subject struct {
 	// version-downgraded is about the version itself moving backwards.
 	BaseLock *lockfile.Entry
 
+	// FirstInFile is true for the subject nearest the top of the lockfile among the
+	// subjects this run took from that file. A check that has one thing to say
+	// about a whole file says it on this one, so a reader lands at the top of the
+	// problem. integrity-missing is the only check that reads it.
+	FirstInFile bool
+
 	// Version is the evaluated version in full detail.
 	Version *model.VersionInfo
 	// Package is the whole version list, used for history.

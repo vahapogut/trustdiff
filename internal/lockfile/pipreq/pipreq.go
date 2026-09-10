@@ -194,6 +194,13 @@ var environmentStems = []string{
 // read.
 const hashOption = "--hash"
 
+// requireHashesOption turns pip's hash checking on for the whole file while naming
+// no hash of its own. It is read for the same reason a --hash is: what an unhashed
+// requirement means depends on the file, not on the line
+// (https://pip.pypa.io/en/stable/reference/requirements-file-format/, read
+// 2026-09-10).
+const requireHashesOption = "--require-hashes"
+
 // includeOptions name another requirements file. They are dropped rather than
 // ignored, because everything the named file pins is missing from this parse.
 var includeOptions = []string{"-r", "--requirement", "-c", "--constraint"}
@@ -305,10 +312,44 @@ func (Parser) Parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 		return nil, fmt.Errorf("read %s: %w", Format, err)
 	}
 	lf := &lockfile.Lockfile{Path: path, Format: Format, Ecosystem: model.PyPI}
-	for _, ll := range logicalLines(data) {
-		readLine(lf, &ll)
+	// pip's hash rule is about the file, so the file is read for it before any line
+	// of it becomes an entry.
+	lines := logicalLines(data)
+	unhashed := !hashChecked(lines)
+	for i := range lines {
+		readLine(lf, &lines[i], unhashed)
 	}
 	return lf, nil
+}
+
+// hashChecked reports whether pip would read this file with hash checking on: one
+// requirement names a --hash, or a line asks for it with --require-hashes. It is
+// the whole file that decides, which is why it is answered here and not while a
+// line is being read.
+//
+// It looks at the options alone and never at whether the line becomes an entry. A
+// requirement this parser drops, a compound specifier or a wildcard, still tells
+// pip the file is hash checked, and reading the mode off the entries would call
+// such a file unhashed and report every line of it as one fact.
+//
+// A --hash this parser would not accept counts too. The question is what the file
+// was written to be, and a hash pip itself would reject is still its author saying
+// the file guards what it installs.
+func hashChecked(lines []logicalLine) bool {
+	for i := range lines {
+		text := strings.TrimSpace(stripComment(lines[i].text))
+		if text == "" {
+			continue
+		}
+		fields := strings.Fields(text)
+		if slices.Contains(fields, requireHashesOption) {
+			return true
+		}
+		if slices.ContainsFunc(fields, isHashOption) {
+			return true
+		}
+	}
+	return false
 }
 
 // logicalLine is one requirement as pip sees it: the physical lines a backslash
@@ -362,8 +403,11 @@ func wholeLineComment(text string) bool {
 }
 
 // readLine turns one logical line into an entry, drops it with a reason, or ignores
-// it. The package comment says which of the three each shape of line gets and why.
-func readLine(lf *lockfile.Lockfile, ll *logicalLine) {
+// it. unhashed is the file's answer to pip's whole-file hash rule, carried onto
+// every entry so that integrity-missing can report a file that guards nothing once
+// rather than once per line. The package comment says which of the three each shape
+// of line gets and why.
+func readLine(lf *lockfile.Lockfile, ll *logicalLine, unhashed bool) {
 	text := strings.TrimSpace(stripComment(ll.text))
 	if text == "" {
 		// A blank line, or a line that was only a comment.
@@ -398,8 +442,9 @@ func readLine(lf *lockfile.Lockfile, ll *logicalLine) {
 		Ref: model.PackageRef{Ecosystem: model.PyPI, Name: model.NormalizeName(model.PyPI, name), Version: version},
 		// A bare name and version is fetched from an index, and the file names no
 		// location of its own for it.
-		Source: lockfile.SourceRegistry,
-		Line:   ll.line,
+		Source:            lockfile.SourceRegistry,
+		Line:              ll.line,
+		FileHashesNothing: unhashed,
 	}
 	if len(hashes) > 0 {
 		entry.Integrity = hashes[0]

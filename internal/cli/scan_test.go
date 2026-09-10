@@ -593,3 +593,72 @@ func TestScanSaysSoWhenOnlyTheCrossCheckWasDown(t *testing.T) {
 		t.Errorf("TD001 skipped with %q, want the source it could not read named", r)
 	}
 }
+
+// TestScanAggregatesUnhashedRequirements is the follow-up to finding F5 of
+// docs/review-2026-09-10.md. Reading a plain requirements file was the fix; one
+// integrity-missing finding per line of it was not usable, because a file that
+// hashes nothing is one fact about the file and not two hundred about its
+// packages. pip decides that per file, so the check does too: where nothing in the
+// file asks for a hash there is one finding, and where the file is hash checked the
+// line that lost its hash is still reported on its own.
+func TestScanAggregatesUnhashedRequirements(t *testing.T) {
+	tests := []struct {
+		name string
+		side string
+		// want maps a package to the line its own finding sits on. A package that
+		// is a subject with no finding of its own is absent.
+		want map[string]int
+	}{
+		{
+			name: "a file that hashes nothing is one finding",
+			side: "plain",
+			want: map[string]int{"trustdiff-fixture-lib": 6},
+		},
+		{
+			name: "a hash checked file reports the line that lost its hash",
+			side: "hashed",
+			want: map[string]int{"trustdiff-fixture-alpha": 8},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := readRegressionFixture(t, "f5b-requirements-aggregate", tt.side, "requirements.txt")
+			dir := scanFixture(t)
+			writeFile(t, dir, "requirements.txt", req)
+
+			code, stdout, stderr := run(t, "--format", "json", "--fail-on", "warn", "scan")
+			if code != ExitFindings {
+				t.Fatalf("exit = %d, want %d (stderr %q)\n%s", code, ExitFindings, stderr, stdout)
+			}
+			rep := decodeReport(t, stdout)
+
+			// Every pin stays a subject in its own right, whatever the file does
+			// about hashes: that is what F5 was for, and TD001, TD008, TD009 and
+			// TD010 all read a pin a pull request added.
+			if len(rep.Subjects) != 3 {
+				t.Fatalf("subjects = %v, want all three pins", refsOf(&rep))
+			}
+			got := map[string]int{}
+			for i := range rep.Subjects {
+				s := &rep.Subjects[i]
+				for j := range s.Findings {
+					if s.Findings[j].ID != "TD014" {
+						continue
+					}
+					if !slices.Contains(s.Evaluated, "TD014") && s.Findings[j].Level != model.LevelWarn {
+						t.Errorf("%s TD014 level = %s, want warn", s.Ref.Name, s.Findings[j].Level)
+					}
+					got[s.Ref.Name] = s.Location.Line
+				}
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("TD014 findings = %v, want %v", got, tt.want)
+			}
+			for name, line := range tt.want {
+				if got[name] != line {
+					t.Errorf("TD014 for %s is on line %d, want %d", name, got[name], line)
+				}
+			}
+		})
+	}
+}
