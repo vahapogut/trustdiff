@@ -1,5 +1,17 @@
 # Records docs/demo.gif from docs/demo.tape with vhs and commits the result back.
 #
+# This has never produced a GIF. What is known, after five runs across two days:
+# the tape itself is fine now, every command executes and every Wait matches the
+# screen, and ffmpeg is installed by the step below because the runner image does
+# not carry it. vhs still prints "Creating docs/demo.gif..." and then its publish
+# hint about 200 milliseconds later, exits 0, and leaves no file anywhere under
+# the workspace or the runner temp, which the locate step checks and reports.
+# Two hundred milliseconds is far too short to encode twenty seconds of terminal,
+# so the encode is not happening rather than failing loudly. The next thing to
+# look at is whether the headless renderer vhs drives has frames to give ffmpeg
+# at all. Tracked as an issue on the repository; the README's text demo blocks
+# carry the same two commands in the meantime and are checked against live runs.
+#
 # Manual only (workflow_dispatch): the recording talks to the live registries and
 # changes a binary file, so it runs when someone decides the demo is stale, on the
 # branch they select in the dispatch dialog, and never on push or pull request.
