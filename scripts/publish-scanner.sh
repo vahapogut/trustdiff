@@ -115,7 +115,16 @@ echo "pointing ${name} at ${repo} .github/workflows/${workflow}"
 if npm trust list "${name}" 2>/dev/null | grep -q "${workflow}"; then
 	echo "already configured, leaving it alone"
 else
-	npm trust github --repo "${repo}" --file "${workflow}"
+	# The package is named rather than inferred: npm would otherwise read the
+	# package.json of whatever directory this runs in, and that is the repository
+	# root here, not the scanner.
+	#
+	# --allow-stage-publish is passed rather than left to the default. Staging is
+	# the default for a configuration created today, but that default changed once
+	# already, in September 2026, and the workflow runs "npm stage publish" and
+	# nothing else. Saying it out loud is what keeps the two in step. Direct
+	# publishing is deliberately not enabled; docs/releasing.md section 8 says why.
+	npm trust github "${name}" --repo "${repo}" --file "${workflow}" --allow-stage-publish
 	echo "configured"
 fi
 
