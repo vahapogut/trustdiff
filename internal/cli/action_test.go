@@ -244,3 +244,55 @@ func TestReleaseArchivesCarryTheNotices(t *testing.T) {
 		}
 	}
 }
+
+// SECURITY.md says a tag can be rebuilt and compared byte for byte. That is only
+// true while the release job builds with one fixed compiler: "1.26.x" with
+// check-latest meant the same tag rebuilt next month was built by a different one.
+// The pin and go.mod's toolchain directive are now a pair, and a pair in two files
+// is the kind that drifts. Finding F24 of docs/review-2026-09-10.md.
+//
+// Only the release job. Everything in ci.yml floats forward on purpose, so
+// govulncheck sees the newest standard library rather than the one this freezes.
+func TestReleasePinsTheToolchainGoModNames(t *testing.T) {
+	gomod := string(repoFile(t, "go.mod"))
+	toolchain := regexp.MustCompile(`(?m)^toolchain go(\S+)$`).FindStringSubmatch(gomod)
+	if toolchain == nil {
+		t.Fatal("go.mod states no toolchain directive, and the release pin is written from it")
+	}
+
+	// Parsed, not grepped. The file explains in a comment why it does not ask for
+	// check-latest, and a test that searched the bytes would fail on that sentence.
+	var release struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Uses string         `yaml:"uses"`
+				With map[string]any `yaml:"with"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(repoFile(t, ".github", "workflows", "release.yml"), &release); err != nil {
+		t.Fatalf("parse release.yml: %v", err)
+	}
+	var setups int
+	for _, job := range release.Jobs {
+		for _, step := range job.Steps {
+			if !strings.HasPrefix(step.Uses, "actions/setup-go@") {
+				continue
+			}
+			setups++
+			if got, _ := step.With["go-version"].(string); got != toolchain[1] {
+				t.Errorf("release.yml builds with Go %q and go.mod names toolchain go%s, so a rebuilt tag is a different binary",
+					got, toolchain[1])
+			}
+			if _, ok := step.With["check-latest"]; ok {
+				t.Error("release.yml asks setup-go for check-latest, which moves the compiler under a fixed tag")
+			}
+			if _, ok := step.With["go-version-file"]; ok {
+				t.Error("release.yml reads go-version-file, which under GOTOOLCHAIN=local installs the bare go directive version rather than the toolchain one")
+			}
+		}
+	}
+	if setups != 1 {
+		t.Errorf("release.yml sets up Go %d times, want once", setups)
+	}
+}

@@ -20,6 +20,16 @@
 #   charmbracelet/vhs-action v2.1.1   f6d7db07a432fcd3b06772628d36a57f96d95dcf
 #                                     (tag object 60ed28058cc5ec1ac4edbf3a6380a1ea17b89c42)
 #   actions/upload-artifact v7.0.1    043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+#   actions/download-artifact v6.0.0  018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
+#
+# Two jobs, and the split is the point. The recording job runs vhs, which installs
+# ttyd and ffmpeg of its own and downloads fonts, and it has no token and no
+# credentials in its checkout: nothing it installs can reach this repository. The
+# commit job has the token, downloads one artifact, and runs nothing it did not
+# bring itself. They used to be one job with contents: write and
+# persist-credentials: true live from the first step, which meant the write
+# credential sat on disk while third-party installers ran. Finding F24 of
+# docs/review-2026-09-10.md.
 
 name: demo
 
@@ -47,14 +57,14 @@ jobs:
     name: record docs/demo.gif
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # No write, and the checkout below keeps no credentials. vhs installs ttyd and
+    # ffmpeg and fetches fonts in this job, and none of that can write here.
     permissions:
-      contents: write # push the refreshed recording to the branch the run was started on
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The commit step at the end pushes with the workflow token, so the
-          # credentials stay in the checkout; every other workflow here drops them.
-          persist-credentials: true
+          persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -100,6 +110,12 @@ jobs:
           echo "cache warmed"
 
       - name: Record docs/demo.tape
+        # vhs is pinned below. What it installs to do the work, ttyd and ffmpeg, is
+        # not, and vhs-action v2.1.1 offers no input for either, so pinning them
+        # would mean dropping the action and installing all three by hand. It is not
+        # worth that here: this job holds no token and its checkout holds no
+        # credentials, so the worst an unpinned ttyd can do is produce a bad GIF,
+        # which the job below commits as one file and a person looks at.
         uses: charmbracelet/vhs-action@f6d7db07a432fcd3b06772628d36a57f96d95dcf # v2.1.1
         with:
           path: docs/demo.tape
@@ -142,16 +158,40 @@ jobs:
           path: docs/demo.gif
           if-no-files-found: error
 
+  commit:
+    name: commit docs/demo.gif
+    needs: record
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The only job with a write credential, and everything it runs it brought with
+    # it: a checkout, one downloaded artifact, and git.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: demo
+          path: docs
+
       - name: Commit the recording to the branch this run started from
         env:
           BRANCH: ${{ github.ref_name }}
         run: |
+          # One path, named here rather than "git add -A", so a job that somehow
+          # ended up with more than the recording still commits only the recording.
           git add docs/demo.gif
           if git diff --cached --quiet; then
             echo "docs/demo.gif is unchanged; nothing to commit"
             exit 0
           fi
+          # The bot authors what the bot made. It used to commit under a person's
+          # name and address, which put a human signature on bytes produced by
+          # third-party tooling that person never saw.
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-              commit --author="Vahap Ogut <vahapogut@gmail.com>" -m "docs: refresh demo recording"
+              commit -m "docs: refresh demo recording"
           git push origin "HEAD:${BRANCH}"

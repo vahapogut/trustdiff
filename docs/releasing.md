@@ -8,7 +8,7 @@ Read this page top to bottom the first time. The steps that need a human are
 marked **manual**. Two of them recur on every release, the changelog and the
 readme edits before the tag and the tag itself. The rest are one-time setup: two
 for the Homebrew tap and the Scoop bucket in section 6, and three for the npm
-package in section 8. All five were done on 2026-09-10, so those sections now read
+package in section 9. All five were done on 2026-09-10, so those sections now read
 as a record of what was set up rather than as work waiting to be done. None of them
 blocks a release either: a tag with none of them done still produces a complete,
 signed, verifiable release.
@@ -409,14 +409,71 @@ Two things to expect the first time:
   and turns the job red at the very end. The release does not need to be redone;
   fix the token and either re-run the job or push the cask by hand.
 
-## 7. After the release
+## 7. Who is allowed to make one
+
+The signing identity on every release is
+`https://github.com/vahapogut/trustdiff/.github/workflows/release.yml@refs/tags/v*`.
+That is what `cosign verify-blob` checks and what `SECURITY.md` tells a stranger to
+check, so it is the trust root of this project, and it says in one line what the
+root really is: **anyone who can push a `v*` tag to this repository can produce a
+release that verifies.** No review stands between a tag and a signed artifact,
+because the whole point of the pipeline is that no human touches the build.
+
+Two repository settings close that, and neither is a file in this tree, so neither
+can be added by a commit. Both are one-time and both need a person with admin
+rights. Until they are done, the tag push is the whole of the authorization.
+
+1. **A tag ruleset restricting `v*` creation.** Settings, Rules, Rulesets, New tag
+   ruleset: target `refs/tags/v*`, enforcement Active, restrict creations, and put
+   the people or the team allowed to release in the bypass list. Through the API:
+
+   ```sh
+   gh api repos/vahapogut/trustdiff/rulesets --method POST --input - <<'JSON'
+   {
+     "name": "release tags",
+     "target": "tag",
+     "enforcement": "active",
+     "conditions": {"ref_name": {"include": ["refs/tags/v*"], "exclude": []}},
+     "rules": [{"type": "creation"}],
+     "bypass_actors": [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}]
+   }
+   JSON
+   ```
+
+   `actor_id: 5` is the admin role. Check what it created with
+   `gh api repos/vahapogut/trustdiff/rulesets --jq '.[] | "\(.id) \(.name) \(.target) \(.enforcement)"'`,
+   and confirm the bypass list is what you meant before relying on it.
+
+2. **An environment with a required reviewer on the release job.** Settings,
+   Environments, New environment named `release`, then add yourself as a required
+   reviewer. The job then waits for an approval before it runs, so a tag pushed by
+   something that got past the ruleset still cannot sign anything on its own. The
+   workflow needs one line for this, which is the only part of item 2 that is a
+   file change:
+
+   ```yaml
+   jobs:
+     release:
+       name: release
+       runs-on: ubuntu-latest
+       environment: release
+   ```
+
+   Add it once the environment exists. Adding it first makes every release wait on
+   an environment that does not, which fails the job with a message about a missing
+   environment rather than about a missing approval.
+
+Neither of these makes an existing release less verifiable. They decide who can
+make the next one.
+
+## 8. After the release
 
 1. Announce nothing automatically. There is no announce step and none is wanted.
 2. Open the milestone for the next version and move anything that slipped.
 3. Check that the release page lists six archives, six SBOMs, `checksums.txt`
    and `checksums.txt.sigstore.json`. Twelve files plus two.
 
-## 8. The Bun scanner on npm
+## 9. The Bun scanner on npm
 
 `integrations/bun-scanner` is published separately, as `@trustdiff/bun-scanner`.
 It is not part of the release job and nothing in this repository holds an npm

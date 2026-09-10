@@ -225,10 +225,18 @@ jobs:
         # empty name at the bottom of a red job, which is the least helpful thing a
         # last step can do.
         if: success()
+        env:
+          # Through env: rather than interpolated into the script, which is the rule
+          # every other workflow here follows. These three are this job's own outputs
+          # and carry nothing a stranger wrote, so nothing here is exploitable today;
+          # a rule with one exception in it is one nobody applies to the next step.
+          NAME: ${{ steps.decide.outputs.name }}
+          VERSION: ${{ steps.decide.outputs.version }}
+          REASON: ${{ steps.decide.outputs.reason }}
         run: |
-          name="${{ steps.decide.outputs.name }}"
-          version="${{ steps.decide.outputs.version }}"
-          case "${{ steps.decide.outputs.reason }}" in
+          name="$NAME"
+          version="$VERSION"
+          case "$REASON" in
           absent)
             echo "nothing staged; ${name} does not exist on the registry yet"
             exit 0

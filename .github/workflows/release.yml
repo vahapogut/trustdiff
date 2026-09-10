@@ -55,14 +55,24 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Set up Go from go.mod
+      - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          # The newest 1.26 patch release, so the standard library carries every fix
-          # govulncheck knows about. go-version-file would install the bare "go 1.26.0"
-          # directive version (observed 2026-09-09) because GOTOOLCHAIN is local here.
-          go-version: "1.26.x"
-          check-latest: true
+          # Exactly the toolchain go.mod names, and no check-latest. SECURITY.md
+          # says a tag can be rebuilt and compared byte for byte, and "1.26.x" with
+          # check-latest made that false the moment a new patch release existed:
+          # the same tag rebuilt next month would be built by a different compiler.
+          # This is the one job where that matters. Everything in ci.yml still
+          # floats forward on purpose, so govulncheck sees the newest standard
+          # library rather than the one this pin freezes.
+          #
+          # It has to be written out. go-version-file reads the toolchain directive
+          # only when GOTOOLCHAIN is not "local" (actions/setup-go at the sha above,
+          # src/installer.ts, read 2026-09-11), so go-version-file plus
+          # GOTOOLCHAIN: local installs the bare "go 1.26.0" directive version and
+          # silently drops eight patch releases. internal/cli
+          # TestReleasePinsTheToolchainGoModNames fails when this and go.mod differ.
+          go-version: "1.26.8"
 
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
