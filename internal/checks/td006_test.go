@@ -29,11 +29,11 @@ func TestTD006InstallScriptPresent(t *testing.T) {
 		{
 			name:    "npm several scripts in lifecycle order",
 			eco:     model.NPM,
-			scripts: map[string]string{"prepare": "husky", "preinstall": "node check.js"},
+			scripts: map[string]string{"postinstall": "node build.js", "preinstall": "node check.js"},
 			want:    outcomeA{findings: 1},
-			names:   []string{"preinstall", "prepare"},
-			title:   "Runs code at install time: preinstall, prepare",
-			text:    []string{"declares preinstall (node check.js) and prepare (husky)"},
+			names:   []string{"preinstall", "postinstall"},
+			title:   "Runs code at install time: preinstall, postinstall",
+			text:    []string{"declares preinstall (node check.js) and postinstall (node build.js)"},
 		},
 		{
 			name:    "cargo build script",

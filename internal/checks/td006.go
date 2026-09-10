@@ -12,9 +12,11 @@ import (
 // at all (brief section 4). Applies to every ecosystem; the registry clients record
 // the evidence in VersionInfo.Scripts under ecosystem-specific keys:
 //
-//   - npm: preinstall, install, postinstall and prepare from the packument's
-//     versions[<v>].scripts, which npm runs on install (re-verified 2026-09-09
-//     against https://docs.npmjs.com/cli/v11/using-npm/scripts), and install
+//   - npm: preinstall, install and postinstall from the packument's
+//     versions[<v>].scripts, the three npm runs when it installs the package as a
+//     dependency from the registry (prepare is left out because npm runs a
+//     dependency's prepare only for git and local dependencies;
+//     internal/registry/npm.installScriptNames carries the sources), and install
 //     with npm's default command when the version ships a binding.gyp without
 //     declaring an install or preinstall script (the packument marks such
 //     versions with gypfile: true and npm runs node-gyp rebuild for them);
@@ -35,8 +37,8 @@ import (
 // Evidence keys:
 //
 //	script_names  the install-time scripts or markers of the version, in
-//	              lifecycle order for npm (preinstall, install, postinstall,
-//	              prepare), alphabetically otherwise
+//	              lifecycle order for npm (preinstall, install, postinstall),
+//	              alphabetically otherwise
 //	scripts       the same by name, with the command each one runs when the
 //	              registry records one (empty for build.rs, proc-macro, setup.py)
 type td006 struct{}

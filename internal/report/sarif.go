@@ -454,9 +454,9 @@ var checkRules = []checkRule{
 	},
 	{
 		ID: "TD005", Name: "install-script-introduced",
-		Short: "An npm version that declares an install-time script (preinstall, install, postinstall or prepare) while the previous version declared none.",
-		Full: "An npm version declares preinstall, install, postinstall or prepare while the previous " +
-			"version declared none. The first three run on every install of the package, so code that " +
+		Short: "An npm version that declares an install-time script (preinstall, install or postinstall) while the previous version declared none.",
+		Full: "An npm version declares preinstall, install or postinstall while the previous " +
+			"version declared none. npm runs all three on every install of the package, so code that " +
 			"arrives this way runs on the machine of everyone who updates.",
 	},
 	{

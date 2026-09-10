@@ -12,10 +12,11 @@ import (
 // TD005 install-script-introduced reports an npm version that declares an
 // install-time script while the previous version declared none (brief section 4).
 // The scripts are the ones the npm client records in VersionInfo.Scripts from the
-// packument's versions[<v>].scripts: preinstall, install and postinstall, which
-// npm runs on every install, and prepare, which runs on a local install of the
-// package's own checkout and on git dependencies (lifecycle order re-verified on
-// 2026-09-09 against https://docs.npmjs.com/cli/v11/using-npm/scripts). A
+// packument's versions[<v>].scripts: preinstall, install and postinstall, the three
+// npm runs on every install of a dependency it fetched from the registry. prepare
+// is not among them, because npm runs a dependency's prepare only for a git or a
+// local dependency, so a release that adds one has added nothing an install will
+// run; internal/registry/npm.installScriptNames carries the sources for that. A
 // package that ships a binding.gyp without an install or preinstall script gets
 // npm's default install command, node-gyp rebuild; when the client records that
 // implicit command under install the finding says so. The check is skipped
@@ -28,7 +29,7 @@ import (
 //
 //	previous_version  the previous release
 //	script_names      the install-time scripts of the evaluated version, in
-//	                  lifecycle order (preinstall, install, postinstall, prepare)
+//	                  lifecycle order (preinstall, install, postinstall)
 //	scripts           the scripts by name, with the command each one runs
 //	base_version      the version the base lockfile locked, when diff knows one
 //	                  and it is not the previous release (diff only)
@@ -115,7 +116,7 @@ func (c td005) Run(_ context.Context, s *Subject) Result {
 
 // lifecycleOrder is the order in which npm runs the install-time scripts; other
 // keys (build.rs, proc-macro, setup.py) follow alphabetically.
-var lifecycleOrder = map[string]int{"preinstall": 1, "install": 2, "postinstall": 3, "prepare": 4}
+var lifecycleOrder = map[string]int{"preinstall": 1, "install": 2, "postinstall": 3}
 
 // scriptNames returns the script names in lifecycle order, then alphabetically.
 func scriptNames(scripts map[string]string) []string {

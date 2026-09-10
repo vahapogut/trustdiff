@@ -68,10 +68,10 @@
               "id": "TD005",
               "name": "install-script-introduced",
               "shortDescription": {
-                "text": "An npm version that declares an install-time script (preinstall, install, postinstall or prepare) while the previous version declared none."
+                "text": "An npm version that declares an install-time script (preinstall, install or postinstall) while the previous version declared none."
               },
               "fullDescription": {
-                "text": "An npm version declares preinstall, install, postinstall or prepare while the previous version declared none. The first three run on every install of the package, so code that arrives this way runs on the machine of everyone who updates."
+                "text": "An npm version declares preinstall, install or postinstall while the previous version declared none. npm runs all three on every install of the package, so code that arrives this way runs on the machine of everyone who updates."
               },
               "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td005-install-script-introduced"
             },

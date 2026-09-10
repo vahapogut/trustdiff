@@ -90,8 +90,9 @@ type VersionInfo struct {
 	Deprecated string `json:"deprecated,omitempty"`
 
 	// Scripts are the install-time scripts declared by the version, keyed by name
-	// (preinstall, install, postinstall, prepare for npm). For crates.io the keys
-	// are build.rs and proc-macro; for a PyPI sdist-only release the key is setup.py.
+	// (preinstall, install, postinstall for npm, the three it runs for a dependency
+	// it installed from the registry). For crates.io the keys are build.rs and
+	// proc-macro; for a PyPI sdist-only release the key is setup.py.
 	Scripts map[string]string `json:"scripts,omitempty"`
 	// Dependencies are the runtime dependencies declared by the version: name to
 	// requirement, the ones a plain install of the version pulls in.

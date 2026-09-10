@@ -27,11 +27,11 @@ func TestTD005InstallScriptIntroduced(t *testing.T) {
 		},
 		{
 			name:    "lists several scripts in lifecycle order",
-			current: map[string]string{"prepare": "husky", "preinstall": "node check.js", "postinstall": "node build.js"},
+			current: map[string]string{"postinstall": "node build.js", "preinstall": "node check.js", "install": "node install.js"},
 			want:    outcomeA{findings: 1},
-			names:   []string{"preinstall", "postinstall", "prepare"},
-			title:   "Install script introduced: preinstall, postinstall, prepare (1.2.0 had none)",
-			text:    []string{"declares preinstall (node check.js), postinstall (node build.js) and prepare (husky)"},
+			names:   []string{"preinstall", "install", "postinstall"},
+			title:   "Install script introduced: preinstall, install, postinstall (1.2.0 had none)",
+			text:    []string{"declares preinstall (node check.js), install (node install.js) and postinstall (node build.js)"},
 		},
 		{
 			name:    "names a script without a recorded command",

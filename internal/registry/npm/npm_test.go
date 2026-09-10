@@ -985,7 +985,7 @@ func TestParseTolerantFields(t *testing.T) {
 		{
 			name: "every install script name is kept and nothing else",
 			doc:  `{"scripts":{"preinstall":"a","install":"b","postinstall":"c","prepare":"d","prepublish":"e","test":"f"}}`,
-			want: model.VersionInfo{Scripts: map[string]string{"preinstall": "a", "install": "b", "postinstall": "c", "prepare": "d"}},
+			want: model.VersionInfo{Scripts: map[string]string{"preinstall": "a", "install": "b", "postinstall": "c"}},
 		},
 		{
 			name: "maintainers that is not an array is ignored, nameless entries dropped",
@@ -1132,4 +1132,45 @@ func TestParseTopLevelShapes(t *testing.T) {
 			t.Error("no error for HTML")
 		}
 	})
+}
+
+// TestPrepareIsNotAnInstallScript pins finding F6 of docs/review-2026-09-10.md.
+// npm runs a dependency's prepare only when the dependency comes from git or from
+// a local folder, never for the registry tarball a lockfile entry names, so a
+// release that adds nothing but a husky hook has added no code that any install
+// will run. Recording it cost twice, and Scripts is the only input either check
+// reads, so both costs are paid here: install-script-introduced blocked such a
+// release, and while the previous version carried the hook the release that added
+// a real postinstall reported nothing, because the check compares against a
+// version it thought already had a script.
+func TestPrepareIsNotAnInstallScript(t *testing.T) {
+	// #nosec G304 -- a fixture of this repository.
+	doc, err := os.ReadFile(filepath.Join("..", "..", "..", "testdata", "regressions",
+		"f6-prepare-is-not-an-install-script", "packument.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := parsePackument("trustdiff-fixture-hooks", doc, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("parsePackument: %v", err)
+	}
+	if len(p.versions) != 3 {
+		t.Fatalf("read %d versions, want 3", len(p.versions))
+	}
+	base, hooked, scripted := &p.versions[0], &p.versions[1], &p.versions[2]
+
+	for _, v := range []*model.VersionInfo{base, hooked} {
+		if v.Scripts != nil {
+			t.Errorf("%s Scripts = %v, want none recorded", v.Ref.Version, v.Scripts)
+		}
+		// This is what both checks read, and what made the release after the hook
+		// look like one whose predecessor already ran code.
+		if v.HasInstallScript() {
+			t.Errorf("%s counts as running code at install time", v.Ref.Version)
+		}
+	}
+	want := map[string]string{"postinstall": "node ./scripts/setup.js"}
+	if !reflect.DeepEqual(scripted.Scripts, want) {
+		t.Errorf("1.2.0 Scripts = %v, want the postinstall alone", scripted.Scripts)
+	}
 }

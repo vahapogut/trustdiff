@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- A release that adds nothing but a `prepare` script is not a release that added install-time code. `prepare` was recorded alongside `preinstall`, `install` and `postinstall`, and npm runs none of a dependency's `prepare` when it installs that dependency from the registry: npm's own approve-scripts page calls them "preinstall, install, postinstall, and prepare for non-registry sources", its `hasInstallScript` getter names only the first three, and arborist queues `prepare` with them and then drains that queue for link nodes alone. All three were read on 2026-09-10. A great many published packages keep `"prepare": "husky"` in the manifest, so adopting a git hook was reported at `block` by `install-script-introduced`, and it did worse than that: while the previous version carried the hook, the release that added a real `postinstall` reported nothing, because the check compares against a version it thought already ran code. The npm client no longer records `prepare`, so both go away. An allow entry written to get past one of those blocks can be deleted; it matches nothing now, and once its `expires` date passes it reports itself as expired. Finding F6 of the review.
+
 ## [0.4.1] - 2026-09-10
 
 The five silent passes an independent review of 0.4.0 found, and the release work

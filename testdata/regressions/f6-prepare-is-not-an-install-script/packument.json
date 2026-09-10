@@ -1,0 +1,41 @@
+{
+  "_id": "trustdiff-fixture-hooks",
+  "name": "trustdiff-fixture-hooks",
+  "description": "a fixture package whose 1.1.0 adds nothing but a prepare hook",
+  "dist-tags": {
+    "latest": "1.2.0"
+  },
+  "maintainers": [
+    { "name": "fixture-maintainer", "email": "maintainer@example.com" }
+  ],
+  "time": {
+    "created": "2026-01-05T10:00:00.000Z",
+    "modified": "2026-03-05T10:00:00.000Z",
+    "1.0.0": "2026-01-05T10:00:00.000Z",
+    "1.1.0": "2026-02-05T10:00:00.000Z",
+    "1.2.0": "2026-03-05T10:00:00.000Z"
+  },
+  "versions": {
+    "1.0.0": {
+      "name": "trustdiff-fixture-hooks",
+      "version": "1.0.0",
+      "_npmUser": { "name": "fixture-maintainer", "email": "maintainer@example.com" },
+      "scripts": { "test": "node --test" },
+      "dist": { "integrity": "sha512-MTAwMA==" }
+    },
+    "1.1.0": {
+      "name": "trustdiff-fixture-hooks",
+      "version": "1.1.0",
+      "_npmUser": { "name": "fixture-maintainer", "email": "maintainer@example.com" },
+      "scripts": { "prepare": "husky", "test": "node --test" },
+      "dist": { "integrity": "sha512-MTEwMA==" }
+    },
+    "1.2.0": {
+      "name": "trustdiff-fixture-hooks",
+      "version": "1.2.0",
+      "_npmUser": { "name": "fixture-maintainer", "email": "maintainer@example.com" },
+      "scripts": { "postinstall": "node ./scripts/setup.js", "prepare": "husky", "test": "node --test" },
+      "dist": { "integrity": "sha512-MTIwMA==" }
+    }
+  }
+}

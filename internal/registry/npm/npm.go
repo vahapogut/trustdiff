@@ -36,12 +36,14 @@
 //
 // Mapping decisions a reviewer should know:
 //
-//   - Scripts keeps only preinstall, install, postinstall and prepare, the
-//     scripts npm runs when the package is installed as a dependency. A version
-//     the registry marks gypfile: true (it ships a binding.gyp) that declares
-//     neither install nor preinstall gets the install script npm runs by default
-//     for it, node-gyp rebuild, so the implicit native build shows up like a
-//     declared one.
+//   - Scripts keeps only preinstall, install and postinstall, the scripts npm runs
+//     when it installs the package as a dependency from the registry. prepare is
+//     not one of them, because npm runs a dependency's prepare for a git or a
+//     local dependency and never for a registry tarball; installScriptNames
+//     carries the evidence. A version the registry marks gypfile: true (it ships a
+//     binding.gyp) that declares neither install nor preinstall gets the install
+//     script npm runs by default for it, node-gyp rebuild, so the implicit native
+//     build shows up like a declared one.
 //   - Dependencies merges optionalDependencies into dependencies: npm installs
 //     optional dependencies by default, so a newly introduced one is as much a
 //     signal as a regular one. Requirements are kept verbatim so that a check can
@@ -140,10 +142,29 @@ const (
 	trustedPublisherSuffix = "-trusted-publisher:"
 )
 
-// installScriptNames are the scripts npm runs when the package is installed as a
-// dependency (brief section 4, TD005 and TD006). Every other script (test, build,
-// prepublish and so on) runs only for the package's own developers.
-var installScriptNames = []string{"preinstall", "install", "postinstall", "prepare"}
+// installScriptNames are the scripts npm runs when it installs the package as a
+// dependency from the registry (brief section 4, TD005 and TD006). Every other
+// script (test, build, prepublish and so on) runs only for the package's own
+// developers.
+//
+// prepare is deliberately not one of them, although npm does run it and although a
+// great many published packages keep one. It runs when the package is packed, when
+// its own checkout is installed, and when a consumer depends on it through git or a
+// local folder, and none of those is the registry tarball a lockfile entry names.
+// npm says so itself: its approve-scripts page calls them "preinstall, install,
+// postinstall, and prepare for non-registry sources", and its hasInstallScript
+// getter is !!(hasInstallScript || install || preinstall || postinstall), with no
+// prepare in it. Arborist queues prepare with the other three and then drains that
+// queue only for link nodes, while ordinary dependencies are built as "deps". Read
+// on 2026-09-10: https://docs.npmjs.com/cli/v12/commands/npm-approve-scripts, and
+// workspaces/arborist/lib/node.js and .../lib/arborist/rebuild.js of
+// https://github.com/npm/cli.
+//
+// Counting it reported a release that adopted a husky hook as a release that added
+// install-time code, and worse: it made the release that added a real postinstall
+// afterwards look like one whose predecessor already ran code, so that one was not
+// reported at all.
+var installScriptNames = []string{"preinstall", "install", "postinstall"}
 
 // Option configures a Client.
 type Option func(*Client)

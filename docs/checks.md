@@ -232,7 +232,7 @@ allow:
 
 ## TD005 install-script-introduced
 
-**Detects.** An npm version that declares an install-time script (`preinstall`, `install`, `postinstall` or `prepare`) while the previous version declared none. npm runs the first three on every install of the package; `prepare` runs on a local install of the package's own checkout and on git dependencies. Skipped without a previous version. npm only: crates.io and PyPI have no per-version script list to compare, and TD006 covers their install-time code.
+**Detects.** An npm version that declares an install-time script (`preinstall`, `install` or `postinstall`) while the previous version declared none. npm runs all three on every install of the package. `prepare` is not one of them and is not reported: npm runs a dependency's `prepare` only when the dependency comes from git or from a local folder, never for the registry tarball a lockfile entry names, so a release that adds a `husky` hook has added nothing an install will run. Skipped without a previous version. npm only: crates.io and PyPI have no per-version script list to compare, and TD006 covers their install-time code.
 
 **Why it matters.** Nearly every npm compromise of the last years delivered its payload through a script that the previous release did not have. The hijacked ua-parser-js releases `0.7.29`, `0.8.0` and `1.0.0` of 22 October 2021 added a `preinstall` hook that ran a cryptominer and a credential stealer ([issue #538](https://github.com/faisalman/ua-parser-js/issues/538)). The Shai-Hulud worm of September 2025 worked "by injecting malicious post-install scripts into popular JavaScript packages" ([GitHub, 22 September 2025](https://github.blog/security/supply-chain-security/our-plan-for-a-more-secure-npm-supply-chain/)). The `plain-crypto-js` package that the compromised axios pulled in on 31 March 2026 downloaded its remote access trojan from a `postinstall` hook ([Datadog Security Labs](https://securitylabs.datadoghq.com/articles/axios-npm-supply-chain-compromise/)). In every case the script was new.
 
@@ -241,7 +241,7 @@ allow:
 | Key | Meaning |
 |---|---|
 | `previous_version` | the previous release, which declared no install-time script |
-| `script_names` | the install-time scripts of the evaluated version, in lifecycle order (`preinstall`, `install`, `postinstall`, `prepare`) |
+| `script_names` | the install-time scripts of the evaluated version, in lifecycle order (`preinstall`, `install`, `postinstall`) |
 | `scripts` | the scripts by name, with the command each one runs |
 
 **Example.** A harmless one that the registry still carries: `parcel-bundler@1.2.1` (December 2017) added a `postinstall` banner where `1.2.0` had no install script:
@@ -271,7 +271,7 @@ allow:
 
 ## TD006 install-script-present
 
-**Detects.** A version that runs code at install time at all, whether or not the previous version did. What that means depends on the ecosystem: npm scripts (`preinstall`, `install`, `postinstall`, `prepare`); a crates.io crate with a `build.rs`, which cargo compiles and runs before building the crate, or with `[lib] proc-macro = true`, whose code runs inside the compiler of every dependent (both found by downloading the `.crate` archive and checked against the registry checksum); a PyPI release published as a source distribution only, which pip must build by running the project's `setup.py` because no wheel exists. Skipped when the version details are unavailable. Applies to every ecosystem.
+**Detects.** A version that runs code at install time at all, whether or not the previous version did. What that means depends on the ecosystem: npm scripts (`preinstall`, `install`, `postinstall`); a crates.io crate with a `build.rs`, which cargo compiles and runs before building the crate, or with `[lib] proc-macro = true`, whose code runs inside the compiler of every dependent (both found by downloading the `.crate` archive and checked against the registry checksum); a PyPI release published as a source distribution only, which pip must build by running the project's `setup.py` because no wheel exists. Skipped when the version details are unavailable. Applies to every ecosystem.
 
 **Why it matters.** TD005 catches a script appearing; this check tells you that a package runs code on your machine before you ever import it, which is the part of the install worth reviewing even for a package that has always done it. The payloads of ua-parser-js (2021), Shai-Hulud (2025) and plain-crypto-js (2026) cited under TD005 all ran from install hooks, and blocking install scripts by default is now what npm 12, pnpm 11, Bun and Yarn do.
 
@@ -279,7 +279,7 @@ allow:
 
 | Key | Meaning |
 |---|---|
-| `script_names` | the install-time scripts or markers of the version, in lifecycle order for npm (`preinstall`, `install`, `postinstall`, `prepare`), alphabetically otherwise |
+| `script_names` | the install-time scripts or markers of the version, in lifecycle order for npm (`preinstall`, `install`, `postinstall`), alphabetically otherwise |
 | `scripts` | the same by name, with the command each one runs when the registry records one (empty for `build.rs`, `proc-macro`, `setup.py`) |
 
 **Example.**
