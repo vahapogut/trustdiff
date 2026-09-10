@@ -17,10 +17,10 @@ import (
 // deliberate: the alternative is a second copy of 1.7 MB to keep in step.
 const precisionCorpus = "../lockfile/npm/testdata/superset-frontend-package-lock.json"
 
-// supersetFalsePositives is every name of that corpus Suspect flags. Superset
-// installs nothing malicious, so each of them is a legitimate package TD008 would
-// block at its default level, and they are written out rather than counted so that
-// a change to the rules or to the embedded list has to name what it gained or lost.
+// supersetFlagged is every name of that corpus Suspect flags. Superset installs
+// nothing malicious, so each of them is a legitimate package the rules match, and
+// they are written out rather than counted so that a change to the rules or to the
+// embedded list has to name what it gained or lost.
 //
 // What remains is the exact rules meeting real names: css-font-parser and
 // cssfontparser differ only in separators, js-yaml-loader carries a js prefix over
@@ -28,7 +28,14 @@ const precisionCorpus = "../lockfile/npm/testdata/superset-frontend-package-lock
 // webpack-visualizer-plugin2 is its own numbered successor. None of them is a scope
 // paying for the distance between the packages it holds, which is what finding F8
 // of docs/review-2026-09-10.md was about.
-var supersetFalsePositives = []string{
+//
+// None of the five fails a gate either. This package compares names and knows
+// nothing about registries, so what a run does with a match is measured next door:
+// internal/checks TestTyposquatSuspectDoesNotBlockTheSupersetNames reads the same
+// five names against their registry facts and asserts every one is reported at
+// warn. All five have been on npm for years with real users, and that is what the
+// level turns on.
+var supersetFlagged = []string{
 	"css-font-parser",
 	"js-yaml-loader",
 	"lz4js",
@@ -88,7 +95,7 @@ func TestPrecision(t *testing.T) {
 	slices.Sort(flagged)
 	t.Logf("distinct names: %d; not in the embedded list: %d; flagged: %d (%.1f%% of the names that could be)",
 		len(names), len(candidates), len(flagged), 100*float64(len(flagged))/float64(len(candidates)))
-	if !slices.Equal(flagged, supersetFalsePositives) {
-		t.Errorf("flagged %v, want %v", flagged, supersetFalsePositives)
+	if !slices.Equal(flagged, supersetFlagged) {
+		t.Errorf("flagged %v, want %v", flagged, supersetFlagged)
 	}
 }

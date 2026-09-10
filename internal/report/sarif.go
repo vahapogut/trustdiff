@@ -485,7 +485,11 @@ var checkRules = []checkRule{
 		Short: "A package whose name looks like a misspelling of a popular package in the same ecosystem.",
 		Full: "The name is a small edit away from a name on the ecosystem's popular list while the package " +
 			"itself is not on that list, or deps.dev reports a much more popular package with a similar " +
-			"name. The check compares names only; it says nothing about what the package contains.",
+			"name. The rules compare names only and say nothing about what the package contains. The " +
+			"level does read two facts about it: a match blocks only where the package could still be " +
+			"a squat, its first release less than a year old or its weekly downloads below the " +
+			"low-usage threshold, and one that is neither is reported at warn. A fact the run could " +
+			"not read never lowers the level.",
 	},
 	{
 		ID: "TD009", Name: "malicious-advisory",

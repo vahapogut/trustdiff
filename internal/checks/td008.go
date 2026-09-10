@@ -25,6 +25,14 @@ import (
 // every package inside it, so it is not the part a squatter imitates and it buys
 // no imitator a looser budget.
 //
+// A match is reported at the policy's level only for a candidate that could still
+// be a squat: one whose first release is less than a year old, or whose weekly
+// downloads are below the low-usage threshold. A package that is neither is one a
+// project has been living with, and it is reported at warn however the policy is
+// set, because blocking a gate on a name a project has installed for years is a
+// cost with no finding behind it. A fact the run could not read never lowers the
+// level: the demotion is the claim, and an unread half cannot make it.
+//
 // As a cross-check, deps.dev's similarly named packages are consulted through the
 // Loader: a neighbor that is much more popular (it is in the popular list, or its
 // weekly downloads are at least 100 times the candidate's when both are known)
@@ -180,7 +188,83 @@ func (c *typosquatSuspect) Run(ctx context.Context, s *Subject) Result {
 			explanation += fmt.Sprintf("; deps.dev also lists the much more popular %q as a similarly named package", neighbor)
 		}
 	}
-	return Result{Findings: []model.Finding{NewFinding(c, s, title, explanation, evidence)}}
+	standing, clause := c.standing(s)
+	evidence["standing"] = standing
+	explanation += clause
+	f := NewFinding(c, s, title, explanation, evidence)
+	if standing == standingEstablished {
+		f.Level = min(f.Level, model.LevelWarn)
+	}
+	return Result{Findings: []model.Finding{f}}
+}
+
+// The standing of a candidate: what the run could tell about how long it has been
+// around and how many people install it.
+const (
+	standingEstablished = "established"
+	standingYoung       = "young"
+	standingLowUsage    = "low-usage"
+	standingAgeUnknown  = "age-unknown"
+	standingUsageUnkown = "usage-unknown"
+)
+
+// establishedAge is how old a package has to be before this check stops treating it
+// as one that could have been planted. A year is long past the window a squat
+// lives in: a name registered to catch a typo is found and removed in days or
+// weeks, and one that survives a year with real users is a package with a history,
+// whatever else it is.
+const establishedAge = 365 * 24 * time.Hour
+
+// standing decides whether the finding may be reported below the level the policy
+// set, and returns the sentence that says why. A look-alike is dangerous because it
+// is new and almost nobody installs it; a package that is neither is a package a
+// project has been living with, and reporting it at block failed the gate on names
+// like lz4js and rison, which have been on npm for years.
+//
+// A fact the run could not read never demotes anything. The demotion is the claim
+// here, so it rests on something somebody read; the other polarity would let a cold
+// cache or a registry outage quietly downgrade the one check whose default is
+// block, and nothing in the report would tell the two apart.
+func (c *typosquatSuspect) standing(s *Subject) (string, string) {
+	if s.Package == nil {
+		return standingAgeUnknown, ". The level stays at the configured one because the registry did not say when the package first appeared"
+	}
+	first := firstPublished(s.Package)
+	if first.IsZero() {
+		return standingAgeUnknown, ". The level stays at the configured one because the registry did not say when the package first appeared"
+	}
+	age := runClock(s).Sub(first)
+	if age < establishedAge {
+		return standingYoung, fmt.Sprintf(". The package first appeared %s, %s ago, which is inside the year this check treats a name as one that could have been planted",
+			first.UTC().Format(time.RFC3339), durationText(age))
+	}
+
+	threshold := s.Setting("low-usage").MinWeeklyDownloads
+	if s.Downloads >= 0 {
+		if s.Downloads < threshold {
+			return standingLowUsage, fmt.Sprintf(". The package has been on the registry since %s, but %d weekly downloads is below the low-usage threshold of %d",
+				first.UTC().Format(time.RFC3339), s.Downloads, threshold)
+		}
+		return standingEstablished, fmt.Sprintf(". The level is lowered to warn because the package is one a project has been living with: it has been on the registry since %s and has %d weekly downloads, at or above the low-usage threshold of %d",
+			first.UTC().Format(time.RFC3339), s.Downloads, threshold)
+	}
+	// No count from the registry. deps.dev answers the same question for the
+	// registries that publish none, which is what TD012 falls back to; anything
+	// else leaves the usage half unread, and an unread half cannot demote.
+	if c.hasDepsDevFinding(s, lowUsageFindingType) {
+		return standingLowUsage, ". deps.dev reports the package as low usage, and the registry publishes no counts of its own"
+	}
+	return standingUsageUnkown, ". The level stays at the configured one because nothing said how often the package is installed"
+}
+
+// hasDepsDevFinding reports whether deps.dev returned a finding of this type.
+func (c *typosquatSuspect) hasDepsDevFinding(s *Subject, kind string) bool {
+	for _, f := range s.DepsDevFindings {
+		if f.Type == kind {
+			return true
+		}
+	}
+	return false
 }
 
 // describeRule words the match for the explanation; both names are quoted by

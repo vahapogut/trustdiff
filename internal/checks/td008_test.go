@@ -482,3 +482,138 @@ func TestTyposquatSuspectRefreshedList(t *testing.T) {
 		}
 	})
 }
+
+// TestTyposquatSuspectLevelNeedsAnUnestablishedCandidate is the follow-up to
+// finding F8 of docs/review-2026-09-10.md. F8 cut the false positives of the
+// Superset lockfile from nine to five; the five that remain are the exact rules
+// meeting real names, and at block they failed the gate on packages a project has
+// installed for years. A look-alike is dangerous because it is new and nobody
+// installs it: an old package with real users is a package with a history, and
+// whatever it is, it is not a squat that was just planted. So block now needs the
+// candidate to be young or barely installed as well, and an established one is
+// reported at the level below.
+//
+// A fact the run could not read never demotes anything. The demotion is the claim
+// here, and a claim rests on something somebody read; the opposite polarity would
+// let a registry outage quietly downgrade the one check whose default is block.
+func TestTyposquatSuspectLevelNeedsAnUnestablishedCandidate(t *testing.T) {
+	tests := []struct {
+		name      string
+		age       time.Duration
+		downloads int64
+		facts     []depsdev.Finding
+		noList    bool
+		want      model.Level
+		reason    string
+	}{
+		{
+			name:      "old and widely installed is the established case",
+			age:       3 * 365 * 24 * time.Hour,
+			downloads: 100_000,
+			want:      model.LevelWarn,
+			reason:    "established",
+		},
+		{
+			name:      "young enough to have been planted",
+			age:       30 * 24 * time.Hour,
+			downloads: 100_000,
+			want:      model.LevelBlock,
+			reason:    "young",
+		},
+		{
+			name:      "old but almost nobody installs it",
+			age:       3 * 365 * 24 * time.Hour,
+			downloads: 12,
+			want:      model.LevelBlock,
+			reason:    "low-usage",
+		},
+		{
+			name:      "the count is missing and deps.dev says low usage",
+			age:       3 * 365 * 24 * time.Hour,
+			downloads: -1,
+			facts:     []depsdev.Finding{{Type: lowUsageFindingType}},
+			want:      model.LevelBlock,
+			reason:    "low-usage",
+		},
+		{
+			// Nobody read the count, so nobody may say the package is established.
+			name:      "the count is missing and nothing else answered",
+			age:       3 * 365 * 24 * time.Hour,
+			downloads: -1,
+			want:      model.LevelBlock,
+			reason:    "usage-unknown",
+		},
+		{
+			name:      "nobody read the history either",
+			noList:    true,
+			downloads: 100_000,
+			want:      model.LevelBlock,
+			reason:    "age-unknown",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newTyposquatT()
+			s := subjectT("npm:crossenv@6.1.1", nil, tt.downloads)
+			if !tt.noList {
+				s.Package = &registry.VersionList{
+					Ecosystem: model.NPM,
+					Name:      "crossenv",
+					Created:   s.Now.Add(-tt.age),
+				}
+			}
+			s.DepsDevFindings = tt.facts
+			res := c.Run(context.Background(), s)
+			if len(res.Findings) != 1 {
+				t.Fatalf("Run() returned %d findings, want 1: %+v", len(res.Findings), res.Findings)
+			}
+			f := res.Findings[0]
+			if f.Level != tt.want {
+				t.Errorf("level = %s, want %s", f.Level, tt.want)
+			}
+			if got := f.Evidence["standing"]; got != tt.reason {
+				t.Errorf("evidence[standing] = %v, want %q", got, tt.reason)
+			}
+		})
+	}
+}
+
+// None of the five names the Superset lockfile still has flagged blocks a gate.
+// internal/typosquat measures which names the rules match and knows nothing about
+// registries, so what a run does with a match is measured here: every one of the
+// five is a package with years of history and real users, which is what the level
+// now turns on.
+func TestTyposquatSuspectDoesNotBlockTheSupersetNames(t *testing.T) {
+	// Weekly downloads read from the registries on 2026-09-10, rounded down. Every
+	// one of these packages first appeared years before that.
+	for _, tt := range []struct {
+		ref       string
+		downloads int64
+	}{
+		{"npm:css-font-parser@1.0.0", 100_902},
+		{"npm:js-yaml-loader@1.2.2", 44_264},
+		{"npm:lz4js@0.2.0", 356_985},
+		{"npm:rison@0.1.1", 52_287},
+		{"npm:webpack-visualizer-plugin2@1.1.0", 12_561},
+	} {
+		t.Run(tt.ref, func(t *testing.T) {
+			// The embedded lists, because these five are what the real npm list
+			// matches: a hand-built one would prove nothing about them.
+			c := &typosquatSuspect{lists: typosquat.Embedded(), load: func(time.Time) *typosquat.Lists {
+				panic("load must not be called when lists are set")
+			}}
+			s := subjectT(tt.ref, nil, tt.downloads)
+			s.Package = &registry.VersionList{
+				Ecosystem: model.NPM,
+				Created:   s.Now.AddDate(-5, 0, 0),
+			}
+			res := c.Run(context.Background(), s)
+			if len(res.Findings) != 1 {
+				t.Fatalf("Run() returned %d findings, want the one the rules match: %+v", len(res.Findings), res.Findings)
+			}
+			if got := res.Findings[0].Level; got != model.LevelWarn {
+				t.Errorf("level = %s, want warn: %s has been installed for years", got, tt.ref)
+			}
+		})
+	}
+}
