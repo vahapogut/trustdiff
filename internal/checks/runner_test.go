@@ -991,3 +991,48 @@ func TestRunOutputFeedsReportBuild(t *testing.T) {
 		t.Errorf("exit code = %d, want 0 for a warn finding under fail-on block", r.Summary.ExitCode)
 	}
 }
+
+// A facet a registry client could not gather is an outage like a whole source that
+// did not answer: the check that needed it skipped, and a run under
+// on_data_unavailable: fail has to see that, or a crate whose archive was never
+// opened passes as a crate with no install scripts.
+func TestEvaluateReportsAFacetOutageAsUnavailable(t *testing.T) {
+	loader := libLoaderR()
+	const reason = "crates: cargo:lib@2.0.0: crate archive not inspected: exceeds the inspection size cap"
+	loader.infos[model.MustParseRef("npm:lib@2.0.0")].SetUnknown(model.FacetScripts, reason)
+	check := fakeCheckR{id: "TD006", name: "install-script-present", run: func(_ context.Context, s *Subject) Result {
+		if why, unknown := unknownFacet(s.Version, model.FacetScripts); unknown {
+			return Skip("TD006", "install scripts of "+s.Ref.Version+" unavailable: "+why)
+		}
+		return Result{}
+	}}
+	out := newRunnerR(loader, check).Evaluate(context.Background(), inputsR("npm:lib@2.0.0"))
+	if got := skippedReasonsR(&out[0].Subject)["TD006"]; !strings.Contains(got, reason) {
+		t.Fatalf("TD006 skipped with %q, want the reason the registry client recorded", got)
+	}
+	if !out[0].Unavailable {
+		t.Error("Outcome.Unavailable = false: a facet nobody could gather is data this run did not have")
+	}
+}
+
+// A facet recorded without a reason still makes the check skip, wording it the way
+// unknownFacet does. The runner matches a skip reason against the outages by
+// substring, so the collector has to use that same wording: an empty string would
+// match every skipped check on the subject instead.
+func TestEvaluateReportsAFacetOutageWithNoReason(t *testing.T) {
+	loader := libLoaderR()
+	loader.infos[model.MustParseRef("npm:lib@2.0.0")].SetUnknown(model.FacetScripts, "")
+	check := fakeCheckR{id: "TD006", name: "install-script-present", run: func(_ context.Context, s *Subject) Result {
+		if why, unknown := unknownFacet(s.Version, model.FacetScripts); unknown {
+			return Skip("TD006", "install scripts of "+s.Ref.Version+" unavailable: "+why)
+		}
+		return Result{}
+	}}
+	out := newRunnerR(loader, check).Evaluate(context.Background(), inputsR("npm:lib@2.0.0"))
+	if got := skippedReasonsR(&out[0].Subject)["TD006"]; !strings.Contains(got, unknownFacetReason) {
+		t.Fatalf("TD006 skipped with %q, want the wording unknownFacet substitutes", got)
+	}
+	if !out[0].Unavailable {
+		t.Error("Outcome.Unavailable = false: a facet with no reason is still a facet nobody gathered")
+	}
+}

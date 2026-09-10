@@ -87,6 +87,11 @@ func implicitInstall(scripts map[string]string) bool {
 	return strings.TrimSpace(scripts["install"]) == ImplicitInstallCommand
 }
 
+// unknownFacetReason stands in when a registry client recorded a facet it could
+// not gather without saying why. Subject.outageReasons words it the same way, so
+// the runner can match the skip it produces.
+const unknownFacetReason = "not gathered by the registry client"
+
 // unknownFacet reports why a registry could not gather one facet of a version
 // (VersionInfo.Unknown keyed by model.FacetScripts, model.FacetProvenance or
 // model.FacetDependencies): the crate archive was too large or not cached
@@ -98,7 +103,7 @@ func unknownFacet(v *model.VersionInfo, facet string) (reason string, unknown bo
 	}
 	reason, unknown = v.Unknown[facet]
 	if unknown && reason == "" {
-		reason = "not gathered by the registry client"
+		reason = unknownFacetReason
 	}
 	return reason, unknown
 }

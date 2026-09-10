@@ -85,6 +85,10 @@ type Input struct {
 //     runner tells an outage from a definite answer for on_data_unavailable),
 //     never an empty Result: an unavailable source is reported as skipped, not
 //     as a pass;
+//   - end with cleanOrSkip(c, s, sources...) rather than an empty Result when it
+//     reads more than one source and none of them reported anything, naming the
+//     sources in the order its explanation names them: nothing from every source
+//     asked is a pass, nothing from half of them is a version nobody checked;
 //   - build findings with NewFinding so the id, name, effective level, ref and
 //     location are set, with an Evidence map whose keys docs/checks.md documents;
 //   - honor ctx: the runner cancels it at the per-check timeout and reports the
@@ -357,11 +361,14 @@ func (rn *run) skipAll(ctx context.Context, out *Outcome, s *Subject, applicable
 	return *out
 }
 
-// namesOutage reports whether a check's skip reason carries the wording
-// Subject.Skipped gave for a source that could not be consulted. Checks build
-// their reasons from those strings (see the Runner doc), so the match is exact:
-// a reason that merely uses the word "unavailable" does not count, and a
-// definite answer such as not found never does.
+// namesOutage reports whether a check's skip reason carries the wording of
+// something the run could not read. The list holds two kinds of string. A source
+// that did not answer is worded by Subject.Skipped and checks build their reasons
+// from it, so that match is exact: a reason that merely uses the word "unavailable"
+// does not count, and a definite answer such as not found never does. A facet a
+// registry client could not gather is the client's own sentence, quoted by the
+// check inside a longer skip reason, so that match is looser. It errs toward
+// counting a check as unavailable, which is the side this tool errs on.
 func namesOutage(reason string, outages []string) bool {
 	for _, outage := range outages {
 		if strings.Contains(reason, outage) {

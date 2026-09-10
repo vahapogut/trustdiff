@@ -105,8 +105,9 @@ func newDataLoader(reg registry.Registry, adv advisory.Source, dd depsDevSource,
 // ecosystem a source does not index are left out of its batch, as the source
 // itself would leave them out of its answer; the per-ref methods report them as
 // unsupported without a request. The three batches run concurrently. A batch that
-// fails stores its error for every ref it covered, so the source is not asked
-// again for them; a batch that failed because ctx ended stores nothing.
+// fails stores its error for every ref it covered, so the source is not asked again
+// for them; a batch that lost only some of its refs stores the error for those and
+// the answers for the rest; a batch that failed because ctx ended stores nothing.
 func (l *DataLoader) Prefetch(ctx context.Context, refs []model.PackageRef) {
 	versioned := uniqueVersioned(refs)
 	if len(versioned) == 0 {
@@ -152,18 +153,33 @@ func (l *DataLoader) prefetchAdvisories(ctx context.Context, refs []model.Packag
 	}
 	l.log.Debug("prefetching advisories", "refs", len(refs))
 	results, err := l.adv.Advisories(ctx, refs)
-	if err != nil {
-		if ctx.Err() != nil {
-			return
-		}
+	if err != nil && ctx.Err() != nil {
+		return
+	}
+	// A source that answered some refs and not others returns those answers together
+	// with an *advisory.PartialError naming the ones it lost. Storing the batch error
+	// for every ref would report an outage for packages the source did answer for,
+	// and every check that reads them would skip instead of saying what came back.
+	var partial *advisory.PartialError
+	switch {
+	case errors.As(err, &partial):
+		l.logBatchFailure("advisory batch partly failed", len(partial.Refs), err)
+	case err != nil:
 		l.logBatchFailure("advisory batch failed", len(refs), err)
 	}
 	for _, ref := range refs {
-		if err != nil {
+		switch {
+		case partial != nil:
+			if lost, ok := partial.Refs[ref]; ok {
+				l.advisories.store(ref, nil, lost)
+				continue
+			}
+			l.advisories.store(ref, results[ref], nil)
+		case err != nil:
 			l.advisories.store(ref, nil, err)
-			continue
+		default:
+			l.advisories.store(ref, results[ref], nil)
 		}
-		l.advisories.store(ref, results[ref], nil)
 	}
 }
 

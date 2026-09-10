@@ -187,9 +187,19 @@ func withVersionB(v *model.VersionInfo) func(*Subject) {
 	return func(s *Subject) { s.Version = v }
 }
 
-// withUnavailableB marks a data source as unavailable with the given reason.
+// withUnavailableB marks a data source as unavailable with the given reason. The
+// error is a plain one, so it is an outage: nobody reached the source.
 func withUnavailableB(source, reason string) func(*Subject) {
 	return func(s *Subject) { s.Unavailable[source] = errors.New(reason) }
+}
+
+// withDefiniteB marks a data source as unavailable with an error that is the
+// source's own answer rather than an outage: an ecosystem it does not index, a
+// count the registry does not publish, a source the run was built without. The
+// difference is what decides whether a check that found nothing on the other
+// source may report a pass, so a fixture has to be able to say which it means.
+func withDefiniteB(source string, err error) func(*Subject) {
+	return func(s *Subject) { s.Unavailable[source] = err }
 }
 
 // withAdvisoriesB sets the OSV advisories.

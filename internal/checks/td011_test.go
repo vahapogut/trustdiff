@@ -1,6 +1,7 @@
 package checks
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/vahapogut/trustdiff/internal/advisory/depsdev"
@@ -177,6 +178,22 @@ func TestDeprecatedOrYanked(t *testing.T) {
 				}
 				assertContainsB(t, "explanation", f.Explanation, "deps.dev could not be consulted (deps.dev unavailable: timeout)")
 			},
+		},
+		{
+			// Nothing fired on the registry, and deps.dev was never reached. That is
+			// not a version neither source objects to; it is half an answer.
+			name: "deps.dev down, registry clean",
+			opts: []func(*Subject){withUnavailableB(SourceDepsDev, "timeout"),
+				withPackageB(packageB(model.NPM, "foo", releaseB{Version: "1.2.3", Published: dayB(1)}))},
+			skipped: "deps.dev unavailable: timeout",
+		},
+		{
+			// deps.dev saying it does not index the ecosystem is an answer, so the
+			// registry's clean record is the whole of what there is to know.
+			name: "deps.dev does not index the ecosystem, registry clean",
+			opts: []func(*Subject){withDefiniteB(SourceDepsDev, fmt.Errorf("deno: %w", depsdev.ErrUnsupported)),
+				withPackageB(packageB(model.NPM, "foo", releaseB{Version: "1.2.3", Published: dayB(1)}))},
+			want: 0,
 		},
 		{
 			name:    "package list without the version still reports package deprecation",

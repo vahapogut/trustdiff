@@ -176,6 +176,10 @@ type fakeAdvisoriesR struct {
 	counterR
 	results map[model.PackageRef][]advisory.Advisory
 	err     error
+	// lose names the refs this source cannot answer for. It answers the others and
+	// returns an *advisory.PartialError, the shape the OSV client has when one
+	// chunk of a batch fails and the rest came back.
+	lose    map[model.PackageRef]error
 	batches [][]model.PackageRef
 }
 
@@ -195,10 +199,21 @@ func (f *fakeAdvisoriesR) Advisories(ctx context.Context, refs []model.PackageRe
 		return nil, f.err
 	}
 	out := map[model.PackageRef][]advisory.Advisory{}
+	lost := &advisory.PartialError{Source: "osv", Refs: map[model.PackageRef]error{}}
 	for _, ref := range refs {
+		if err, ok := f.lose[ref]; ok {
+			if lost.Cause == nil {
+				lost.Cause = err
+			}
+			lost.Refs[ref] = err
+			continue
+		}
 		if advisories, ok := f.results[ref]; ok {
 			out[ref] = advisories
 		}
+	}
+	if len(lost.Refs) > 0 {
+		return out, lost
 	}
 	return out, nil
 }

@@ -16,10 +16,13 @@ import (
 // deps.dev flags with a MALICIOUS finding. It applies to every ecosystem and blocks
 // by default.
 //
-// The two sources are consulted independently. The check is skipped only when both
-// were unavailable; when one of them was, it runs on the other and the explanation
-// says which source could not be consulted, so a partial answer is never mistaken
-// for a full one. Data held for a source that is marked unavailable is ignored.
+// The two sources are consulted independently. When one of them found something the
+// check reports it and the explanation says which source could not be consulted, so
+// a partial answer is never mistaken for a full one. When neither found anything the
+// check passes only if both of them answered: a source that was an outage rather
+// than a definite answer (not indexed, not configured) was never asked, and the
+// check reports itself as skipped with that outage instead. Data held for a source
+// that is marked unavailable is ignored.
 //
 // Evidence keys:
 //
@@ -84,7 +87,7 @@ func (c maliciousAdvisory) Run(_ context.Context, s *Subject) Result {
 		}
 	}
 	if len(advisories) == 0 && len(findings) == 0 {
-		return Result{}
+		return cleanOrSkip(c, s, SourceOSV, SourceDepsDev)
 	}
 
 	evidence := map[string]any{}

@@ -104,14 +104,14 @@ func TestLowUsage(t *testing.T) {
 		{
 			name: "no count, deps.dev reports low usage",
 			ref:  "pypi:foo@1.0.0",
-			opts: []func(*Subject){withUnavailableB(SourceDownloads, registry.ErrUnsupported.Error()), withDepsDevB(&depsdev.VersionFacts{Found: true}, lowUsageFinding)},
+			opts: []func(*Subject){withDefiniteB(SourceDownloads, registry.ErrUnsupported), withDepsDevB(&depsdev.VersionFacts{Found: true}, lowUsageFinding)},
 			want: 1,
 			verify: func(t *testing.T, f *model.Finding) {
 				if f.Title != "deps.dev reports low usage" {
 					t.Errorf("title = %q", f.Title)
 				}
 				assertContainsB(t, "explanation", f.Explanation,
-					"downloads unavailable: not provided by this registry",
+					"downloads: not provided by this registry",
 					"deps.dev reports a LOW_USAGE finding (RISK_LOW): few dependents")
 				if got := evidenceB(t, f, "source"); got != SourceDepsDev {
 					t.Errorf("source = %s", got)
@@ -142,6 +142,15 @@ func TestLowUsage(t *testing.T) {
 			ref:  "pypi:foo@1.0.0",
 			opts: []func(*Subject){withDepsDevB(&depsdev.VersionFacts{Found: true}, depsdev.Finding{Type: "DEPRECATED"})},
 			want: 0,
+		},
+		{
+			// PyPI publishing no counts is an answer, so deps.dev's silence settles
+			// it. A request for the counts that failed is not: nothing was compared
+			// with the threshold.
+			name:    "count unavailable, deps.dev knows the version and reports nothing",
+			ref:     "npm:foo@1.0.0",
+			opts:    []func(*Subject){withUnavailableB(SourceDownloads, "timeout"), withDepsDevB(&depsdev.VersionFacts{Found: true})},
+			skipped: "downloads unavailable: timeout",
 		},
 		{
 			name:    "no count, deps.dev unavailable",

@@ -562,3 +562,29 @@ func TestLoaderVersionNotFound(t *testing.T) {
 		t.Errorf("error text = %q, want the ref in the message", err)
 	}
 }
+
+// A batch that answered some refs and lost others comes back as those answers plus
+// an *advisory.PartialError. Storing the batch error for every ref, as the loader
+// used to, reported an OSV outage for packages OSV had answered for, and every
+// check that reads OSV would then skip for them instead of saying what came back.
+func TestLoaderPrefetchPartialFailurePoisonsOnlyTheLostRefs(t *testing.T) {
+	adv := newFakeAdvisoriesR()
+	answered := model.MustParseRef("npm:lib@1.0.0")
+	lost := model.MustParseRef("npm:lib@1.1.0")
+	boom := errors.New("osv querybatch chunk failed")
+	adv.results[answered] = []advisory.Advisory{{ID: "MAL-1", Malicious: true}}
+	adv.lose = map[model.PackageRef]error{lost: boom}
+	l, _ := npmLoaderR(adv, nil)
+	l.Prefetch(context.Background(), []model.PackageRef{answered, lost})
+
+	got, err := l.Advisories(context.Background(), answered)
+	if err != nil || len(got) != 1 || !got[0].Malicious {
+		t.Errorf("Advisories(%s) = %v, %v; want the advisory the batch did answer", answered, got, err)
+	}
+	if _, err := l.Advisories(context.Background(), lost); !errors.Is(err, boom) {
+		t.Errorf("Advisories(%s) = %v, want the error that lost the ref", lost, err)
+	}
+	if adv.count("advisories") != 1 {
+		t.Errorf("advisory source called %d times, want 1: both answers were memoized by Prefetch", adv.count("advisories"))
+	}
+}

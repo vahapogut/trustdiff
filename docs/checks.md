@@ -6,6 +6,10 @@ Levels come from the policy. The defaults quoted in each section are what a run 
 
 A check never passes for lack of data. When a registry, OSV, deps.dev or the download counts could not be fetched, or when the registry does not record what the check needs, the check reports `skipped` with the reason, the human report lists it under the card, and the JSON report lists it in `skipped`. A version with no evaluated check gets the verdict `skipped`, not `ok`.
 
+A check that reads two sources holds to that even when one of them answered: if the other could not be reached and the one that did
+found nothing, the check reports `skipped` naming the source that was down, because half the evidence is not a clean version. A source
+that answered "I do not index this" is an answer, and the check goes on with what the other one said.
+
 A lockfile names a version once per place it installs it, and those places are one subject as long as they agree about where the
 version comes from and what guards it. A line that resolves the same version from somewhere else, or drops its hash, is a subject
 of its own reported on its own line, because that is a different install however the version reads.
@@ -394,7 +398,7 @@ allow:
 
 ## TD009 malicious-advisory
 
-**Detects.** A version that OSV lists under a malicious-package advisory (an id starting with `MAL-`, imported from the OpenSSF `malicious-packages` repository) or that deps.dev flags with a `MALICIOUS` finding. The two sources are consulted independently: the check is skipped only when both were unavailable; when one of them was, it runs on the other and the explanation says which source could not be consulted. Applies to every ecosystem and blocks by default.
+**Detects.** A version that OSV lists under a malicious-package advisory (an id starting with `MAL-`, imported from the OpenSSF `malicious-packages` repository) or that deps.dev flags with a `MALICIOUS` finding. The two sources are consulted independently: when one of them was unavailable it runs on the other and the explanation says which source could not be consulted, and when neither found anything it passes only if both of them answered, otherwise it is skipped naming the source that was down. Applies to every ecosystem and blocks by default.
 
 **Why it matters.** Once a compromise is public, the advisory is the cheapest signal there is, and it keeps protecting the people who install an old lockfile years later. Both packages of the event-stream incident carry advisories today, as does `plain-crypto-js` from the 2026 axios compromise ([MAL-2026-2306](https://osv.dev/vulnerability/MAL-2026-2306)). The limit is latency: an advisory exists only after someone found the package, which for axios took hours and for event-stream took weeks. The history-relative checks above are for the time in between; trustdiff does not try to beat commercial malware feeds at their own game.
 
@@ -471,7 +475,7 @@ An allow entry covers every finding of the check for that package, so keep the p
 
 ## TD011 deprecated-or-yanked
 
-**Detects.** A version the registry yanked or deprecated, a package deprecated or archived as a whole, or a version deps.dev marks deprecated. npm carries a per-version `deprecated` message, PyPI a per-release `yanked` flag with a reason, crates.io a per-version `yanked` flag with a `yank_message`. The registry and deps.dev are consulted independently like TD009. Applies to every ecosystem and warns by default.
+**Detects.** A version the registry yanked or deprecated, a package deprecated or archived as a whole, or a version deps.dev marks deprecated. npm carries a per-version `deprecated` message, PyPI a per-release `yanked` flag with a reason, crates.io a per-version `yanked` flag with a `yank_message`. The registry and deps.dev are consulted independently like TD009, and like TD009 it is skipped rather than passed when nothing fired and one of the two could not be reached. Applies to every ecosystem and warns by default.
 
 **Why it matters.** A yank is the registry's way of saying that a version should not be installed fresh: a broken build, a wrong dependency, a leaked secret or a compromise. A deprecation of the whole package says nobody maintains it, which is how event-stream got handed to a stranger in 2018 ([npm, 26 November 2018](https://blog.npmjs.org/post/180565383195/details-about-the-event-stream-incident)). Either way the version you are looking at is one its own maintainers moved away from.
 
@@ -514,7 +518,7 @@ allow:
 
 ## TD012 low-usage
 
-**Detects.** A package few people install: weekly downloads below `low-usage.min_weekly_downloads` (default 500). npm gives a weekly figure; crates.io gives 90-day recent downloads, reduced to a weekly figure; PyPI publishes no counts, so there the check uses a deps.dev `LOW_USAGE` finding when there is one and is skipped otherwise. Applies to every ecosystem and is `info` by default.
+**Detects.** A package few people install: weekly downloads below `low-usage.min_weekly_downloads` (default 500). npm gives a weekly figure; crates.io gives 90-day recent downloads, reduced to a weekly figure; PyPI publishes no counts, so there the check uses a deps.dev `LOW_USAGE` finding when there is one and is skipped otherwise. A count that is missing because the request for it failed is not the same thing: the check is then skipped even when deps.dev answered, since nothing was compared with the threshold. Applies to every ecosystem and is `info` by default.
 
 **Why it matters.** Low usage is not a problem by itself, but it is the common property of the packages that carried the payload in the incidents above: `flatmap-stream` had no users besides event-stream when it was added in 2018, and `plain-crypto-js` had none besides axios when it was added in 2026. It is also what makes a typosquat a typosquat. The count gives the other checks context, which is why the level is `info`, and it is one of the three reasons TD007 escalates a new dependency.
 

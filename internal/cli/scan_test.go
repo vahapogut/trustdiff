@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vahapogut/trustdiff/internal/checks"
 	"github.com/vahapogut/trustdiff/internal/model"
 )
 
@@ -437,5 +438,76 @@ func TestScanKeepsACopyThatInstallsSomethingElse(t *testing.T) {
 	if found["TD014"] != model.LevelWarn {
 		t.Errorf("TD014 = %s, want warn: nothing guards whatever that URL serves (findings %v, skipped %v)",
 			found["TD014"], found, nested.Skipped)
+	}
+}
+
+// TestScanSkipsAChecksWholeAnswerWhenOneSourceWasDown pins finding F4 of
+// docs/review-2026-09-10.md. A check that reads two sources and found nothing on
+// the one that answered has not cleared the version; it has read half the
+// evidence. Before the fix TD009, TD011 and TD012 returned an empty result there,
+// so they landed in evaluated, the report carried no trace of the outage, and
+// on_data_unavailable: fail exited 0 for a package nobody could ask OSV, deps.dev
+// or the download counts about.
+func TestScanSkipsAChecksWholeAnswerWhenOneSourceWasDown(t *testing.T) {
+	lock := readRegressionFixture(t, "f4-one-source-down", "package-lock.json")
+	tests := []struct {
+		name string
+		down []string
+		// want maps a check to the outage its skip reason has to name.
+		want map[string]string
+	}{
+		{
+			name: "osv and the download counts are down",
+			down: []string{checks.SourceOSV, checks.SourceDownloads},
+			want: map[string]string{
+				"TD009": "osv unavailable: connection refused",
+				"TD010": "osv unavailable: connection refused",
+				"TD012": "downloads unavailable: connection refused",
+			},
+		},
+		{
+			name: "deps.dev is down",
+			down: []string{checks.SourceDepsDev},
+			want: map[string]string{
+				"TD009": "deps.dev unavailable: connection refused",
+				"TD011": "deps.dev unavailable: connection refused",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := scanFixture(t)
+			down := map[string]bool{}
+			for _, source := range tt.down {
+				down[source] = true
+			}
+			useDownLoader(t, down)
+			writeFile(t, dir, "package-lock.json", lock)
+			writePolicy(t, "version: 1\non_data_unavailable: fail\n")
+
+			code, stdout, stderr := run(t, "--format", "json", "scan")
+			if code != ExitUnavailable {
+				t.Fatalf("exit = %d, want %d: a source nobody could ask is what on_data_unavailable: fail is for (stderr %q)\n%s",
+					code, ExitUnavailable, stderr, stdout)
+			}
+			rep := decodeReport(t, stdout)
+			s := subjectFor(t, &rep, "npm:trustdiff-fixture-lib@1.0.0")
+			if len(s.Findings) != 0 {
+				t.Fatalf("findings = %v, want none: the fixture is a clean release", s.Findings)
+			}
+			reasons := map[string]string{}
+			for _, sk := range s.Skipped {
+				reasons[sk.Check] = sk.Reason
+			}
+			for id, want := range tt.want {
+				if slices.Contains(s.Evaluated, id) {
+					t.Errorf("%s is evaluated although %s: a pass on half the evidence is not a pass", id, want)
+					continue
+				}
+				if !strings.Contains(reasons[id], want) {
+					t.Errorf("%s skipped with %q, want the outage %q", id, reasons[id], want)
+				}
+			}
+		})
 	}
 }

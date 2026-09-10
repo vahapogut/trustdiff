@@ -1,10 +1,12 @@
 package checks
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/vahapogut/trustdiff/internal/advisory"
 	"github.com/vahapogut/trustdiff/internal/advisory/depsdev"
+	"github.com/vahapogut/trustdiff/internal/advisory/osv"
 	"github.com/vahapogut/trustdiff/internal/model"
 	"github.com/vahapogut/trustdiff/internal/policy"
 )
@@ -148,8 +150,18 @@ func TestMaliciousAdvisory(t *testing.T) {
 			},
 		},
 		{
-			name: "osv unavailable, deps.dev clean",
-			opts: []func(*Subject){withUnavailableB(SourceOSV, "boom"), withDepsDevB(&depsdev.VersionFacts{Found: true})},
+			// Half the evidence was never gathered, so the version is not clean: it
+			// is unchecked, and the report has to say which source was down.
+			name:    "osv unavailable, deps.dev clean",
+			opts:    []func(*Subject){withUnavailableB(SourceOSV, "boom"), withDepsDevB(&depsdev.VersionFacts{Found: true})},
+			skipped: "osv unavailable: boom",
+		},
+		{
+			// A source that answered "I do not index this" is an answer, and the
+			// other source's silence is then the whole of what there is to know.
+			name: "osv does not index the ecosystem, deps.dev clean",
+			opts: []func(*Subject){withDefiniteB(SourceOSV, fmt.Errorf("jsr: %w", osv.ErrUnsupported)),
+				withDepsDevB(&depsdev.VersionFacts{Found: true})},
 			want: 0,
 		},
 		{
@@ -164,9 +176,11 @@ func TestMaliciousAdvisory(t *testing.T) {
 			},
 		},
 		{
-			name: "data of an unavailable source is ignored",
-			opts: []func(*Subject){withUnavailableB(SourceOSV, "boom"), withAdvisoriesB(mal1), withDepsDevB(&depsdev.VersionFacts{Found: true})},
-			want: 0,
+			// The advisory held for the down source produces no finding, and with
+			// nothing left the check reports the outage rather than a pass.
+			name:    "data of an unavailable source is ignored",
+			opts:    []func(*Subject){withUnavailableB(SourceOSV, "boom"), withAdvisoriesB(mal1), withDepsDevB(&depsdev.VersionFacts{Found: true})},
+			skipped: "osv unavailable: boom",
 		},
 		{
 			name:    "both unavailable",

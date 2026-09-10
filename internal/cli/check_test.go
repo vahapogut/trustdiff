@@ -32,8 +32,15 @@ type fakeLoader struct {
 	slow bool
 	// malicious makes the advisory source answer a MAL- advisory for maliciousRef.
 	malicious bool
+	// down names the data sources (checks.SourceOSV and its siblings) whose methods
+	// fail. The registry answering while OSV does not is the shape a check that
+	// reads two sources has to get right, and taking the whole loader down cannot
+	// express it.
+	down map[string]bool
 }
 
+// errRegistryDown is what an unreachable source returns: a transport failure,
+// which is an outage rather than an answer the source gave.
 var errRegistryDown = errors.New("connection refused")
 
 // slowDependency is the dependency whose lookups hang when fakeLoader.slow is set.
@@ -91,6 +98,9 @@ func (f *fakeLoader) Owners(context.Context, model.Ecosystem, string) ([]model.P
 }
 
 func (f *fakeLoader) Downloads(context.Context, model.Ecosystem, string) (int64, error) {
+	if f.down[checks.SourceDownloads] {
+		return -1, errRegistryDown
+	}
 	return 100000, nil
 }
 
@@ -104,6 +114,9 @@ var lockfileChecks = map[string]bool{"TD013": true, "TD014": true, "TD016": true
 var maliciousRef = model.MustParseRef("npm:trustdiff-fixture-lib@2.0.0")
 
 func (f *fakeLoader) Advisories(_ context.Context, ref model.PackageRef) ([]advisory.Advisory, error) {
+	if f.down[checks.SourceOSV] {
+		return nil, errRegistryDown
+	}
 	if f.malicious && ref == maliciousRef {
 		return []advisory.Advisory{{
 			ID:        "MAL-2026-9001",
@@ -117,6 +130,9 @@ func (f *fakeLoader) Advisories(_ context.Context, ref model.PackageRef) ([]advi
 }
 
 func (f *fakeLoader) DepsDev(context.Context, model.PackageRef) (*depsdev.VersionFacts, error) {
+	if f.down[checks.SourceDepsDev] {
+		return nil, errRegistryDown
+	}
 	return &depsdev.VersionFacts{Found: true}, nil
 }
 
@@ -136,11 +152,26 @@ func useFakeLoader(t *testing.T) time.Time {
 	return now
 }
 
+// useDownLoader swaps in a loader whose named data sources fail, keeping the
+// fixture the caller already set up. It is how a test says the registry answered
+// and one source of a check that reads two did not, which taking the whole loader
+// down cannot express.
+func useDownLoader(t *testing.T, down map[string]bool) {
+	t.Helper()
+	old := loaderFactory
+	loaderFactory = func(*App) (checks.Loader, error) { return &fakeLoader{now: fixtureNow, down: down}, nil }
+	t.Cleanup(func() { loaderFactory = old })
+}
+
+// fixtureNow is the instant every fixture run is pinned to, so a release a year
+// old stays a year old whenever the suite runs.
+var fixtureNow = time.Date(2026, time.September, 9, 12, 0, 0, 0, time.UTC)
+
 // fixtureClock pins TRUSTDIFF_NOW and isolates the policy lookup without touching
 // the loader, for tests that run the real one.
 func fixtureClock(t *testing.T) time.Time {
 	t.Helper()
-	now := time.Date(2026, time.September, 9, 12, 0, 0, 0, time.UTC)
+	now := fixtureNow
 	t.Setenv(nowEnv, now.Format(time.RFC3339))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // no user-level policy
 	chdir(t, t.TempDir())                    // no policy file: built-in defaults

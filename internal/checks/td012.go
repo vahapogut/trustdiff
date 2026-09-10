@@ -11,8 +11,10 @@ import (
 // download count is compared with the policy's min_weekly_downloads (default 500).
 // When the registry reports no count (Subject.Downloads is -1, which is always the
 // case for PyPI) the check falls back to a deps.dev LOW_USAGE finding. It is skipped
-// when neither is available, the normal outcome for PyPI without deps.dev. It applies
-// to every ecosystem and is info by default.
+// when neither is available, the normal outcome for PyPI without deps.dev, and also
+// when the count is missing because the request for it failed rather than because the
+// registry publishes none: a fallback that found nothing does not stand in for a
+// count nobody read. It applies to every ecosystem and is info by default.
 //
 // Evidence keys:
 //
@@ -79,7 +81,12 @@ func (c lowUsage) Run(_ context.Context, s *Subject) Result {
 	if s.DepsDev == nil && len(s.DepsDevFindings) == 0 {
 		return Skip(c.ID(), noCount+"; no deps.dev data for "+s.Ref.String())
 	}
-	return Result{}
+	// deps.dev was asked and reported nothing. That clears the package only when the
+	// missing count is the registry's own answer (PyPI publishes none) rather than a
+	// request that failed: a count nobody could compare with the threshold is not a
+	// threshold anything passed. deps.dev needs no naming here, because a failure of
+	// its own already returned above.
+	return cleanOrSkip(c, s, SourceDownloads)
 }
 
 // fromRegistry compares the registry's weekly count with the policy threshold.

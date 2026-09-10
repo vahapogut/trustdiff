@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -135,8 +136,9 @@ func (s *Subject) Skipped(source string) (string, bool) {
 }
 
 // outageReasons returns the reasons Skipped gives for the sources that could not
-// be consulted, leaving out definite answers, sorted by source. The runner uses
-// them to tell which skipped checks on_data_unavailable: fail should count.
+// be consulted, leaving out definite answers, together with the facets a registry
+// client could not gather, sorted. The runner uses them to tell which skipped
+// checks on_data_unavailable: fail should count.
 func (s *Subject) outageReasons() []string {
 	var out []string
 	for source, err := range s.Unavailable {
@@ -144,7 +146,36 @@ func (s *Subject) outageReasons() []string {
 			out = append(out, sourceProblem(source, err))
 		}
 	}
+	// A facet a registry client could not gather (a crate archive it could not
+	// inspect, a PyPI provenance lookup that failed, a JSR package record kept on
+	// another host) is the same gap as a source that did not answer, and the checks
+	// that need it skip with the reason recorded there. It is not in Unavailable, so
+	// it is collected here, or a run under on_data_unavailable: fail would exit 0
+	// for a version half of which was never read.
+	for _, v := range []*model.VersionInfo{s.Version, s.Previous, s.PreviousInBase} {
+		if v != nil {
+			out = append(out, unknownReasons(v.Unknown)...)
+		}
+	}
+	if s.Package != nil {
+		out = append(out, unknownReasons(s.Package.Unknown)...)
+	}
 	sort.Strings(out)
+	return out
+}
+
+// unknownReasons returns the reasons of an Unknown map, wording a facet recorded
+// without one the way the checks do. It has to be that same wording: the runner
+// matches a skipped reason against these with strings.Contains, so an empty string
+// here would match everything and the substitute is what the skip actually says.
+func unknownReasons(unknown map[string]string) []string {
+	out := make([]string, 0, len(unknown))
+	for _, reason := range unknown {
+		if reason == "" {
+			reason = unknownFacetReason
+		}
+		out = append(out, reason)
+	}
 	return out
 }
 
@@ -175,6 +206,25 @@ func definite(err error) bool {
 type Result struct {
 	Findings []model.Finding
 	Skipped  *model.Skipped
+}
+
+// cleanOrSkip is what a check returns when every source it read reported nothing.
+// That is a pass only when they all answered: a source that was an outage was never
+// asked, so the check reports itself as skipped with that outage as the reason, in
+// the order the caller names the sources. The wording matters twice over, because
+// the runner matches it against Subject.outageReasons, and that is how
+// on_data_unavailable: fail learns the source was down.
+func cleanOrSkip(c Check, s *Subject, sources ...string) Result {
+	var reasons []string
+	for _, source := range sources {
+		if err := s.Unavailable[source]; err != nil && !definite(err) {
+			reasons = append(reasons, sourceProblem(source, err))
+		}
+	}
+	if len(reasons) == 0 {
+		return Result{}
+	}
+	return Skip(c.ID(), strings.Join(reasons, "; "))
 }
 
 // Skip builds a Result that reports the check as skipped.

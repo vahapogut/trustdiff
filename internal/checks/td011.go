@@ -12,9 +12,12 @@ import (
 // package deprecated or archived as a whole, or a version deps.dev marks deprecated.
 // It applies to every ecosystem and warns by default.
 //
-// The registry and deps.dev are consulted independently, like TD009: the check is
-// skipped only when neither delivered anything; with one of them missing it runs on
-// the other and the explanation says so.
+// The registry and deps.dev are consulted independently, like TD009: with one of
+// them missing it runs on the other and the explanation says so, and it is skipped
+// when neither delivered anything. A version nothing fired for is a pass only when
+// both sources answered; when one of them was an outage the check is skipped with
+// that outage, because a yank nobody could ask about is not a version that was not
+// yanked.
 //
 // Evidence keys:
 //
@@ -125,7 +128,7 @@ func (c deprecatedOrYanked) Run(_ context.Context, s *Subject) Result {
 			// this tool never does.
 			return Skip(c.ID(), archivedUnknown)
 		}
-		return Result{}
+		return cleanOrSkip(c, s, SourceRegistry, SourceDepsDev)
 	}
 	evidence["signals"] = signals
 	switch {
