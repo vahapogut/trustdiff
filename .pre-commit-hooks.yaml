@@ -2,7 +2,7 @@
 #
 #   repos:
 #     - repo: https://github.com/vahapogut/trustdiff
-#       rev: v0.2.0
+#       rev: v0.5.0
 #       hooks:
 #         - id: trustdiff-diff
 #
@@ -23,9 +23,21 @@
   # diff reads the lockfiles from git itself, so the staged file names would only
   # be repeated arguments it does not accept.
   pass_filenames: false
-  # The names the parsers of this release handle, matched case-insensitively the
-  # way internal/lockfile detects them.
-  files: '(?i)(^|/)(package-lock\.json|pnpm-lock\.yaml|uv\.lock|Cargo\.lock)$'
+  # Every format the parsers of this release read, matched case-insensitively the
+  # way internal/lockfile detects them. It named four of the nine until v0.5.0, so a
+  # yarn.lock, bun.lock, deno.lock, poetry.lock or requirements file could change
+  # and the hook would never run: installed, green and not looking.
+  #
+  # This decides whether the hook runs, not what it reads. pass_filenames is false
+  # below and diff finds the lockfiles in git itself, so a pattern wider than the
+  # parsers costs one run that reports nothing while a narrower one costs the gate.
+  # That is why the requirements shapes are matched loosely here and precisely in
+  # internal/lockfile/pipreq: system-requirements.txt starts a run that says
+  # nothing, which is the cheap way to be wrong.
+  #
+  # internal/lockfile TestPreCommitHookRunsOnEveryFormatTheParsersRead builds the
+  # list from the registered parsers and fails when this line falls behind them.
+  files: '(?i)(^|/)(cargo\.lock|bun\.lock|deno\.lock|poetry\.lock|uv\.lock|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|[^/]*requirements[^/]*\.txt|requirements/[^/]+\.txt)$'
   stages: [pre-commit]
   # 3.2.0 is where the values of "stages" became the git hook names; before it
   # this hook would have to say "commit" instead of "pre-commit".
