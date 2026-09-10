@@ -293,17 +293,32 @@ implementation would return true for the empty string a missing secret expands
 to, and the guard would invert itself and try an authenticated push with no
 token on every release.
 
-### 6.3.1 What v0.4.0 did instead
+### 6.3.1 What v0.4.0 and v0.4.1 did instead
 
-v0.4.0 was released before the token existed, so its cask and manifest were put
-into the two repositories by hand rather than by the release job. They are the
+Neither release wrote its own cask or manifest. v0.4.0 was released before the
+token existed. v0.4.1 was released with the secret present but holding an empty
+value, which `isEnvSet` reads as unset, exactly as the paragraph above describes:
+the job logged `brew.skip_upload is set` and `scoop.skip_upload is true`, went
+green, and left both repositories serving v0.4.0.
+
+Both versions were put into the two repositories by hand instead. They are the
 files goreleaser generates, with every digest taken from the release's own
-`checksums.txt` after cosign verified it, and all six archives were downloaded
-from the URLs in those files and checked against them before either was
-committed. The commits are named the way goreleaser names its own, so the history
-reads the same once the job takes over.
+`checksums.txt` after cosign verified its signature against the release
+workflow's identity for that tag, and all six archives were downloaded from the
+URLs in those files and checked against them before either was committed. The
+commits are named the way goreleaser names its own, so the history reads the same
+once the job takes over.
 
-Nothing needs undoing. The first release with the token overwrites both files.
+Nothing needs undoing. The first release with a token that is actually there
+overwrites both files.
+
+**Check the log, not the secret list.** `gh secret list` shows a name, not a
+value, so a secret set to the empty string looks exactly like a working one. What
+tells the two apart is the job's own step header: GitHub prints
+`TAP_GITHUB_TOKEN: ***` for a secret that holds something and
+`TAP_GITHUB_TOKEN:` with nothing after it for one that does not. Read that line,
+or read for `skip_upload` in the goreleaser output, before assuming a green
+release published the tap.
 
 ### 6.4 What the first release with the token looks like
 
