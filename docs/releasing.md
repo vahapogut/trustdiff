@@ -48,7 +48,7 @@ Run these on the commit you intend to tag, with the working tree clean.
    the `rev:` in its header comment, which a reader copies into their own
    configuration. Bump it only when this release changes what the hook does, since
    it names the first release a reader can pin and get the current behavior from,
-   not the newest release that exists. It said `v0.2.0` until v0.6.0 widened the
+   not the newest release that exists. It said `v0.2.0` until v0.5.0 widened the
    `files` pattern from four formats to nine.
 8. Commit the changelog and readme edits as `chore(release): X.Y.Z`.
 
