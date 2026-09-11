@@ -474,11 +474,12 @@ var checkRules = []checkRule{
 	{
 		ID: "TD007", Name: "new-dependency-introduced",
 		Short: "Every runtime dependency the evaluated version declares that the previous release did not, or that the version the base lockfile locked did not.",
-		Full: "Every added dependency is reported on its own, so that a reviewed one can be allowed " +
-			"separately. A new dependency that is itself young, barely used or unknown to deps.dev is " +
-			"escalated, because a package that pulls in a payload usually pulls in a fresh one. A bump " +
-			"usually crosses more than one release, so a dependency the release before this one already " +
-			"declared is still new to a project upgrading from further back.",
+		Full: "Every added dependency is reported and escalated on its own. An allow entry names the " +
+			"version being evaluated, so it covers every dependency that version added. A new dependency " +
+			"that is itself young, barely used or unknown to deps.dev is escalated, because a package " +
+			"that pulls in a payload usually pulls in a fresh one. A bump usually crosses more than one " +
+			"release, so a dependency the release before this one already declared is still new to a " +
+			"project upgrading from further back.",
 	},
 	{
 		ID: "TD008", Name: "typosquat-suspect",

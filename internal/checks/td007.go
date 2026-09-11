@@ -17,7 +17,10 @@ import (
 // TD007 new-dependency-introduced reports every runtime dependency the evaluated
 // version declares and the previous version did not (brief section 4, the Axios
 // to plain-crypto-js pattern). Applies to every ecosystem; one finding per new
-// dependency, so an allow entry can cover a reviewed one. Each new dependency is
+// dependency, so each one is explained and escalated on its own. An allow entry is
+// matched against the subject, so it covers every dependency that version added
+// rather than one of them, and a pattern naming a dependency matches nothing. Each
+// new dependency is
 // inspected through the Loader and the finding is raised to block when the
 // dependency is young, has low usage or is unknown to deps.dev:
 //

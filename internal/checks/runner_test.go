@@ -298,6 +298,52 @@ func TestRunAllowEntrySuppressesFindings(t *testing.T) {
 	}
 }
 
+// An allow entry names a check and a package, and the package it is matched
+// against is the subject, so one entry covers every finding that check made about
+// that version. TD007 reports one finding per new dependency, and the docs read as
+// if an entry could cover one of them; it cannot, and a pattern naming the
+// dependency matches nothing at all, because the dependency is not the subject.
+// Finding F25 of docs/review-2026-09-10.md.
+func TestRunAllowEntryCoversEveryFindingOfACheck(t *testing.T) {
+	// Two findings from one check, the shape TD007 has for a version that added two
+	// dependencies.
+	twoDependencies := fakeCheckR{id: "TD007", name: "new-dependency-introduced"}
+	twoDependencies.run = func(_ context.Context, s *Subject) Result {
+		return Result{Findings: []model.Finding{
+			NewFinding(twoDependencies, s, "New dependency json5", "explanation", map[string]any{"dependency": "json5"}),
+			NewFinding(twoDependencies, s, "New dependency left-pad", "explanation", map[string]any{"dependency": "left-pad"}),
+		}}
+	}
+	tests := []struct {
+		name  string
+		allow policy.Pattern
+		want  []string
+	}{
+		{
+			name:  "an entry for the version covers both of its new dependencies",
+			allow: policy.MustParsePattern("npm:lib@1.0.0"),
+			want:  []string{},
+		},
+		{
+			name:  "an entry naming the new dependency covers nothing",
+			allow: policy.MustParsePattern("npm:json5"),
+			want:  []string{"TD007", "TD007"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newRunnerR(libLoaderR(), twoDependencies)
+			r.Policy = &policy.Policy{Version: 1, Allow: []policy.AllowEntry{
+				{Check: "new-dependency-introduced", Package: tt.allow, Reason: "reviewed"},
+			}}
+			out := r.Run(context.Background(), inputsR("npm:lib@1.0.0"))
+			if got := findingIDsR(&out[0]); !slices.Equal(got, tt.want) {
+				t.Errorf("findings = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRunCooldownExclude(t *testing.T) {
 	p := &policy.Policy{Version: 1, CooldownExclude: []policy.Pattern{policy.MustParsePattern("npm:@myorg/*")}}
 	loader := libLoaderR()
