@@ -3,8 +3,9 @@
 // a disk cache keyed by request with ETag and Last-Modified revalidation and a TTL
 // per entry, a per-host rate limiter (crates.io asks for one request per second),
 // retries with exponential backoff and jitter that honor Retry-After, one budget
-// for the response headers and a second for the body, an identifying User-Agent,
-// and the --offline and --no-cache modes.
+// for the response headers and a second for the body, redirects that must stay on
+// the host the caller named, an identifying User-Agent, and the --offline and
+// --no-cache modes.
 //
 // Get is the common case. Post exists for the batch query endpoints (OSV
 // querybatch, deps.dev versionbatch and findingsbatch), which are read-only
@@ -275,13 +276,64 @@ func New(opts Options) (*Client, error) { //nolint:gocritic // Options by value 
 		retries:       retries,
 		maxBody:       maxBodyBytes,
 		hostRPS:       hostRPS,
-		http:          &http.Client{Transport: transport},
+		http:          &http.Client{Transport: transport, CheckRedirect: checkRedirect(logger)},
 		log:           logger,
 		now:           now,
 		sleep:         sleepContext,
 		limiters:      map[string]*rate.Limiter{},
 		keys:          map[string]*sync.Mutex{},
 	}, nil
+}
+
+// maxRedirects bounds one request's redirect chain. A custom CheckRedirect replaces
+// the limit net/http would apply rather than adding to it (checked on Go 1.26 on
+// 2026-09-11: a policy that refused only past hop 25 followed 26), so the bound has
+// to live here. Nothing trustdiff fetches redirects at all, so five is already more
+// than any of it needs.
+const maxRedirects = 5
+
+// checkRedirect refuses a redirect that leaves the host the caller named. The cache
+// stores an entry under the URL that was requested, not the one that answered, and
+// the per-host rate limiter only ever saw the requested host, so a body fetched
+// from somewhere else would be written down and later served as that registry's
+// answer. A POST is worse: net/http replays the request body on a 307 or a 308, so
+// an OSV or deps.dev query would be handed to the redirect target (reproduced on Go
+// 1.26 on 2026-09-11).
+//
+// A hop that stays on the host and does not give up https is followed, so a
+// registry that starts normalizing a path does not break a scan. Nothing trustdiff
+// talks to redirects today: registry.npmjs.org, api.npmjs.org, crates.io,
+// static.crates.io, pypi.org, api.jsr.io, jsr.io, api.osv.dev, api.deps.dev,
+// raw.githubusercontent.com and hugovk.dev each answered directly on both the found
+// and the not-found path, checked 2026-09-11. crates.io does redirect
+// /api/v1/crates/<name>/<version>/download to static.crates.io, but the archive
+// client builds the static URL itself and never asks for that one.
+//
+// The host is the unit, not the registered domain, because the two moves a
+// registry could make across a domain, pypi.org to files.pythonhosted.org and
+// crates.io to static.crates.io, cross it anyway, so a domain rule would buy
+// nothing and give up the property being defended.
+//
+// http.ErrUseLastResponse hands the 3xx back rather than raising a transport error,
+// so a refusal reaches the caller as a StatusError naming the status, is not
+// retried, and is not cached.
+func checkRedirect(log *slog.Logger) func(*http.Request, []*http.Request) error {
+	return func(req *http.Request, via []*http.Request) error {
+		// net/http calls this only for a redirect, so via always holds at least the
+		// request that was answered with one.
+		first := via[0].URL
+		switch {
+		case !strings.EqualFold(req.URL.Host, first.Host):
+			log.Warn("refusing a redirect to another host", "from", first.String(), "to", req.URL.String())
+		case first.Scheme == "https" && req.URL.Scheme != "https":
+			log.Warn("refusing a redirect off https", "from", first.String(), "to", req.URL.String())
+		case len(via) > maxRedirects:
+			log.Warn("refusing a redirect chain that does not end", "from", first.String(), "hops", len(via))
+		default:
+			return nil
+		}
+		return http.ErrUseLastResponse
+	}
 }
 
 // Dir returns the cache directory the client reads and writes. It is empty for a

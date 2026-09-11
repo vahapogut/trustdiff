@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1386,5 +1387,140 @@ func TestCacheKeyIsStable(t *testing.T) {
 	}
 	if again := cacheKey("POST", "https://example.com/a", "*/*", hash1); again != p1 {
 		t.Fatalf("POST key not stable: %s vs %s", again, p1)
+	}
+}
+
+// A redirect that leaves the host the caller named is refused. The cache stores an
+// entry under the URL that was asked for and the rate limiter only saw that host,
+// so following it wrote another host's body down as this registry's answer.
+// Nothing trustdiff talks to redirects at all, checked 2026-09-11 on the found and
+// the not-found path of every host, so refusing costs nothing real. Finding F25 of
+// docs/review-2026-09-10.md.
+func TestGetRefusesACrossHostRedirect(t *testing.T) {
+	other := newTestServer(t, okHandler("BODY FROM THE OTHER HOST"))
+	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/x", http.StatusFound)
+	})
+	env := newTestEnv(t, ts, func(o *Options) { o.HostRPS[other.host(t)] = 10000 })
+	_, err := env.client.Get(context.Background(), ts.URL, Request{TTL: time.Minute})
+	var se *StatusError
+	if !errors.As(err, &se) || se.StatusCode != http.StatusFound {
+		t.Fatalf("err = %v, want a StatusError naming the 302", err)
+	}
+	if got := other.calls.Load(); got != 0 {
+		t.Errorf("the other host was asked %d times, want never", got)
+	}
+	if got := len(env.sleeps.recorded()); got != 0 {
+		t.Errorf("sleeps = %d, want none: a refused redirect is an answer, not a failure to retry", got)
+	}
+	if files := entryFiles(t, env.dir); len(files) != 0 {
+		t.Errorf("cache holds %v, want nothing stored under the URL that was asked for", files)
+	}
+}
+
+// A hop that stays on the host is still followed, so a registry that starts
+// normalizing a path does not break a scan, and the entry is keyed on the URL the
+// caller asked for.
+func TestGetFollowsASameHostRedirect(t *testing.T) {
+	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/old" {
+			http.Redirect(w, r, "/new", http.StatusFound)
+			return
+		}
+		okHandler("new body")(w, r)
+	})
+	env := newTestEnv(t, ts, nil)
+	ctx := context.Background()
+	resp, err := env.client.Get(ctx, ts.URL+"/old", Request{TTL: time.Minute})
+	if err != nil {
+		t.Fatalf("a same-host redirect must be followed: %v", err)
+	}
+	if got := string(resp.Body); got != "new body" {
+		t.Fatalf("body = %q, want the redirect target's", got)
+	}
+	calls := ts.calls.Load()
+	again, err := env.client.Get(ctx, ts.URL+"/old", Request{TTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !again.FromCache || string(again.Body) != "new body" || ts.calls.Load() != calls {
+		t.Errorf("second Get: from cache %t, body %q, calls %d then %d; want the cached answer and no request",
+			again.FromCache, again.Body, calls, ts.calls.Load())
+	}
+}
+
+// A custom CheckRedirect replaces net/http's ten-hop limit rather than adding to
+// it, checked on Go 1.26 on 2026-09-11, so the policy carries its own bound and a
+// loop on one host ends there rather than at the header budget.
+func TestGetStopsARedirectLoop(t *testing.T) {
+	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/loop", http.StatusFound)
+	})
+	env := newTestEnv(t, ts, func(o *Options) { o.Retries = -1 })
+	_, err := env.client.Get(context.Background(), ts.URL+"/loop", Request{})
+	var se *StatusError
+	if !errors.As(err, &se) || se.StatusCode != http.StatusFound {
+		t.Fatalf("err = %v, want a StatusError naming the 302", err)
+	}
+	if got := ts.calls.Load(); got > maxRedirects+1 {
+		t.Errorf("server calls = %d, want at most %d", got, maxRedirects+1)
+	}
+}
+
+// A POST is worse than a GET: net/http replays the request body on a 307, so an OSV
+// or deps.dev query would be handed to whatever host the redirect named. Reproduced
+// with the default policy on Go 1.26 on 2026-09-11.
+func TestPostIsNotReplayedToAnotherHost(t *testing.T) {
+	other := newTestServer(t, okHandler(`{"ok":true}`))
+	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/x", http.StatusTemporaryRedirect)
+	})
+	env := newTestEnv(t, ts, func(o *Options) { o.HostRPS[other.host(t)] = 10000 })
+	_, err := env.client.Post(context.Background(), ts.URL, []byte(`{"query":"lodash"}`), Request{})
+	var se *StatusError
+	if !errors.As(err, &se) || se.StatusCode != http.StatusTemporaryRedirect || se.Method != http.MethodPost {
+		t.Fatalf("err = %v, want a StatusError naming the POST and the 307", err)
+	}
+	if got := other.calls.Load(); got != 0 {
+		t.Errorf("the other host received the query %d times, want never", got)
+	}
+}
+
+// The policy itself, with no server: the host is the unit, not the registered
+// domain, and https is never given up.
+func TestCheckRedirectPolicy(t *testing.T) {
+	policy := checkRedirect(slog.New(slog.DiscardHandler))
+	req := func(raw string) *http.Request {
+		t.Helper()
+		u, err := url.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &http.Request{URL: u}
+	}
+	tests := []struct {
+		name     string
+		from, to string
+		hops     int
+		want     error
+	}{
+		{"another path on the same host", "https://registry.npmjs.org/a", "https://registry.npmjs.org/b", 1, nil},
+		{"the same host spelled in another case", "https://registry.npmjs.org/a", "https://Registry.NPMJS.org/b", 1, nil},
+		{"another host on the same domain", "https://registry.npmjs.org/a", "https://static.npmjs.org/a", 1, http.ErrUseLastResponse},
+		{"another port on one address", "http://127.0.0.1:8080/a", "http://127.0.0.1:9090/a", 1, http.ErrUseLastResponse},
+		{"off https on one host", "https://registry.npmjs.org/a", "http://registry.npmjs.org/a", 1, http.ErrUseLastResponse},
+		{"onto https on one host", "http://127.0.0.1:8080/a", "https://127.0.0.1:8080/a", 1, nil},
+		{"a chain that does not end", "https://registry.npmjs.org/a", "https://registry.npmjs.org/b", maxRedirects + 1, http.ErrUseLastResponse},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			via := make([]*http.Request, tt.hops)
+			for i := range via {
+				via[i] = req(tt.from)
+			}
+			if got := policy(req(tt.to), via); !errors.Is(got, tt.want) {
+				t.Errorf("policy = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
