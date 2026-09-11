@@ -297,7 +297,7 @@ Exit code 0 (no blocking findings).
 In a workflow, write SARIF instead and let code scanning put those findings on the diff:
 
 ```yaml
-- uses: vahapogut/trustdiff@3c439fb43a1d913fba7ee8639ddeb824bc05ba27 # v0.5.0
+- uses: vahapogut/trustdiff@a381630fdbc9070b9e4d8d5a2f430d22c29df98b # v0.5.0
   with:
     fail-on: block
     format: sarif
