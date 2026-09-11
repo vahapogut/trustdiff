@@ -74,6 +74,18 @@ func WithAPIBase(base string) Option {
 	return func(c *Client) { c.api = strings.TrimRight(base, "/") }
 }
 
+// WithNow supplies the clock the download window is measured against. The
+// default is time.Now, and a nil function is ignored. A run whose clock is
+// pinned passes it here, so the week the counts cover is the run's week and the
+// same run repeated reads the same figure.
+func WithNow(now func() time.Time) Option {
+	return func(c *Client) {
+		if now != nil {
+			c.now = now
+		}
+	}
+}
+
 // WithLogger sets the logger for diagnostics. The default discards them.
 func WithLogger(l *slog.Logger) Option {
 	return func(c *Client) {
@@ -89,8 +101,9 @@ type Client struct {
 	registry string
 	api      string
 	log      *slog.Logger
-	// now is the clock the download window is measured against. It is a field so
-	// that a test can pin it; nothing but a test replaces it.
+	// now is the clock the download window is measured against. WithNow replaces
+	// it so that a run whose clock is pinned sums the week that run is about; the
+	// default is time.Now.
 	now func() time.Time
 }
 

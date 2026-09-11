@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -27,9 +28,10 @@ import (
 	"github.com/vahapogut/trustdiff/internal/version"
 )
 
-// loaderFactory builds the data loader for a run. Tests replace it with a fake so
-// the command can be exercised without registries.
-var loaderFactory = func(a *App) (checks.Loader, error) { return a.defaultLoader() }
+// loaderFactory builds the data loader for a run from the run's clock, zero when
+// the run has none of its own. Tests replace it with a fake so the command can be
+// exercised without registries.
+var loaderFactory = func(a *App, now time.Time) (checks.Loader, error) { return a.defaultLoader(now) }
 
 // checkTimeout bounds one check for one subject; zero means checks.DefaultTimeout.
 // Tests shorten it to exercise the timed-out path.
@@ -88,7 +90,7 @@ func (a *App) runCheck(cmd *cobra.Command, args []string) error {
 		return Usagef("%v", err)
 	}
 
-	loader, err := loaderFactory(a)
+	loader, err := loaderFactory(a, now)
 	if err != nil {
 		return Usagef("%v", err)
 	}
@@ -324,6 +326,19 @@ func (a *App) applyCooldownOverride(pol *policy.Policy) (*policy.Policy, string)
 	return out, policy.FormatDuration(d)
 }
 
+// jsrOptions are the JSR client's options for this run. JSR is the one registry
+// that measures a window against a clock of its own: its download counts are daily
+// buckets the client sums over the week ending now. The run's clock is passed only
+// when the run has one, because a zero time would put that week in the year one and
+// report every package as never installed.
+func jsrOptions(log *slog.Logger, now time.Time) []jsr.Option {
+	opts := []jsr.Option{jsr.WithLogger(log)}
+	if !now.IsZero() {
+		opts = append(opts, jsr.WithNow(func() time.Time { return now }))
+	}
+	return opts
+}
+
 // runClock parses the TRUSTDIFF_NOW override, or returns the zero time so the
 // runner uses the wall clock.
 func runClock(value string) (time.Time, error) {
@@ -356,8 +371,9 @@ func dataUnavailableFails(pol *policy.Policy, outcomes []checks.Outcome) bool {
 }
 
 // defaultLoader wires the real registries and advisory sources behind one HTTP
-// cache client configured from the global flags.
-func (a *App) defaultLoader() (checks.Loader, error) {
+// cache client configured from the global flags. now is the run's clock, already
+// parsed by the caller, and zero when the run did not override it.
+func (a *App) defaultLoader(now time.Time) (checks.Loader, error) {
 	hc, err := httpcache.New(httpcache.Options{
 		Offline:   a.Opts.Offline,
 		NoCache:   a.Opts.NoCache,
@@ -372,7 +388,7 @@ func (a *App) defaultLoader() (checks.Loader, error) {
 		model.NPM:   npm.New(hc, npm.WithLogger(log)),
 		model.PyPI:  pypi.New(hc, pypi.WithLogger(log)),
 		model.Cargo: crates.New(hc, crates.WithLogger(log)),
-		model.JSR:   jsr.New(hc, jsr.WithLogger(log)),
+		model.JSR:   jsr.New(hc, jsrOptions(log, now)...),
 	}
 	var osvOpts []osv.Option
 	if a.Opts.Offline {

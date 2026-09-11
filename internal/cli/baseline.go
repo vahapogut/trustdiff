@@ -88,7 +88,7 @@ func (a *App) runBaseline(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	loader, err := loaderFactory(a)
+	loader, err := loaderFactory(a, st.now)
 	if err != nil {
 		return Usagef("%v", err)
 	}
@@ -168,7 +168,7 @@ func (a *App) evaluateWithBaseline(ctx context.Context, cmd *cobra.Command, st *
 	if err != nil {
 		return err
 	}
-	loader, err := loaderFactory(a)
+	loader, err := loaderFactory(a, st.now)
 	if err != nil {
 		return Usagef("%v", err)
 	}

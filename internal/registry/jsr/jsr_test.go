@@ -166,8 +166,9 @@ func (s *server) requests(uri string) int {
 }
 
 // newClient wires a client to the fixture server through a fresh cache
-// directory. Both bases point at the one server, as explained on routes.
-func newClient(t *testing.T, srv *server) *Client {
+// directory. Both bases point at the one server, as explained on routes. Extra
+// options are appended, so a caller can pin the clock.
+func newClient(t *testing.T, srv *server, opts ...Option) *Client {
 	t.Helper()
 	h, err := httpcache.New(httpcache.Options{
 		Dir:       t.TempDir(),
@@ -177,13 +178,21 @@ func newClient(t *testing.T, srv *server) *Client {
 	if err != nil {
 		t.Fatalf("httpcache.New: %v", err)
 	}
-	return New(h, WithRegistryBase(srv.URL), WithAPIBase(srv.URL))
+	return New(h, append([]Option{WithRegistryBase(srv.URL), WithAPIBase(srv.URL)}, opts...)...)
 }
 
 func fixtureClient(t *testing.T) (*Client, *server) {
 	t.Helper()
 	srv := newServer(t, fixtureRoutes(t))
 	return newClient(t, srv), srv
+}
+
+// fixtureClientAt is fixtureClient with the run's clock pinned, which is what a
+// run under TRUSTDIFF_NOW gives the client.
+func fixtureClientAt(t *testing.T, when time.Time) (*Client, *server) {
+	t.Helper()
+	srv := newServer(t, fixtureRoutes(t))
+	return newClient(t, srv, WithNow(func() time.Time { return when })), srv
 }
 
 // clientWithout serves every fixture except the named paths, which answer 404,
@@ -751,12 +760,47 @@ func TestOwners(t *testing.T) {
 
 // TestDownloads checks the weekly figure the client reduces the daily buckets to,
 // and the two answers that are not a number.
+// The clock the week is measured against is the run's, not the machine's: a run
+// under TRUSTDIFF_NOW reads the same week today and next month, and that is what
+// makes its report reproducible. Finding F25 of docs/review-2026-09-10.md.
+func TestWithNowGivesTheClientTheRunsClock(t *testing.T) {
+	t.Run("the same fixture reads differently from two clocks", func(t *testing.T) {
+		srv := newServer(t, fixtureRoutes(t))
+		inside := newClient(t, srv, WithNow(func() time.Time { return at(t, "2026-09-09T23:00:00Z") }))
+		outside := newClient(t, srv, WithNow(func() time.Time { return at(t, "2026-11-20T00:00:00Z") }))
+		first, err := inside.Downloads(context.Background(), "@std/fs")
+		if err != nil {
+			t.Fatalf("Downloads: %v", err)
+		}
+		second, err := outside.Downloads(context.Background(), "@std/fs")
+		if err != nil {
+			t.Fatalf("Downloads: %v", err)
+		}
+		if first == 0 || second != 0 {
+			t.Errorf("weekly downloads = %d at the recorded week and %d two months later, want a total and then zero", first, second)
+		}
+	})
+
+	// A client built without the option keeps the wall clock, so a run that pins
+	// nothing is unchanged, and a nil function is not one a caller meant to pass.
+	t.Run("the default is the wall clock", func(t *testing.T) {
+		srv := newServer(t, fixtureRoutes(t))
+		for _, c := range []*Client{newClient(t, srv), newClient(t, srv, WithNow(nil))} {
+			if c.now == nil {
+				t.Fatal("the client has no clock")
+			}
+			if got, want := c.now().Year(), time.Now().Year(); got != want {
+				t.Errorf("the clock reads year %d, want the wall clock's %d", got, want)
+			}
+		}
+	})
+}
+
 func TestDownloads(t *testing.T) {
 	t.Run("weekly total", func(t *testing.T) {
-		client, _ := fixtureClient(t)
 		// The window ends at the run's clock, so the test pins it to the day the
 		// fixture was recorded.
-		client.now = func() time.Time { return time.Date(2026, 9, 9, 23, 0, 0, 0, time.UTC) }
+		client, _ := fixtureClientAt(t, time.Date(2026, 9, 9, 23, 0, 0, 0, time.UTC))
 		got, err := client.Downloads(context.Background(), "@std/fs")
 		if err != nil {
 			t.Fatalf("Downloads: %v", err)
@@ -775,8 +819,7 @@ func TestDownloads(t *testing.T) {
 	// report an old week's total as this week's, which is exactly the reading the
 	// low-usage check must not be given.
 	t.Run("stale buckets do not count as this week", func(t *testing.T) {
-		client, _ := fixtureClient(t)
-		client.now = func() time.Time { return time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC) }
+		client, _ := fixtureClientAt(t, time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC))
 		got, err := client.Downloads(context.Background(), "@std/fs")
 		if err != nil {
 			t.Fatalf("Downloads: %v", err)

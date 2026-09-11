@@ -171,7 +171,7 @@ func useFakeLoader(t *testing.T) time.Time {
 	t.Helper()
 	now := fixtureClock(t)
 	old := loaderFactory
-	loaderFactory = func(*App) (checks.Loader, error) { return &fakeLoader{now: now}, nil }
+	loaderFactory = func(*App, time.Time) (checks.Loader, error) { return &fakeLoader{now: now}, nil }
 	t.Cleanup(func() { loaderFactory = old })
 	return now
 }
@@ -181,7 +181,9 @@ func useFakeLoader(t *testing.T) time.Time {
 func useIntroducingLoader(t *testing.T) {
 	t.Helper()
 	old := loaderFactory
-	loaderFactory = func(*App) (checks.Loader, error) { return &fakeLoader{now: fixtureNow, introduced: true}, nil }
+	loaderFactory = func(*App, time.Time) (checks.Loader, error) {
+		return &fakeLoader{now: fixtureNow, introduced: true}, nil
+	}
 	t.Cleanup(func() { loaderFactory = old })
 }
 
@@ -192,7 +194,7 @@ func useIntroducingLoader(t *testing.T) {
 func useDownLoader(t *testing.T, down map[string]bool) {
 	t.Helper()
 	old := loaderFactory
-	loaderFactory = func(*App) (checks.Loader, error) { return &fakeLoader{now: fixtureNow, down: down}, nil }
+	loaderFactory = func(*App, time.Time) (checks.Loader, error) { return &fakeLoader{now: fixtureNow, down: down}, nil }
 	t.Cleanup(func() { loaderFactory = old })
 }
 
@@ -294,7 +296,7 @@ func TestCheckReportsFindingsAndExitCodes(t *testing.T) {
 func TestCheckMaliciousAdvisoryBlocks(t *testing.T) {
 	now := fixtureClock(t)
 	old := loaderFactory
-	loaderFactory = func(*App) (checks.Loader, error) { return &fakeLoader{now: now, malicious: true}, nil }
+	loaderFactory = func(*App, time.Time) (checks.Loader, error) { return &fakeLoader{now: now, malicious: true}, nil }
 	t.Cleanup(func() { loaderFactory = old })
 
 	code, stdout, stderr := run(t, "check", maliciousRef.String())
@@ -368,7 +370,7 @@ func TestCheckUsageErrors(t *testing.T) {
 	// the run, not after a full pass over the registries.
 	var loaders int
 	inner := loaderFactory
-	loaderFactory = func(a *App) (checks.Loader, error) { loaders++; return inner(a) }
+	loaderFactory = func(a *App, now time.Time) (checks.Loader, error) { loaders++; return inner(a, now) }
 	t.Cleanup(func() { loaderFactory = inner })
 	tests := []struct {
 		name string
@@ -653,7 +655,7 @@ func TestCheckManifestThatCannotBeRead(t *testing.T) {
 	useFakeLoader(t)
 	var loaders int
 	inner := loaderFactory
-	loaderFactory = func(a *App) (checks.Loader, error) { loaders++; return inner(a) }
+	loaderFactory = func(a *App, now time.Time) (checks.Loader, error) { loaders++; return inner(a, now) }
 	t.Cleanup(func() { loaderFactory = inner })
 
 	tests := []struct {
@@ -815,7 +817,7 @@ func TestCheckExit3WhenPolicySaysFail(t *testing.T) {
 // counts as unavailable data whatever the reason says.
 func TestCheckExit3OnTimedOutCheck(t *testing.T) {
 	now := useFakeLoader(t)
-	loaderFactory = func(*App) (checks.Loader, error) { return &fakeLoader{now: now, slow: true}, nil }
+	loaderFactory = func(*App, time.Time) (checks.Loader, error) { return &fakeLoader{now: now, slow: true}, nil }
 	oldTimeout := checkTimeout
 	checkTimeout = 50 * time.Millisecond
 	t.Cleanup(func() { checkTimeout = oldTimeout })
