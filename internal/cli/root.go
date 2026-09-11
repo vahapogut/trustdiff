@@ -99,7 +99,7 @@ error, 3 a required data source was unavailable and the policy says to fail.`,
 	f.BoolVar(&a.Opts.NoCache, "no-cache", false, "ignore the disk cache for this run")
 	f.StringVar(&a.Opts.Cooldown, "cooldown", "", "override the policy cooldown, for example 3d, 12h, 1w or P3D")
 	f.StringVar(&a.Opts.FailOn, "fail-on", "block", "lowest finding level that makes the exit code 1: block, warn or never")
-	f.IntVar(&a.Opts.Jobs, "jobs", 8, "maximum concurrent registry requests")
+	f.IntVar(&a.Opts.Jobs, "jobs", 8, "maximum packages worked on at once; the request rate is bounded per registry host, not by this")
 	f.BoolVar(&a.Opts.NoColor, "no-color", false, "disable colored output (NO_COLOR and non-terminal output also disable it)")
 	f.BoolVarP(&a.Opts.Verbose, "verbose", "v", false, "log progress and diagnostics to stderr")
 

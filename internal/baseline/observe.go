@@ -27,9 +27,10 @@ type Signals interface {
 	Owners(ctx context.Context, eco model.Ecosystem, name string) ([]model.Publisher, error)
 }
 
-// defaultJobs bounds the concurrent lookups when the caller names no limit. It
-// matches the default of --jobs, so observing a project is as gentle on a
-// registry as evaluating it.
+// defaultJobs bounds how many packages are looked up at once when the caller
+// names no limit. It matches the default of --jobs, which bounds the same thing
+// for check, diff and scan. Neither bounds the request rate: that is set per
+// registry host, in internal/httpcache Options.HostRPS.
 const defaultJobs = 8
 
 // Observe reads the trust signals of every ref and returns one entry per package,
