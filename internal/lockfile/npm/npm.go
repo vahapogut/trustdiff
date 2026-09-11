@@ -292,8 +292,14 @@ func addEntry(lf *lockfile.Lockfile, l *locked, direct map[string]bool, hosts *l
 		lf.Drop("%s: no package name in the path and none declared", l.key)
 		return
 	}
-	// devOptional means the package is reached both as a development dependency
-	// and as an optional one, so it is both.
+	// devOptional does not mean dev. npm sets it on a package reached both through
+	// the dev tree and through an optional edge of a dependency that is not dev,
+	// which is why omitting dev alone leaves it installed: arborist removes such a
+	// node only when dev and optional are both pruned. npm's package-lock.json
+	// documentation says an optional dependency of a dev dependency gets dev and
+	// optional instead, so the three never overlap. Dev here means only needed to
+	// develop or test the project, which is false for such a package, and Optional
+	// is true because an install may still leave it out.
 	lf.Add(lockfile.Entry{
 		Ref: model.PackageRef{
 			Ecosystem: model.NPM,
@@ -304,7 +310,7 @@ func addEntry(lf *lockfile.Lockfile, l *locked, direct map[string]bool, hosts *l
 		Resolved:  l.pkg.Resolved,
 		Integrity: l.pkg.Integrity,
 		Direct:    topLevel(l.key) && direct[asked],
-		Dev:       l.pkg.Dev || l.pkg.DevOptional,
+		Dev:       l.pkg.Dev,
 		Optional:  l.pkg.Optional || l.pkg.DevOptional,
 		Bundled:   l.pkg.InBundle,
 		Line:      l.line,

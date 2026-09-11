@@ -35,7 +35,8 @@ scoped name, a nested duplicate, a git dependency, a tarball URL, a `file:` path
 a workspace link, a bundled entry with no integrity, an extraneous entry, an
 aliased dependency (`"widgets-v1": "npm:@acme/widgets@^1"`, whose key is the alias
 and whose `name` is what is installed), a dependency declared by the workspace
-member rather than by the root, and the `dev`, `optional` and `devOptional` flags.
+member rather than by the root, and the `dev`, `optional` and `devOptional` flags, the last of which is optional
+and not dev: npm leaves such a package installed when dev alone is omitted.
 Its `integrity` values are the sha512 of `<name>@<version>`, so a new entry's hash
 is `printf '%s' '<name>@<version>' | openssl dgst -sha512 -binary | openssl base64 -A`.
 

@@ -213,12 +213,14 @@ func TestParseEdgeCasesReadsEveryField(t *testing.T) {
 			Line:      99,
 		},
 		{
-			// devOptional is both.
+			// devOptional is not dev. npm sets it on a package reached through the dev
+			// tree and through an optional edge of something that is not dev, so
+			// omitting dev alone leaves it installed. Finding F25 of
+			// docs/review-2026-09-10.md.
 			Ref:       model.MustParseRef("npm:swc-like@1.1.1"),
 			Source:    lockfile.SourceRegistry,
 			Resolved:  "https://registry.npmjs.org/swc-like/-/swc-like-1.1.1.tgz",
 			Integrity: "sha512-WWvkOIy8dnB8ejd8aXS9SVOwfKHdQ4rWUFU3SXi43BEm2Lsl+MFrQrM8yY8xGxeF6M36S6EsEpiZSLYgc7cgxQ==",
-			Dev:       true,
 			Optional:  true,
 			Line:      105,
 		},
@@ -430,7 +432,10 @@ func TestParseLargeLockfile(t *testing.T) {
 			},
 		},
 		{
-			name: "direct dependency that is both dev and optional",
+			// npm marks this one devOptional, which is not dev: Superset reaches it
+			// through its dev tree and through an optional edge of something that is
+			// not dev, so an install that omits dev still installs it.
+			name: "direct dependency npm marks devOptional",
 			key:  "node_modules/@swc/core",
 			ref:  "npm:@swc/core@1.16.1",
 			want: lockfile.Entry{
@@ -438,7 +443,6 @@ func TestParseLargeLockfile(t *testing.T) {
 				Resolved:  "https://registry.npmjs.org/@swc/core/-/core-1.16.1.tgz",
 				Integrity: "sha512-nUaeu91O5QZKrQdaDCHd402ogUIoNOOjpkZNq0UomWK0G6gDaGmLhvddF1/3BXf5O8aLyo6ZPY/aMDWvaJQ/hg==",
 				Direct:    true,
-				Dev:       true,
 				Optional:  true,
 			},
 		},
