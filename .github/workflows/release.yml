@@ -108,6 +108,13 @@ jobs:
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
 
       - name: Attest build provenance
+        # The archives and checksums.txt are the subjects; the SPDX documents beside
+        # them are left out on purpose rather than forgotten. goreleaser hashes every
+        # artifact it uploads into checksums.txt, the SBOMs included (v0.4.1's file
+        # lists all six .spdx.json entries), and checksums.txt is the one artifact
+        # cosign signs, so a changed SBOM is already detectable through that
+        # signature. Add "dist/*.spdx.json" below when something starts verifying an
+        # SBOM's provenance directly, which nothing this project ships does today.
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
