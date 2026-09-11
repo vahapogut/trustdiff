@@ -11,13 +11,20 @@
 //
 //	GET https://registry.npmjs.org/<name>                               full packument, TTL 1 h
 //	GET https://api.npmjs.org/downloads/point/last-week/<name>          weekly downloads, TTL 1 h
-//	GET https://api.npmjs.org/downloads/point/last-week/<a>,<b>,...     bulk downloads, at most 128 unscoped names, TTL 1 h
 //
 // A scoped name is sent as @scope%2Fname to the registry and as @scope/name to
 // the downloads API, which is how its documentation spells it (both spellings
-// were answered on 2026-09-09). The bulk endpoint refuses scoped names with HTTP
-// 400 (verified the same day), so BulkDownloads looks them up one by one. A 404
-// from either API is registry.ErrNotFound.
+// were answered on 2026-09-09). A 404 from either API is registry.ErrNotFound.
+//
+// The counts API also answers many names in one request, and this client does
+// not use that form. It takes at most 128 unscoped names and refuses scoped ones
+// with HTTP 400: checked live on 2026-09-11, 128 names answered 200 and 129
+// answered {"error":"exceeded max bulk size of 128"}, and "isarray,@sigstore/bundle"
+// answered 400. In the largest lockfile this repository records, the Superset
+// frontend, 891 of its 2,353 names are scoped. A method that batched the rest was
+// written before the loader existed, was never reachable from it, and was deleted
+// in 0.5.0 rather than kept as code nothing called; these numbers are here so that
+// wiring it back in starts from what the endpoint really does.
 //
 // Names are sent exactly as given, case included. The registry rejects
 // uppercase in new names but legacy mixed-case packages are still served under
@@ -76,7 +83,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -113,10 +119,6 @@ const (
 	// downloadsTTL is the freshness of a download count; the counts API updates
 	// once a day, so an hour loses nothing.
 	downloadsTTL = httpcache.DefaultTTL
-
-	// bulkLimit is the most names one bulk downloads request may carry; verified
-	// 2026-09-09 against download-counts.md ("limited to at most 128 packages").
-	bulkLimit = 128
 
 	// packumentAccept selects the full packument. The abbreviated document served
 	// for application/vnd.npm.install-v1+json lacks time and _npmUser. Verified
@@ -323,109 +325,10 @@ func (c *Client) Downloads(ctx context.Context, name string) (int64, error) {
 	return *doc.Downloads, nil
 }
 
-// BulkDownloads returns the weekly download count of every name the counts API
-// knows, keyed by canonical name, for a caller that warms a whole run at once.
-// Unscoped names share bulk requests of at most bulkLimit names each, in the
-// order given; scoped names, which the bulk endpoint refuses, and a leftover
-// single name, which it would answer in the point shape, go through Downloads.
-// A name the API does not know (null in a bulk answer, 404 from the point
-// endpoint) is left out rather than failing the call, so a missing key means
-// unknown. Any other failure aborts the call.
-func (c *Client) BulkDownloads(ctx context.Context, names []string) (map[string]int64, error) {
-	var bulk, single []string
-	seen := make(map[string]bool, len(names))
-	for _, raw := range names {
-		name, err := canonicalName(raw)
-		if err != nil {
-			return nil, err
-		}
-		if seen[name] {
-			continue
-		}
-		seen[name] = true
-		if strings.HasPrefix(name, "@") {
-			single = append(single, name)
-		} else {
-			bulk = append(bulk, name)
-		}
-	}
-	out := make(map[string]int64, len(seen))
-	for _, chunk := range chunks(bulk, bulkLimit) {
-		if len(chunk) == 1 {
-			single = append(single, chunk[0])
-			continue
-		}
-		if err := c.bulkChunk(ctx, chunk, out); err != nil {
-			return nil, err
-		}
-	}
-	for _, name := range single {
-		n, err := c.Downloads(ctx, name)
-		if errors.Is(err, registry.ErrNotFound) {
-			c.log.Debug("npm downloads unknown", "package", name)
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		out[name] = n
-	}
-	return out, nil
-}
-
-// bulkChunk asks the bulk endpoint for one chunk of unscoped names and adds the
-// counts it knows to out. Shape verified 2026-09-09: an object keyed by name
-// whose values are point objects, or null for a name the API does not know
-// ({"isarray":{"downloads":174862265,"package":"isarray","start":"2026-08-31",
-// "end":"2026-09-06"},"trustdiff-no-such-package-9f3a1c":null}); a request
-// naming only unknown packages still answers 200.
-func (c *Client) bulkChunk(ctx context.Context, names []string, out map[string]int64) error {
-	// Unscoped names contain only URL-safe characters and the commas must stay
-	// literal, so the segment is joined without escaping.
-	u := c.downloads + "/downloads/point/last-week/" + strings.Join(names, ",")
-	resp, err := c.http.Get(ctx, u, httpcache.Request{TTL: downloadsTTL})
-	if err != nil {
-		return fmt.Errorf("npm: bulk downloads: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("npm: bulk downloads: unexpected status %d", resp.StatusCode)
-	}
-	var doc map[string]*pointDoc
-	if err := json.Unmarshal(resp.Body, &doc); err != nil {
-		return fmt.Errorf("npm: bulk downloads: decoding response: %w", err)
-	}
-	known := 0
-	for _, name := range names {
-		point := doc[name]
-		if point == nil || point.Downloads == nil {
-			c.log.Debug("npm downloads unknown", "package", name)
-			continue
-		}
-		out[name] = *point.Downloads
-		known++
-	}
-	c.log.Debug("npm bulk downloads", "asked", len(names), "known", known, "from_cache", resp.FromCache)
-	return nil
-}
-
-// pointDoc is the point endpoint's answer and the value of one bulk entry.
-// Shape verified 2026-09-09:
+// pointDoc is the point endpoint's answer. Shape verified 2026-09-09:
 // {"downloads":174862265,"start":"2026-08-31","end":"2026-09-06","package":"isarray"}.
 type pointDoc struct {
 	Downloads *int64 `json:"downloads"`
-}
-
-// chunks splits names into slices of at most n, keeping their order.
-func chunks(names []string, n int) [][]string {
-	out := make([][]string, 0, (len(names)+n-1)/n)
-	for len(names) > n {
-		out = append(out, names[:n])
-		names = names[n:]
-	}
-	if len(names) > 0 {
-		out = append(out, names)
-	}
-	return out
 }
 
 // IsSecurityHolding reports whether a version list describes a security holding

@@ -37,8 +37,7 @@ var fixtureRoutes = map[string]string{
 	"/flatmap-stream":                    "flatmap-stream.json",
 	"/JSONStream":                        "JSONStream.json",
 	"/downloads/point/last-week/isarray": "downloads-isarray.json",
-	"/downloads/point/last-week/@sigstore/bundle":                    "downloads-sigstore-bundle.json",
-	"/downloads/point/last-week/isarray,event-stream," + unknownName: "downloads-bulk.json",
+	"/downloads/point/last-week/@sigstore/bundle": "downloads-sigstore-bundle.json",
 }
 
 // fixtureServer serves the recorded fixtures and remembers every escaped path
@@ -586,85 +585,6 @@ func TestDownloads(t *testing.T) {
 	}
 }
 
-func TestBulkDownloads(t *testing.T) {
-	fs := newFixtureServer(t)
-	c := newClient(t, fs, t.TempDir(), false)
-	ctx := context.Background()
-
-	// Unscoped names share one bulk request in first-seen order, duplicates are
-	// asked once, the scoped name goes through the point endpoint and the
-	// unknown name (null in the bulk answer) is left out.
-	got, err := c.BulkDownloads(ctx, []string{"isarray", "event-stream", unknownName, "@sigstore/bundle", "isarray"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]int64{"isarray": 174862265, "event-stream": 5619167, "@sigstore/bundle": 7347502}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("BulkDownloads = %v, want %v", got, want)
-	}
-	if n := fs.requests("/downloads/point/last-week/isarray,event-stream," + unknownName); n != 1 {
-		t.Errorf("bulk path requested %d times, want 1; paths: %v", n, fs.seen())
-	}
-	if n := fs.requests("/downloads/point/last-week/@sigstore/bundle"); n != 1 {
-		t.Errorf("scoped point path requested %d times, want 1; paths: %v", n, fs.seen())
-	}
-
-	// A single unscoped name would be answered in the point shape, so it is sent
-	// as a point request; a scoped name the API does not know is left out too.
-	got, err = c.BulkDownloads(ctx, []string{"isarray", "@trustdiff/" + unknownName})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := map[string]int64{"isarray": 174862265}; !reflect.DeepEqual(got, want) {
-		t.Errorf("BulkDownloads(single) = %v, want %v", got, want)
-	}
-	if n := fs.requests("/downloads/point/last-week/isarray"); n != 1 {
-		t.Errorf("point path requested %d times, want 1; paths: %v", n, fs.seen())
-	}
-
-	// Nothing to ask means nothing asked.
-	before := len(fs.seen())
-	got, err = c.BulkDownloads(ctx, nil)
-	if err != nil || len(got) != 0 {
-		t.Errorf("BulkDownloads(nil) = %v, %v, want an empty map", got, err)
-	}
-	if after := len(fs.seen()); after != before {
-		t.Errorf("BulkDownloads(nil) made %d requests", after-before)
-	}
-
-	// An invalid name fails before any request; a bulk answer that is not a 200
-	// (the fixture server answers 404 for a chunk it does not know) is an error.
-	if _, err := c.BulkDownloads(ctx, []string{"isarray", "bad name"}); err == nil {
-		t.Error("no error for an invalid name")
-	}
-	_, err = c.BulkDownloads(ctx, []string{"trustdiff-unknown-a", "trustdiff-unknown-b"})
-	if err == nil || errors.Is(err, registry.ErrNotFound) {
-		t.Errorf("error for an unexpected bulk status = %v, want a plain error", err)
-	}
-}
-
-func TestChunks(t *testing.T) {
-	tests := []struct {
-		name  string
-		names []string
-		n     int
-		want  [][]string
-	}{
-		{"empty", nil, 2, [][]string{}},
-		{"below the limit", []string{"a"}, 2, [][]string{{"a"}}},
-		{"exactly the limit", []string{"a", "b"}, 2, [][]string{{"a", "b"}}},
-		{"one over", []string{"a", "b", "c"}, 2, [][]string{{"a", "b"}, {"c"}}},
-		{"two full", []string{"a", "b", "c", "d"}, 2, [][]string{{"a", "b"}, {"c", "d"}}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := chunks(tt.names, tt.n); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("chunks(%v, %d) = %v, want %v", tt.names, tt.n, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestNotFoundPackage(t *testing.T) {
 	fs := newFixtureServer(t)
 	c := newClient(t, fs, t.TempDir(), false)
@@ -792,9 +712,6 @@ func TestCacheTTLs(t *testing.T) {
 	if _, err := c.Downloads(ctx, "isarray"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.BulkDownloads(ctx, []string{"isarray", "event-stream", unknownName}); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := c.Versions(ctx, unknownName); !errors.Is(err, registry.ErrNotFound) {
 		t.Fatalf("Versions(unknown) error = %v, want ErrNotFound", err)
 	}
@@ -803,8 +720,7 @@ func TestCacheTTLs(t *testing.T) {
 	want := map[string]string{
 		"/isarray":                           "1h0m0s",
 		"/downloads/point/last-week/isarray": "1h0m0s",
-		"/downloads/point/last-week/isarray,event-stream," + unknownName: "1h0m0s",
-		"/" + unknownName: "1h0m0s",
+		"/" + unknownName:                    "1h0m0s",
 	}
 	if got := readCacheTTLs(t, dir, fs.URL); !reflect.DeepEqual(got, want) {
 		t.Errorf("cache TTLs = %v, want %v", got, want)

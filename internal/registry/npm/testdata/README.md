@@ -57,12 +57,11 @@ the file, which is why the list of recordings is the last section.)
   rejecting uppercase, and `jsonstream` is an unrelated package (latest 1.0.3
   on 2026-09-09), so the client must send the spelling it was given; the test
   server answers the lowercase path with the not-found body.
-- Download counts, downloads-isarray.json, downloads-sigstore-bundle.json and
-  downloads-bulk.json: the point endpoint for a plain and a scoped name (the
-  scoped one requested with its slash intact, as the download-counts
-  documentation shows) and one bulk answer holding two known names and `null`
-  for an unknown one. The bulk endpoint refuses scoped names with HTTP 400, so
-  there is no recording for that; the client never sends them in bulk.
+- Download counts, downloads-isarray.json and downloads-sigstore-bundle.json:
+  the point endpoint for a plain and a scoped name, the scoped one requested
+  with its slash intact, as the download-counts documentation shows. The client
+  asks for one name per request. The bulk form of the endpoint is described in
+  the package comment and not recorded here, because nothing requests it.
 - Not found, not-found.json and downloads-not-found.json: the 404 bodies of both
   APIs, served by the test server for every path it does not know.
 
@@ -77,5 +76,4 @@ the file, which is why the list of recordings is the last section.)
 - `downloads-sigstore-bundle.json`: GET https://api.npmjs.org/downloads/point/last-week/@sigstore/bundle (HTTP 200, 90 bytes, recorded 2026-09-09)
 - `not-found.json`: GET https://registry.npmjs.org/trustdiff-no-such-package-9f3a1c (HTTP 404, 21 bytes, recorded 2026-09-09)
 - `downloads-not-found.json`: GET https://api.npmjs.org/downloads/point/last-week/trustdiff-no-such-package-9f3a1c (HTTP 404, 62 bytes, recorded 2026-09-09)
-- `downloads-bulk.json`: GET https://api.npmjs.org/downloads/point/last-week/isarray,event-stream,trustdiff-no-such-package-9f3a1c (HTTP 200, 237 bytes, recorded 2026-09-09)
 - `JSONStream.json`: GET https://registry.npmjs.org/JSONStream (HTTP 200, 93357 bytes, recorded 2026-09-09)
