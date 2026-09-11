@@ -65,9 +65,12 @@ inputs:
   base:
     description: >-
       Git ref or commit to compare against. Leave it empty to let trustdiff use
-      the merge-base of HEAD with origin/main. On a pull request pass
-      ${{ github.event.pull_request.base.sha }} and check out with
-      fetch-depth: 0, so the base commit is in the clone.
+      the merge-base of HEAD with origin/main. On a pull request pass the
+      github.event.pull_request.base.sha of that event, as an expression in your
+      own workflow, and check out with fetch-depth: 0, so the base commit is in
+      the clone. The braces are left off in this sentence because the runner
+      evaluates an expression it finds in a description, where no event exists,
+      and refuses to load the action at all.
     required: false
     default: ""
   policy:
@@ -128,8 +131,8 @@ runs:
         # below and the default of the version input.
         pinned_version=v0.5.0
 
-        # An empty version is the default, not an error. A caller writing
-        # version: ${{ inputs.trustdiff_version }} sends the empty string when that
+        # An empty version is the default, not an error. A caller who passes the
+        # value of a variable of their own sends the empty string when that
         # variable is unset, and an input the caller did not mean to set should get
         # what leaving it out gets rather than a message about a tag shape.
         version="$VERSION"

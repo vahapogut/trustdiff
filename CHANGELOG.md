@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- The GitHub Action loads at all. The `base` input's description carried `${{ github.event.pull_request.base.sha }}` as an example, and a runner evaluates every expression it finds in a manifest's inputs while loading it, where no event exists, so every use of `vahapogut/trustdiff` failed with `Unrecognized named-value: 'github'` before a single step of it ran, on every runner, in every release since v0.4.0. The action self-test that shipped in 0.5.0 caught it the first time it was dispatched, which is exactly what it was written for. The description now names the field without the braces, a comment inside a `run:` block no longer carries an expression either, and a test reads the manifest and fails on an expression in any description or script. Pin the action at a commit after this one rather than at the v0.5.0 tag.
+
 ## [0.5.0] - 2026-09-12
 
 The P1, P2 and P3 sections of an independent review of 0.4.0, closed in order, with

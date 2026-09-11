@@ -116,6 +116,53 @@ func TestActionSelfTestRunsTheLocalActionEverywhere(t *testing.T) {
 }
 
 // The pinned route quietly becomes the cosign route when the version asked for is
+// The manifest is a template the runner parses before it runs anything, and it
+// evaluates every expression it finds in the inputs and the outputs it converts.
+// An expression naming the github context there is not an example somebody reads:
+// it is an expression where that context does not exist, and the action fails to
+// load with "Unrecognized named-value: 'github'" on every runner and for every
+// caller. Every release from v0.4.0 carried one in the base input's description,
+// and the self-test of finding F21 caught it the first time it ran. The same
+// applies to a run: script, where this file's own rules say no value is ever
+// interpolated: a comment inside one is interpolated like everything else.
+func TestActionManifestKeepsExpressionsOutOfTextTheRunnerEvaluates(t *testing.T) {
+	var manifest struct {
+		Inputs map[string]struct {
+			Description string `yaml:"description"`
+		} `yaml:"inputs"`
+		Outputs map[string]struct {
+			Description string `yaml:"description"`
+		} `yaml:"outputs"`
+		Runs struct {
+			Steps []struct {
+				Name string `yaml:"name"`
+				Run  string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"runs"`
+	}
+	if err := yaml.Unmarshal(repoFile(t, "action.yml"), &manifest); err != nil {
+		t.Fatalf("action.yml: %v", err)
+	}
+	if len(manifest.Inputs) == 0 || len(manifest.Outputs) == 0 || len(manifest.Runs.Steps) == 0 {
+		t.Fatal("action.yml decoded to nothing, so this test would pass on an empty file")
+	}
+	for name, in := range manifest.Inputs {
+		if strings.Contains(in.Description, "${{") {
+			t.Errorf("the %s input's description holds an expression, which the runner evaluates while loading the manifest: %s", name, in.Description)
+		}
+	}
+	for name, out := range manifest.Outputs {
+		if strings.Contains(out.Description, "${{") {
+			t.Errorf("the %s output's description holds an expression: %s", name, out.Description)
+		}
+	}
+	for _, step := range manifest.Runs.Steps {
+		if strings.Contains(step.Run, "${{") {
+			t.Errorf("the %q step interpolates an expression into its script; every value reaches the shell through env:", step.Name)
+		}
+	}
+}
+
 // not the one the table covers, and it says so only in a notice. That makes the two
 // values in action.yml a pair that has to move together at every release, which is
 // exactly the kind of pair that does not.
