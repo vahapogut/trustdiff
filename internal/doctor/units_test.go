@@ -26,6 +26,7 @@ func TestUnitsWriteTheSameDurationEachManagersWay(t *testing.T) {
 		{Minutes, "4320"},
 		{Seconds, "259200"},
 		{ISO8601, "P3D"},
+		{ISO8601Days, "P3D"},
 		{Words, "3 days"},
 	}
 	for _, tt := range tests {
@@ -56,6 +57,32 @@ func TestUnitsRoundUp(t *testing.T) {
 	}
 	if got := Minutes.Format(90 * time.Second); got != "2" {
 		t.Errorf("90 seconds in minutes = %q, want 2", got)
+	}
+}
+
+// pip documents its wait as a duration in days, "P3D", and names no finer unit, so
+// what a fix writes for pip is whole days however short the cooldown is. Reading
+// stays wider than writing: a file that already says PT12H is judged as twelve
+// hours rather than called a value pip cannot read. Finding F25 of
+// docs/review-2026-09-10.md.
+func TestISO8601DaysWritesWholeDays(t *testing.T) {
+	for _, tt := range []struct {
+		d    time.Duration
+		want string
+	}{
+		{threeDays, "P3D"},
+		{3*day + 12*time.Hour, "P4D"},
+		{90 * time.Minute, "P1D"},
+	} {
+		if got := ISO8601Days.Format(tt.d); got != tt.want {
+			t.Errorf("Format(%s) = %q, want %q", tt.d, got, tt.want)
+		}
+	}
+	if got, err := ISO8601Days.Parse("PT12H"); err != nil || got != 12*time.Hour {
+		t.Errorf("Parse(PT12H) = %s, %v, want 12h", got, err)
+	}
+	if _, err := ISO8601Days.Parse("3d"); err == nil {
+		t.Error("3d parsed as an ISO 8601 duration")
 	}
 }
 

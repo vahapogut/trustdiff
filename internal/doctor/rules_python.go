@@ -79,12 +79,12 @@ var pipUploadedPriorTo = &Rule{
 		{Name: "pip.conf", Format: configfile.FormatINI, Key: configfile.Key{"install", "uploaded-prior-to"}},
 		{Name: "pip.ini", Format: configfile.FormatINI, Key: configfile.Key{"install", "uploaded-prior-to"}},
 	},
-	Desired:  MinimumAge{Unit: ISO8601},
+	Desired:  MinimumAge{Unit: ISO8601Days},
 	Level:    model.LevelWarn,
 	Docs:     "https://pip.pypa.io/en/stable/cli/pip_install/",
-	Verified: "2026-09-09",
+	Verified: "2026-09-12",
 	Fixable:  true,
-	Note:     "pip reads its configuration from the machine, the user or the virtual environment, so a pip.conf committed to a repository does nothing until PIP_CONFIG_FILE names it. In CI, pass --uploaded-prior-to P3D or set PIP_UPLOADED_PRIOR_TO. pip 26.0 accepted an absolute date only; the relative form arrived in 26.1, and it applies only where the index reports upload times.",
+	Note:     "pip reads its configuration from the machine, the user or the virtual environment, so a pip.conf committed to a repository does nothing until PIP_CONFIG_FILE names it. In CI, pass --uploaded-prior-to P3D or set PIP_UPLOADED_PRIOR_TO. pip 26.0 accepted an absolute date only; the relative form arrived in 26.1, and it applies only where the index reports upload times. pip documents that form as a duration in days, so a wait written here is rounded up to whole days; a shorter one already in the file is read as it stands.",
 }
 
 // Hashes are what make a Python install reproducible, and require-hashes is what

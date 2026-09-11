@@ -13,7 +13,8 @@ import (
 // The units the package managers count a minimum release age in. They disagree,
 // which is the whole reason this file exists: the same three days is 3 for npm,
 // 4320 for pnpm and Yarn, 259200 for Bun, "P3D" for Deno and pip, and "3 days" for
-// uv and Renovate. A number alone therefore says nothing, and a scorecard that
+// uv and Renovate. Deno and pip share a spelling and not a unit: Deno documents
+// the whole of ISO 8601 and pip documents days. A number alone therefore says nothing, and a scorecard that
 // compared numbers would call 10080 seconds in bunfig.toml a week when it is under
 // three hours.
 //
@@ -28,8 +29,13 @@ var (
 	Minutes Unit = countUnit{name: "minutes", per: time.Minute}
 	// Seconds is Bun's unit.
 	Seconds Unit = countUnit{name: "seconds", per: time.Second}
-	// ISO8601 is Deno's and pip's, written P3D or PT72H.
+	// ISO8601 is Deno's, written P3D or PT72H.
 	ISO8601 Unit = isoUnit{}
+	// ISO8601Days is pip's: the same spelling in whole days. pip documents the
+	// relative form as "a duration in days (e.g., 'P3D')" and names no finer unit,
+	// read from its install reference on 2026-09-12, so a wait written for pip is
+	// rounded up to a whole day rather than spelled in hours.
+	ISO8601Days Unit = isoDaysUnit{}
 	// Words is what uv and Renovate write: "3 days", "24 hours", "1 week".
 	Words Unit = wordUnit{}
 )
@@ -93,6 +99,24 @@ func (isoUnit) Format(d time.Duration) string {
 		return fmt.Sprintf("P%dD", d/(24*time.Hour))
 	}
 	return fmt.Sprintf("PT%dH", ceilDiv(d, time.Hour))
+}
+
+// isoDaysUnit is an ISO 8601 duration in whole days, which is the form pip
+// documents. Reading is wider than writing on purpose: a file that already says
+// PT12H is read as twelve hours and judged against the policy, because reporting a
+// value as unreadable is a claim about pip this tool cannot make from a reference
+// that simply does not mention the form.
+type isoDaysUnit struct{}
+
+func (isoDaysUnit) Name() string { return "an ISO 8601 duration in days" }
+
+// Parse reads any ISO 8601 duration, the way Deno's unit does.
+func (isoDaysUnit) Parse(text string) (time.Duration, error) { return ISO8601.Parse(text) }
+
+// Format writes whole days, rounded up: three days and a half is P4D and ninety
+// minutes is P1D, since a day is the shortest wait pip documents.
+func (isoDaysUnit) Format(d time.Duration) string {
+	return fmt.Sprintf("P%dD", ceilDiv(d, 24*time.Hour))
 }
 
 // wordUnit is the "3 days" spelling uv and Renovate take.

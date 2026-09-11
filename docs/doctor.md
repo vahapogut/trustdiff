@@ -121,7 +121,7 @@ releases.
 | DR042 | Deno | `lock` | `deno.json` | boolean or object | | warn |
 | DR050 | uv | `exclude-newer` | `pyproject.toml`, `uv.toml` | words or a cutoff | 0.9.17 | warn |
 | DR051 | uv | `audit.malware-check` | `pyproject.toml`, `uv.toml` | boolean | 0.11.31 | info |
-| DR060 | pip | `uploaded-prior-to` | `pip.conf` | ISO 8601 | 26.1 | warn |
+| DR060 | pip | `uploaded-prior-to` | `pip.conf` | ISO 8601, whole days | 26.1 | warn |
 | DR061 | pip | `require-hashes` | `pip.conf` | boolean | | info |
 | DR070 | Poetry | `solver.min-release-age` | `poetry.toml` | days | 2.4.0 | warn |
 | DR080 | Cargo | none yet | | | | info |
@@ -206,6 +206,10 @@ packages and is a key of its own.
 committed to a repository does nothing until `PIP_CONFIG_FILE` names it. In CI, pass
 `--uploaded-prior-to P3D` or set `PIP_UPLOADED_PRIOR_TO`. pip 26.0 accepted an
 absolute date only, and the wait applies only where the index reports upload times.
+pip documents the relative form as a duration in days, `P3D`, and names no shorter
+unit, so a wait written here is rounded up to whole days: a twelve hour cooldown is
+written `P1D`. A shorter duration already in the file is read as it stands and
+judged against the policy.
 
 **Poetry reads `poetry.toml`, not `pyproject.toml`**, which is the mistake worth
 catching: every other Poetry setting a person remembers lives in `pyproject.toml`.
