@@ -90,7 +90,7 @@
           "enum": ["npm", "pypi", "cargo", "deno", "jsr"]
         },
         "name": {
-          "description": "Package name in the registry's canonical spelling: lowercase for npm, PEP 503 normalized for pypi, the registered spelling for cargo, which allocates a name case-insensitively and treats - and _ as one character. Scoped npm and jsr names keep their @scope/ prefix.",
+          "description": "Package name in the registry's canonical spelling: exactly as npm and jsr spell it, because npm serves two names that differ only in case as two packages; PEP 503 normalized for pypi; the registered spelling for cargo, which allocates a name case-insensitively and treats - and _ as one character. Scoped npm and jsr names keep their @scope/ prefix.",
           "type": "string",
           "pattern": "^[^\\s]+$"
         },
