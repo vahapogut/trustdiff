@@ -296,6 +296,17 @@ func (rn *run) forEach(n int, fn func(i int)) {
 // advisory checks to run.
 func (rn *run) resolve(ctx context.Context, in *Input) resolution {
 	ref := in.Ref
+	if ref.Ecosystem == model.NPM {
+		if problem := model.NPMNameProblem(ref.Name); problem != "" {
+			// A name npm's own grammar refuses cannot be on the registry, so there is
+			// nothing to ask about it, and asking would put the name into a request
+			// URL, where a "?" starts a query and a ".." is resolved away. It is an
+			// answer, not an outage: the checks that read a source skip with it, the
+			// ones that read the lockfile entry still run and exotic-source reports
+			// the entry, and on_data_unavailable is not involved.
+			return resolution{ref: ref, skip: "not a valid npm name: " + problem}
+		}
+	}
 	list, err := rn.loader.Versions(ctx, ref.Ecosystem, ref.Name)
 	if err != nil {
 		if ref.Version != "" {

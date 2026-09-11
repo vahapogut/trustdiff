@@ -52,6 +52,13 @@ func ParseRef(s string) (PackageRef, error) {
 			return PackageRef{}, fmt.Errorf("invalid ref %q: package name %q contains a slash", s, name)
 		}
 	}
+	// An npm name is held to npm's own grammar, so a name the registry could never
+	// hold is a usage error here rather than a request later.
+	if ecosystem == NPM {
+		if problem := NPMNameProblem(name); problem != "" {
+			return PackageRef{}, fmt.Errorf("invalid ref %q: not a valid npm name: %s", s, problem)
+		}
+	}
 	// A trailing "@" (anything after the scope marker) means a version was intended but not given.
 	if version == "" && strings.LastIndex(rest, "@") > 0 {
 		return PackageRef{}, fmt.Errorf("invalid ref %q: empty version after @", s)

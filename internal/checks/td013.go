@@ -30,6 +30,14 @@ import (
 // npm's own lockfile bundles 677 of its 1009 entries, and a line for each would bury
 // everything else in the report.
 //
+// An npm entry whose name npm's own grammar refuses is reported too, at the level
+// the policy sets and never capped at info. A name like that cannot be on the
+// registry, so whatever the entry installed came from somewhere else under a name
+// no registry could have given it; the runner asks no source about it, so this is
+// the one check with anything to say. Neither a monorepo nor a bundling package
+// manager writes a name like this, which is why the bundled exception below does
+// not apply to it.
+//
 // A directory and an unstated origin are reported at info instead, whatever level
 // the policy sets for the check. Neither is the signal this check exists for. A path
 // entry is what a monorepo writes for its own packages: ripgrep 14.1.1's Cargo.lock
@@ -48,6 +56,8 @@ import (
 //	source    where the entry was resolved from: git, url, path or unknown
 //	resolved  the location as the lockfile records it, absent when the file states none
 //	lockfile  the lockfile the entry came from, absent when the subject carries no location
+//	signal    invalid-name when the finding is about the name rather than the source
+//	name_rule the rule of npm's name grammar the name breaks, in npm's own words
 
 type exoticSource struct{}
 
@@ -72,6 +82,11 @@ func (c exoticSource) Run(_ context.Context, s *Subject) Result {
 	if s.Lock == nil {
 		return Skip(c.ID(), lockEntryMissing(s))
 	}
+	if s.Ref.Ecosystem == model.NPM {
+		if problem := model.NPMNameProblem(s.Ref.Name); problem != "" {
+			return Result{Findings: []model.Finding{c.impossibleName(s, problem)}}
+		}
+	}
 	if s.Lock.Bundled {
 		// A bundled dependency has no source of its own: its bytes travel inside the
 		// archive of the package that carries it, and that package's entry is where
@@ -95,6 +110,21 @@ func (c exoticSource) Run(_ context.Context, s *Subject) Result {
 		f.Level = min(f.Level, model.LevelInfo)
 	}
 	return Result{Findings: []model.Finding{f}}
+}
+
+// impossibleName reports an npm entry whose name npm's own grammar refuses. It is
+// reported at the level the policy sets for the check, whatever the entry's
+// source, because the name alone says the entry did not come from the registry.
+func (c exoticSource) impossibleName(s *Subject, problem string) model.Finding {
+	evidence := map[string]any{
+		"signal":    "invalid-name",
+		"name_rule": problem,
+		"source":    string(entrySource(s.Lock)),
+	}
+	addLockEvidence(evidence, s)
+	explanation := fmt.Sprintf("%s locks %s, and that name cannot exist on the registry: npm's own name grammar refuses it (%s). Whatever the entry installed did not come from the npm registry under this name, so none of the registry's protections apply to it. trustdiff sent the name to no server, because a name like this carries meaning into a request URL: a \"?\" starts a query, a \"#\" ends the path and a \"..\" is resolved away.",
+		lockfileNoun(s), s.Ref, problem)
+	return NewFinding(c, s, "name cannot exist on the registry", explanation, evidence)
 }
 
 // reportedAtInfo reports whether a source is one of the two this check states

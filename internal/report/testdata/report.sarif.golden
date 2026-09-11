@@ -159,7 +159,7 @@
                 "text": "A lockfile entry that does not come from the ecosystem's registry: a git repository, a tarball or archive URL, a directory on the machine, or an origin the file does not state."
               },
               "fullDescription": {
-                "text": "The entry resolves from a git repository, a tarball or archive URL, a directory on the machine, or an origin the file does not state, so the registry's protections and the registry checks in this list do not apply to it. A git or URL entry blocks by default, because what it installs is whatever that location serves at install time; a directory and an unstated origin are reported at info, because a workspace member looks exactly like them."
+                "text": "The entry resolves from a git repository, a tarball or archive URL, a directory on the machine, or an origin the file does not state, so the registry's protections and the registry checks in this list do not apply to it. A git or URL entry blocks by default, because what it installs is whatever that location serves at install time; a directory and an unstated origin are reported at info, because a workspace member looks exactly like them. An npm entry whose name npm's own grammar refuses is reported at the policy's level as well: the registry cannot hold such a name, so whatever the entry installed came from somewhere else."
               },
               "helpUri": "https://github.com/vahapogut/trustdiff/blob/main/docs/checks.md#td013-exotic-source"
             },

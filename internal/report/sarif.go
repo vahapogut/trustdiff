@@ -526,7 +526,9 @@ var checkRules = []checkRule{
 			"machine, or an origin the file does not state, so the registry's protections and the registry " +
 			"checks in this list do not apply to it. A git or URL entry blocks by default, because what it " +
 			"installs is whatever that location serves at install time; a directory and an unstated origin " +
-			"are reported at info, because a workspace member looks exactly like them.",
+			"are reported at info, because a workspace member looks exactly like them. An npm entry " +
+			"whose name npm's own grammar refuses is reported at the policy's level as well: the registry " +
+			"cannot hold such a name, so whatever the entry installed came from somewhere else.",
 	},
 	{
 		ID: "TD014", Name: "integrity-missing",

@@ -571,6 +571,8 @@ Two of the four sources are reported at `info` whatever level the policy sets fo
 
 **Why it matters.** A version number is a promise that a registry keeps: the release is immutable, its hash is recorded, and a takedown reaches everyone who installs it later. A git or URL dependency keeps none of that. A branch or tag moves, so the code installed today is not the code reviewed yesterday, and nothing in this tool or in the registry can tell you it changed. It is also how a dependency escapes every other check here: a package installed from a URL has no publisher history, no provenance and no advisory to match. Real projects do use git dependencies deliberately, which is what the allow list is for; what this check refuses to do is let one arrive unnoticed in a pull request.
 
+An npm entry whose name npm's own grammar refuses is reported too, at the level the policy sets and never capped at `info`. The rules are the errors of `validate-npm-package-name`, the grammar npm holds the packages that already exist to, uppercase included. A name that breaks one cannot be on the registry, so whatever the entry installed came from somewhere else, and trustdiff asks no server about it: a name like that carries meaning into a request URL, where a `?` starts a query and a `..` is resolved away. Every check that reads the registry is skipped with `not a valid npm name`, which is an answer rather than an outage, so it does not count toward `on_data_unavailable`. `trustdiff check` refuses such a name on the command line with exit code 2. One rule of that grammar is left out on purpose: it refuses a leading hyphen, and the registry serves a package named `-` that predates the rule.
+
 **Evidence.**
 
 | Key | Meaning |
@@ -578,6 +580,8 @@ Two of the four sources are reported at `info` whatever level the policy sets fo
 | `source` | where the entry was resolved from: `git`, `url`, `path` or `unknown` |
 | `resolved` | the location as the lockfile records it, absent when the file states none |
 | `lockfile` | the lockfile the entry came from, absent when the subject carries no location |
+| `signal` | `invalid-name` when the finding is about the name rather than the source |
+| `name_rule` | the rule of npm's name grammar the name breaks, in npm's own words (with `signal`) |
 
 **Example.**
 

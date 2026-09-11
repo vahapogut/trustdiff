@@ -620,7 +620,6 @@ func TestVersionInfoRejectsBadRefs(t *testing.T) {
 	}{
 		{"other ecosystem", model.PackageRef{Ecosystem: model.PyPI, Name: "isarray", Version: "2.0.5"}},
 		{"no version", npmRef("isarray", "")},
-		{"invalid name", npmRef("@types", "1.0.0")},
 	}
 	for _, tt := range tests {
 		_, err := c.VersionInfo(ctx, tt.ref)
@@ -631,6 +630,15 @@ func TestVersionInfoRejectsBadRefs(t *testing.T) {
 		if errors.Is(err, registry.ErrNotFound) {
 			t.Errorf("%s: got ErrNotFound, want an argument error: %v", tt.name, err)
 		}
+	}
+	// A name npm's grammar refuses is not a mistake in the call but a fact about the
+	// registry: nothing can be published under it, so it is not found.
+	before := len(fs.seen())
+	if _, err := c.VersionInfo(ctx, npmRef("@types", "1.0.0")); !errors.Is(err, registry.ErrNotFound) {
+		t.Errorf("invalid name: error = %v, want registry.ErrNotFound", err)
+	}
+	if after := fs.seen(); len(after) != before {
+		t.Errorf("an invalid name was requested: %v", after[before:])
 	}
 	if n := fs.requests("/isarray"); n != 0 {
 		t.Errorf("bad refs caused %d requests, want none", n)

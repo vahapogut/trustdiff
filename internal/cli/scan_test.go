@@ -835,3 +835,53 @@ func TestScanReportsPathsFromTheRepositoryRoot(t *testing.T) {
 		})
 	}
 }
+
+// TestScanNeverAsksAboutANameNpmCouldNeverHold is finding F25 of
+// docs/review-2026-09-10.md. A lockfile in a pull request chooses its own package
+// names, and the npm client put one into the download counts URL unescaped. A name
+// npm's own grammar refuses cannot be on the registry, so the run reports the entry
+// and asks nobody about it. The policy says on_data_unavailable: fail, which pins
+// that such a name is an answer and not an outage: the exit code is the block's 1,
+// not 3.
+func TestScanNeverAsksAboutANameNpmCouldNeverHold(t *testing.T) {
+	lock := readRegressionFixture(t, "f25-npm-name-grammar", "package-lock.json")
+	dir := scanFixture(t)
+	writeFile(t, dir, "package-lock.json", lock)
+	writeFile(t, dir, ".trustdiff.yaml", "version: 1\non_data_unavailable: fail\n")
+
+	code, stdout, stderr := run(t, "--format", "json", "--fail-on", "block", "scan")
+	if code != ExitFindings {
+		t.Fatalf("exit = %d, want %d (stderr %q)\n%s", code, ExitFindings, stderr, stdout)
+	}
+	rep := decodeReport(t, stdout)
+	hostile := map[string]bool{"evil?trustdiff=1": false, "@scope/..": false}
+	for i := range rep.Subjects {
+		s := &rep.Subjects[i]
+		if _, bad := hostile[s.Ref.Name]; !bad {
+			continue
+		}
+		hostile[s.Ref.Name] = true
+		var reported bool
+		for _, f := range s.Findings {
+			if f.ID == "TD013" && f.Level == model.LevelBlock && strings.Contains(f.Explanation, "name cannot exist on the registry") {
+				reported = true
+			}
+		}
+		if !reported {
+			t.Errorf("%s has no TD013 block finding: %+v", s.Ref.Name, s.Findings)
+		}
+		for _, sk := range s.Skipped {
+			if sk.Check == "TD016" || sk.Check == "TD017" {
+				continue
+			}
+			if !strings.HasPrefix(sk.Reason, "not a valid npm name") {
+				t.Errorf("%s: %s skipped with %q, want the name named as the reason", s.Ref.Name, sk.Check, sk.Reason)
+			}
+		}
+	}
+	for name, seen := range hostile {
+		if !seen {
+			t.Errorf("no subject for %s; the parser dropped it rather than reporting it", name)
+		}
+	}
+}

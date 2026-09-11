@@ -376,6 +376,9 @@ func TestCheckUsageErrors(t *testing.T) {
 		want string
 	}{
 		{name: "bad ref", args: []string{"check", "express"}, want: "invalid ref"},
+		// A name npm's own grammar refuses cannot be on the registry, so it is a
+		// usage error and never a request. Finding F25 of docs/review-2026-09-10.md.
+		{name: "an npm name npm could never hold", args: []string{"check", "npm:foo?a=b"}, want: "not a valid npm name"},
 		// A path that is not one of the manifests keeps the invalid-ref error: it
 		// is a ref that could not be read, not a file trustdiff knows how to open.
 		{name: "a path no reader knows", args: []string{"check", "setup.py"}, want: "invalid ref"},

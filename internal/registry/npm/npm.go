@@ -301,7 +301,9 @@ func (c *Client) Downloads(ctx context.Context, name string) (int64, error) {
 		return 0, err
 	}
 	// The downloads API documents scoped names with a plain slash
-	// (/downloads/point/last-month/@slack/client), unlike the registry.
+	// (/downloads/point/last-month/@slack/client), unlike the registry, and the
+	// name is joined unescaped for that reason: canonicalName let through only
+	// what a path segment carries as itself.
 	u := c.downloads + "/downloads/point/last-week/" + name
 	resp, err := c.http.Get(ctx, u, httpcache.Request{TTL: downloadsTTL})
 	if err != nil {
@@ -341,15 +343,18 @@ func IsSecurityHolding(list *registry.VersionList) bool {
 // spelling is otherwise kept, case included, because the registry is
 // case-sensitive for legacy names (see the package comment); it is the memo and
 // cache key as given.
+//
+// A name npm's own grammar refuses cannot be on the registry, so it is answered as
+// not found without a request. That is also what makes it safe to put a name into
+// a URL unescaped, which the downloads endpoint needs: what the grammar lets
+// through is letters, digits and -_.!~*'() in each half, and a path segment
+// carries every one of those as itself.
 func canonicalName(name string) (string, error) {
-	ref, err := model.ParseRef(string(model.NPM) + ":" + strings.TrimSpace(name))
-	if err != nil {
-		return "", fmt.Errorf("npm: %w", err)
+	name = strings.TrimSpace(name)
+	if problem := model.NPMNameProblem(name); problem != "" {
+		return "", fmt.Errorf("npm: %q is not a valid npm name (%s): %w", name, problem, registry.ErrNotFound)
 	}
-	if ref.HasVersion() {
-		return "", fmt.Errorf("npm: package name %q must not carry a version", name)
-	}
-	return ref.Name, nil
+	return name, nil
 }
 
 // encodeName renders a name as one path segment: @scope/name becomes
