@@ -289,7 +289,8 @@ func claimsFor(rel string) []claim {
 
 	// Three managers are configured somewhere other than the directory they act
 	// on, so their root is the repository the .github or .yarn directory belongs
-	// to rather than the directory the file sits in.
+	// to rather than the directory the file sits in. An action a repository keeps
+	// under .github/actions is the same case.
 	switch {
 	case path.Base(dir) == ".github" && (base == "dependabot.yml" || base == "dependabot.yaml"):
 		return []claim{{Dependabot, path.Dir(dir), true}}
@@ -299,6 +300,17 @@ func claimsFor(rel string) []claim {
 		// A Yarn release committed into the repository is the Yarn that runs, which
 		// is both the strongest evidence Yarn is used and the exact version of it.
 		return []claim{{Yarn, path.Dir(path.Dir(dir)), true}}
+	case base == "action.yml" || base == "action.yaml":
+		// A composite action's steps carry uses: references the way a workflow's
+		// steps do, and they run inside the job of whoever calls the action. A
+		// repository that publishes one action keeps the file at its root; the
+		// actions a repository calls itself live under .github/actions and belong
+		// to the repository that directory is in. An action file anywhere else is
+		// its own directory's, the way a lockfile in a subdirectory is.
+		if path.Base(path.Dir(dir)) == "actions" && path.Base(path.Dir(path.Dir(dir))) == ".github" {
+			return []claim{{Actions, path.Dir(path.Dir(path.Dir(dir))), true}}
+		}
+		return []claim{{Actions, dir, true}}
 	}
 
 	switch base {
@@ -371,9 +383,14 @@ func (d *detector) add(c claim, file string) {
 	// it, relative to the directory the manager manages, so a monorepo's lines are
 	// short and the same whichever directory they came from. The exception is the
 	// workflows, which are one line however many files there are: a repository
-	// with forty of them has one reason, not forty.
+	// with forty of them has one reason, not forty. An action file is named,
+	// because a repository has few of them and which one it is matters.
 	if c.id == Actions {
-		inst.evidence["the workflows in .github/workflows"] = true
+		if path.Base(path.Dir(file)) == "workflows" {
+			inst.evidence["the workflows in .github/workflows"] = true
+		} else {
+			inst.evidence[relativeToManager(c.root, file)] = true
+		}
 		return
 	}
 	inst.evidence[relativeToManager(c.root, file)] = true

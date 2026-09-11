@@ -9,14 +9,19 @@ import (
 	"strings"
 )
 
-// actionsScanner reads every workflow file and reports each uses: reference that
-// is not pinned to a full commit sha.
+// actionsScanner reads every workflow and every composite action file, and reports
+// each uses: reference that is not pinned to a full commit sha.
 //
 // A workflow step is a dependency with no lockfile: "uses: some/action@v4" runs
 // whatever that tag points at the moment the job starts, and a tag can be moved.
 // It is also the dependency with the most access, because it runs inside the job
 // that holds the repository's tokens. GitHub's own guidance is that a full length
 // commit sha is the only immutable reference, and that is what this checks.
+//
+// A composite action's steps are read the same way. Its metadata syntax allows the
+// same uses: values a workflow step allows, and those steps run inside the job of
+// whoever calls the action, so an unpinned reference in one has the access of every
+// caller rather than of this repository alone.
 //
 // Nothing here writes. Replacing a tag with a sha means resolving it against
 // GitHub, which is a network call this tool will not make behind the user's back,
@@ -46,9 +51,9 @@ var tagPinnedByDesign = []string{
 	"slsa-framework/slsa-github-generator",
 }
 
-// Scan walks the workflow files and judges every reference in them.
+// Scan walks the files detection found and judges every reference in them.
 func (actionsScanner) Scan(root string, m *Manager, p *Params) ([]Result, error) {
-	files := workflowFiles(m)
+	files := actionFiles(m)
 	results := make([]Result, 0, len(files))
 	for _, rel := range files {
 		data, err := readConfig(filepath.Join(root, filepath.FromSlash(rel)))
@@ -60,7 +65,7 @@ func (actionsScanner) Scan(root string, m *Manager, p *Params) ([]Result, error)
 			})
 			continue
 		}
-		results = append(results, scanWorkflow(rel, string(data), p)...)
+		results = append(results, scanUses(rel, string(data), p)...)
 	}
 	if len(results) == 0 {
 		return nil, nil
@@ -68,12 +73,12 @@ func (actionsScanner) Scan(root string, m *Manager, p *Params) ([]Result, error)
 	return results, nil
 }
 
-// scanWorkflow judges one file. A reference that is not pinned gets a line of its
-// own, because that is what somebody has to go and fix. A file where every
-// reference is pinned gets one line saying so rather than one line per step: a
-// repository with five workflows and thirty steps would otherwise fill a scorecard
-// with thirty lines that say nothing is wrong.
-func scanWorkflow(rel, text string, p *Params) []Result {
+// scanUses judges one file, a workflow or a composite action. A reference that is
+// not pinned gets a line of its own, because that is what somebody has to go and
+// fix. A file where every reference is pinned gets one line saying so rather than
+// one line per step: a repository with five workflows and thirty steps would
+// otherwise fill a scorecard with thirty lines that say nothing is wrong.
+func scanUses(rel, text string, p *Params) []Result {
 	var problems []Result
 	pinned := 0
 	// A run: | block holds a shell script, and a line of that script that happens to
@@ -129,8 +134,8 @@ func scanWorkflow(rel, text string, p *Params) []Result {
 			File:   rel,
 		}}
 	}
-	// A workflow that uses no action at all has nothing to pin, and saying so would
-	// be a line about nothing.
+	// A file that uses no action at all has nothing to pin, and saying so would be a
+	// line about nothing.
 	return nil
 }
 
@@ -216,9 +221,10 @@ func allowed(repo string, patterns []string) bool {
 	return false
 }
 
-// workflowFiles are the files detection found for this manager, sorted, which is
-// every .yml and .yaml under .github/workflows.
-func workflowFiles(m *Manager) []string {
+// actionFiles are the files detection found for this manager, sorted: the workflows
+// under .github/workflows and the composite action files, wherever the repository
+// keeps those. Both are judged the same way, so the scanner reads one list.
+func actionFiles(m *Manager) []string {
 	out := make([]string, 0, len(m.Files))
 	for _, f := range m.Files {
 		lower := strings.ToLower(f)

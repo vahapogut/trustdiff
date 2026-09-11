@@ -281,6 +281,19 @@ func TestDetectEvidence(t *testing.T) {
 		files:    map[string]string{".github/dependabot.yaml": "version: 2\n"},
 		id:       Dependabot,
 		evidence: ".github/dependabot.yaml",
+	}, {
+		// The workflows are one line however many there are, but an action file is
+		// named: a repository has few of them, and which one holds the reference is
+		// what a person needs to know.
+		name:     "a composite action at the repository root",
+		files:    map[string]string{"action.yml": compositeActionYAML},
+		id:       Actions,
+		evidence: "action.yml",
+	}, {
+		name:     "a composite action under .github/actions",
+		files:    map[string]string{".github/actions/setup/action.yaml": compositeActionYAML},
+		id:       Actions,
+		evidence: ".github/actions/setup/action.yaml",
 	}}
 
 	for _, tc := range cases {
@@ -294,6 +307,42 @@ func TestDetectEvidence(t *testing.T) {
 				t.Errorf("Evidence = %v, want it to include %q", m.Evidence, tc.evidence)
 			}
 		})
+	}
+}
+
+// compositeActionYAML is the smallest action file that runs another action.
+const compositeActionYAML = `name: setup
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+`
+
+// A composite action's steps carry uses: references the same way a workflow's do,
+// and they run inside the job of whoever calls the action, so detection has to find
+// the file wherever the repository keeps it: at the root, which is where a
+// repository that publishes one action keeps it, and under .github/actions, which
+// is where a repository keeps the actions it calls itself. Finding F25 of
+// docs/review-2026-09-10.md.
+func TestDetectFindsACompositeActionWhereverItSits(t *testing.T) {
+	managers, _, err := Detect(context.Background(), writeDetectFixture(t, map[string]string{
+		"action.yml":                        compositeActionYAML,
+		".github/actions/setup/action.yaml": compositeActionYAML,
+		"tools/release/action.yml":          compositeActionYAML,
+	}), DetectOptions{BinaryTimeout: noBinaryTimeout})
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	// The first two belong to the repository the .github directory is in, the way
+	// the workflows do. The third is its own directory's, the way a lockfile in a
+	// subdirectory is: nothing says the repository publishes it.
+	m := findManager(t, managers, Actions, ".")
+	if want := []string{".github/actions/setup/action.yaml", "action.yml"}; !slices.Equal(m.Files, want) {
+		t.Errorf("Files = %v, want %v", m.Files, want)
+	}
+	nested := findManager(t, managers, Actions, "tools/release")
+	if want := []string{"tools/release/action.yml"}; !slices.Equal(nested.Files, want) {
+		t.Errorf("Files = %v, want %v", nested.Files, want)
 	}
 }
 

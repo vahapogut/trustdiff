@@ -64,7 +64,8 @@ var renovateMinimumReleaseAge = &Rule{
 
 // A workflow that names an action by a tag runs whatever that tag points at
 // today, which is a dependency with no lockfile at all. GitHub's own guidance is
-// that a full commit sha is the only immutable reference.
+// that a full commit sha is the only immutable reference. A composite action's own
+// steps are read the same way, because they run inside the caller's job.
 var actionsShaPin = &Rule{
 	ID:       "DR110",
 	Name:     "actions-sha-pin",
@@ -74,6 +75,6 @@ var actionsShaPin = &Rule{
 	Desired:  Advice{},
 	Level:    model.LevelWarn,
 	Docs:     "https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-	Verified: "2026-09-09",
-	Note:     "A local action and a reusable workflow in the same repository need no pin. The SLSA generator is the one published workflow that must stay on a tag, because its verifier checks the reference; it is reported as pinned by design when it carries a full version tag.",
+	Verified: "2026-09-12",
+	Note:     "The workflows in .github/workflows and every composite action.yml, wherever the repository keeps it, are read the same way: an action's steps run inside the job of whoever calls it. A local action and a reusable workflow in the same repository need no pin. The SLSA generator is the one published workflow that must stay on a tag, because its verifier checks the reference; it is reported as pinned by design when it carries a full version tag.",
 }

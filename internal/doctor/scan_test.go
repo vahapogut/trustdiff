@@ -1,8 +1,10 @@
 package doctor
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -27,7 +29,7 @@ jobs:
       - uses: docker://ghcr.io/example/image@sha256:0000000000000000000000000000000000000000000000000000000000000000
       - uses: ./.github/actions/local
 `
-	results := scanWorkflow("ci.yml", workflow, &Params{})
+	results := scanUses("ci.yml", workflow, &Params{})
 	if len(results) != 1 || results[0].Status != StatusSet {
 		for _, r := range results {
 			t.Logf("%s %s %s", r.Status, r.Current, r.Detail)
@@ -48,7 +50,7 @@ func TestActionsScannerWantsAnImageDigest(t *testing.T) {
     steps:
       - uses: docker://alpine:latest
 `
-	results := scanWorkflow("ci.yml", workflow, &Params{})
+	results := scanUses("ci.yml", workflow, &Params{})
 	if len(results) != 1 || results[0].Status != StatusWrong {
 		t.Fatalf("results = %+v, want the tagged image reported", results)
 	}
@@ -117,6 +119,55 @@ func TestDependabotScannerReportsAFileItCannotRead(t *testing.T) {
 	}
 	if len(results) != 1 || results[0].Status != StatusUnreadable {
 		t.Fatalf("results = %+v, want the file reported as unreadable", results)
+	}
+}
+
+// A composite action is a file of steps that runs inside the job of whoever calls
+// it, so an unpinned reference in one has the access of every caller. The scanner
+// read the workflows and nothing else until F25 of docs/review-2026-09-10.md.
+func TestActionsScannerReadsACompositeAction(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "action.yml", `name: setup
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: evil/action@v1
+`)
+	m := &Manager{ID: Actions, Root: ".", Files: []string{"action.yml"}}
+	results, err := (actionsScanner{}).Scan(root, m, &Params{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Status != StatusWrong {
+		t.Fatalf("results = %+v, want the tagged reference reported", results)
+	}
+	if results[0].File != "action.yml" || results[0].Line != 6 {
+		t.Errorf("the finding points at %s:%d, want action.yml:6", results[0].File, results[0].Line)
+	}
+}
+
+// This repository publishes a composite action, and its own self-test runs doctor
+// --ci over this tree, so the file has to pass the rule it now falls under. The
+// workflows are judged here too, which is the same promise the self-test makes.
+func TestThisRepositorysOwnActionIsPinned(t *testing.T) {
+	root := filepath.Join("..", "..")
+	managers, _, err := Detect(context.Background(), root, DetectOptions{BinaryTimeout: noBinaryTimeout})
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	m := findManager(t, managers, Actions, ".")
+	if !slices.Contains(m.Files, "action.yml") {
+		t.Fatalf("Files = %v, want this repository's own action.yml among them", m.Files)
+	}
+	results, err := (actionsScanner{}).Scan(root, &m, &Params{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range results {
+		if r.Status != StatusSet {
+			t.Errorf("%s:%d is %s: %s", r.File, r.Line, r.Status, r.Detail)
+		}
 	}
 }
 

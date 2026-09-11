@@ -99,7 +99,8 @@ jobs:
 
       - name: Run trustdiff doctor over this repository
         # doctor reads this repository's own hardening settings, which for a Go
-        # project is the workflow files and the Dependabot configuration. It runs
+        # project is the workflow files, the composite action this repository
+        # publishes, and the Dependabot configuration. It runs
         # with --ci, so a workflow that stops pinning an action to a commit sha
         # fails this job. Unlike the diff above it is not allowed to fail: these
         # are our own files and the answer does not depend on a registry.

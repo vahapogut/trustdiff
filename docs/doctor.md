@@ -128,7 +128,7 @@ releases.
 | DR081 | Cargo | `registry.global-min-publish-age` | `.cargo/config.toml` | words, nightly only | | info |
 | DR090 | Dependabot | `cooldown.default-days` | `.github/dependabot.yml` | days | | warn |
 | DR100 | Renovate | `minimumReleaseAge` | `renovate.json` | words | | warn |
-| DR110 | Actions | `uses:` pinned to a commit sha | `.github/workflows/*.yml` | | | warn |
+| DR110 | Actions | `uses:` pinned to a commit sha | `.github/workflows/*.yml`, `action.yml` | | | warn |
 
 ## Notes that change what a row means
 
@@ -227,7 +227,9 @@ list somebody else ordered is not a judgment this tool makes.
 It is a dependency with no lockfile and the most access in the job. A local action
 needs no pin, and a `docker://` image is pinned by its `@sha256:` digest: a tag on an
 image moves exactly the way a tag on an action does. A `uses:` line inside a `run: |`
-block is a line of a shell script and is not judged. The SLSA generator is the one published workflow
+block is a line of a shell script and is not judged. A composite `action.yml` is read
+the same way as a workflow, wherever the repository keeps it, because its steps run
+inside the job of whoever calls the action. The SLSA generator is the one published workflow
 that must stay on a tag, because its verifier checks the reference of the workflow
 that built an artifact; doctor reports it as pinned by design when it carries a full
 version tag such as `@v2.1.0`, and as wrong when it carries a shortened one.
