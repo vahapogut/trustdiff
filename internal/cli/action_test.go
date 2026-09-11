@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -112,6 +114,58 @@ func TestActionSelfTestRunsTheLocalActionEverywhere(t *testing.T) {
 	}
 	if _, ok := job.Permissions["security-events"]; ok {
 		t.Errorf("the job grants security-events, and nothing in it uploads: %v", job.Permissions)
+	}
+}
+
+// GNU coreutils escapes a file name that holds a backslash: it prefixes the whole
+// line with one and escapes the character inside the name. On a Windows runner the
+// action's download directory is "D:\\a\\_temp/trustdiff", so every archive it hashes
+// has backslashes in its path and the digest came back as "\\<hash>", which equals no
+// expected value ever. Both Windows legs of the action self-test failed on it and
+// both other runner families passed, which is how it survived every release since
+// v0.4.0. Reading the file on stdin is the fix: there is no name in that output to
+// escape. This runs the function as action.yml holds it, against a path with a
+// backslash in it, which is a file name on Linux and macOS and a directory
+// separator on Windows. Finding F21 of docs/review-2026-09-10.md.
+func TestActionDigestsAPathThatHoldsABackslash(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash is not on PATH, and the function under test is a shell function")
+	}
+	manifest := string(repoFile(t, "action.yml"))
+	const open = "digest() {"
+	start := strings.Index(manifest, open)
+	if start < 0 {
+		t.Fatal("action.yml has no digest function, so this test is checking nothing")
+	}
+	const close = "\n        }\n"
+	end := strings.Index(manifest[start:], close)
+	if end < 0 {
+		t.Fatal("the digest function has no closing brace at the expected indentation")
+	}
+	function := manifest[start : start+end+len(close)]
+
+	dir := t.TempDir()
+	name := "archive.zip"
+	if os.PathSeparator == '/' {
+		// A backslash is an ordinary character in a name here, which is what makes
+		// the escaping reproducible off Windows.
+		name = "arch\\ive.zip"
+	}
+	file := filepath.Join(dir, name)
+	body := []byte("not really a zip, but it hashes the same way\n")
+	if err := os.WriteFile(file, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("%x", sha256.Sum256(body))
+
+	script := function + "\ndigest \"$1\"\n"
+	out, err := exec.CommandContext(t.Context(), bash, "-c", script, "bash", file).Output()
+	if err != nil {
+		t.Fatalf("running the digest function: %v", err)
+	}
+	if got := strings.TrimSpace(string(out)); got != want {
+		t.Errorf("digest of %s = %q, want %q: a hash the shell escaped matches nothing", file, got, want)
 	}
 }
 

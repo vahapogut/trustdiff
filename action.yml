@@ -270,11 +270,18 @@ runs:
 
         # macOS runners ship shasum, Linux runners sha256sum; ask for whichever
         # is there rather than assuming coreutils.
+        #
+        # The file is read on stdin rather than named on the command line. Both
+        # tools follow the GNU rule for a name that holds a backslash: the line is
+        # prefixed with one and the name is escaped inside it. On a Windows runner
+        # the download directory is D:\a\_temp/trustdiff, so every path here holds
+        # backslashes and the hash came back as "\<hash>", which matches no expected
+        # value at all. On stdin there is no name in the output to escape.
         digest() {
           if command -v sha256sum >/dev/null 2>&1; then
-            sha256sum "$1" | cut -d' ' -f1
+            sha256sum < "$1" | cut -d' ' -f1
           elif command -v shasum >/dev/null 2>&1; then
-            shasum -a 256 "$1" | cut -d' ' -f1
+            shasum -a 256 < "$1" | cut -d' ' -f1
           else
             # To stderr: the caller reads this function through a command
             # substitution, which would swallow the message on stdout and leave
