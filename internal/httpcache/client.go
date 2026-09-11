@@ -225,6 +225,9 @@ func effectiveTTL(ttl time.Duration, status int) time.Duration {
 // the same rules as a GET, which is why Post is restricted to idempotent queries.
 func (c *Client) fetch(ctx context.Context, cl *call, validators *entryMeta) (*Response, error) {
 	limiter := c.limiterFor(cl.host)
+	// A body that failed after its headers arrived is tried once more and no
+	// further; see below.
+	bodyFailures := 0
 	for attempt := 0; ; attempt++ {
 		if err := limiter.Wait(ctx); err != nil {
 			return nil, cl.wrap(fmt.Errorf("waiting for the %s rate limiter: %w", cl.host, err))
@@ -238,6 +241,15 @@ func (c *Client) fetch(ctx context.Context, cl *call, validators *entryMeta) (*R
 		}
 		if errors.Is(err, ErrBodyTooLarge) {
 			return nil, cl.wrap(err)
+		}
+		if errors.Is(err, errBodyPhase) {
+			// The headers arrived and the transfer still did not finish. Another try
+			// pulls the same bytes over the same link, so one more covers a transient
+			// stall and a third would only spend the bandwidth again.
+			bodyFailures++
+			if bodyFailures > 1 {
+				return nil, cl.wrap(fmt.Errorf("after %d attempts: %w", attempt+1, err))
+			}
 		}
 		// Never retry once the caller gave up; a per-attempt timeout is retried
 		// because it leaves the parent context intact.
@@ -269,8 +281,17 @@ func (c *Client) fetch(ctx context.Context, cl *call, validators *entryMeta) (*R
 
 // attempt performs one request within the per-attempt timeout and reads the body.
 func (c *Client) attempt(ctx context.Context, cl *call, validators *entryMeta) (*Response, error) {
-	actx, cancel := context.WithTimeout(ctx, c.timeout)
-	defer cancel()
+	// The budget is enforced by canceling the request rather than by a deadline on
+	// its context, because the body gets a budget of its own that starts only when
+	// the headers arrive, and a context deadline cannot be moved once it is set.
+	// The cancellation carries context.DeadlineExceeded as its cause and net/http
+	// reports the cause, so the retry loop and the caller still see a deadline
+	// (Go 1.26, checked 2026-09-11). This works with any RoundTripper, which
+	// http.Transport.ResponseHeaderTimeout would not.
+	actx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	deadline := time.AfterFunc(c.headerTimeout, func() { cancel(context.DeadlineExceeded) })
+	defer deadline.Stop()
 	var body io.Reader = http.NoBody
 	if cl.method == http.MethodPost {
 		// A fresh reader per attempt, so a retry sends the whole body again.
@@ -303,10 +324,17 @@ func (c *Client) attempt(ctx context.Context, cl *call, validators *entryMeta) (
 		return nil, err
 	}
 	defer resp.Body.Close()
+	// The headers are in, so the header budget is spent and the body gets its own.
+	// Stop reporting false means the header timer fired as Do was returning: the
+	// request is already canceled and there is no body left to read.
+	if !deadline.Stop() {
+		return nil, context.DeadlineExceeded
+	}
+	deadline.Reset(c.bodyTimeout)
 	// One byte past the cap tells an oversized body from one that is exactly at it.
 	data, err := io.ReadAll(io.LimitReader(resp.Body, c.maxBody+1))
 	if err != nil {
-		return nil, fmt.Errorf("reading body: %w", err)
+		return nil, fmt.Errorf("%w: %w", errBodyPhase, err)
 	}
 	if int64(len(data)) > c.maxBody {
 		return nil, fmt.Errorf("%w: exceeds %d bytes", ErrBodyTooLarge, c.maxBody)
@@ -318,6 +346,10 @@ func (c *Client) attempt(ctx context.Context, cl *call, validators *entryMeta) (
 		FetchedAt:  c.now(),
 	}, nil
 }
+
+// errBodyPhase marks a failure that happened after the response headers were in,
+// so the retry loop can stop repeating a download that already got that far.
+var errBodyPhase = errors.New("reading body")
 
 // acceptableStatus reports whether a status is returned to the caller as a
 // Response. A 304 counts only for a conditional request: without validators there

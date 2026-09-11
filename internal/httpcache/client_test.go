@@ -191,7 +191,8 @@ func TestNewValidatesOptions(t *testing.T) {
 		wantErr string
 	}{
 		{name: "missing user agent", opts: Options{Dir: t.TempDir()}, wantErr: "UserAgent"},
-		{name: "negative timeout", opts: Options{Dir: t.TempDir(), UserAgent: "x", Timeout: -1}, wantErr: "Timeout"},
+		{name: "negative header timeout", opts: Options{Dir: t.TempDir(), UserAgent: "x", HeaderTimeout: -1}, wantErr: "HeaderTimeout"},
+		{name: "negative body timeout", opts: Options{Dir: t.TempDir(), UserAgent: "x", BodyTimeout: -1}, wantErr: "BodyTimeout"},
 		{name: "zero host rate", opts: Options{Dir: t.TempDir(), UserAgent: "x", HostRPS: map[string]float64{"a": 0}}, wantErr: "HostRPS"},
 	}
 	for _, tt := range tests {
@@ -209,8 +210,11 @@ func TestNewDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.timeout != 10*time.Second {
-		t.Errorf("timeout = %v, want 10s", c.timeout)
+	if c.headerTimeout != 10*time.Second {
+		t.Errorf("header timeout = %v, want 10s", c.headerTimeout)
+	}
+	if c.bodyTimeout != 45*time.Second {
+		t.Errorf("body timeout = %v, want 45s", c.bodyTimeout)
 	}
 	if c.retries != 3 {
 		t.Errorf("retries = %d, want 3", c.retries)
@@ -921,6 +925,8 @@ func TestGetNeverRetriesAfterCancellation(t *testing.T) {
 	}
 }
 
+// TestGetTimeoutPerAttempt covers the header budget: the handler blocks before it
+// writes the status line, so the attempt never reaches the body at all.
 func TestGetTimeoutPerAttempt(t *testing.T) {
 	release := make(chan struct{})
 	ts := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -929,7 +935,7 @@ func TestGetTimeoutPerAttempt(t *testing.T) {
 	})
 	defer close(release)
 	env := newTestEnv(t, ts, func(o *Options) {
-		o.Timeout = 50 * time.Millisecond
+		o.HeaderTimeout = 50 * time.Millisecond
 		o.Retries = -1
 	})
 	_, err := env.client.Get(context.Background(), ts.URL, Request{})
@@ -952,13 +958,130 @@ func TestGetRetriesAfterAttemptTimeout(t *testing.T) {
 		}
 		okHandler("second try")(w, r)
 	})
-	env := newTestEnv(t, ts, func(o *Options) { o.Timeout = 50 * time.Millisecond })
+	env := newTestEnv(t, ts, func(o *Options) { o.HeaderTimeout = 50 * time.Millisecond })
 	resp, err := env.client.Get(context.Background(), ts.URL, Request{})
 	if err != nil {
 		t.Fatalf("a per-attempt timeout must be retried: %v", err)
 	}
 	if string(resp.Body) != "second try" || ts.calls.Load() != 2 || len(env.sleeps.recorded()) != 1 {
 		t.Fatalf("resp = %+v, calls = %d, sleeps = %v", resp, ts.calls.Load(), env.sleeps.recorded())
+	}
+}
+
+// dribble is a handler that sends its headers at once and then one byte every 20
+// ms until the test releases it, which is a body that never finishes.
+func dribble(release <-chan struct{}) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			return
+		}
+		flusher.Flush()
+		for {
+			select {
+			case <-release:
+				return
+			case <-time.After(20 * time.Millisecond):
+				if _, err := w.Write([]byte("x")); err != nil {
+					return
+				}
+				flusher.Flush()
+			}
+		}
+	}
+}
+
+// A slow body is a large document, not a host that is not answering, and the one
+// budget that covered both made the first look like the second: the largest body
+// this client fetches was 2,007,058 bytes on the wire on 2026-09-11, which ten
+// seconds could only finish above 200 KiB/s. The handler sends its headers at once
+// and its body over four chunks, which outlasts the header budget and finishes well
+// inside the body one. Finding F25 of docs/review-2026-09-10.md.
+func TestGetSlowBodyIsNotAHeaderTimeout(t *testing.T) {
+	ts := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Error("the test server cannot flush")
+			return
+		}
+		flusher.Flush()
+		for _, part := range []string{"one ", "two ", "three ", "four"} {
+			time.Sleep(40 * time.Millisecond)
+			_, _ = w.Write([]byte(part))
+			flusher.Flush()
+		}
+	})
+	env := newTestEnv(t, ts, func(o *Options) {
+		o.HeaderTimeout = 100 * time.Millisecond
+		o.BodyTimeout = 5 * time.Second
+		o.Retries = -1
+	})
+	resp, err := env.client.Get(context.Background(), ts.URL, Request{})
+	if err != nil {
+		t.Fatalf("a body that outlasts the header budget must still be read: %v", err)
+	}
+	if got := string(resp.Body); got != "one two three four" {
+		t.Errorf("body = %q, want the whole document", got)
+	}
+	if ts.calls.Load() != 1 || len(env.sleeps.recorded()) != 0 {
+		t.Errorf("calls = %d, sleeps = %v, want one request and no retry", ts.calls.Load(), env.sleeps.recorded())
+	}
+}
+
+// The body budget still bounds a server that sends its headers and then dribbles
+// forever. Splitting the budget must not have made total time unbounded.
+func TestGetBodyTimeoutBoundsASlowLoris(t *testing.T) {
+	release := make(chan struct{})
+	ts := newTestServer(t, dribble(release))
+	defer close(release)
+	env := newTestEnv(t, ts, func(o *Options) {
+		o.HeaderTimeout = 5 * time.Second
+		o.BodyTimeout = 200 * time.Millisecond
+		o.Retries = -1
+	})
+	start := time.Now()
+	_, err := env.client.Get(context.Background(), ts.URL, Request{})
+	elapsed := time.Since(start)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
+	}
+	var se *StatusError
+	if errors.As(err, &se) {
+		t.Fatalf("a timeout must not be a StatusError: %v", err)
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("the attempt took %v, want it bounded by the 200ms body budget", elapsed)
+	}
+	if got := ts.calls.Load(); got != 1 {
+		t.Errorf("server calls = %d, want 1", got)
+	}
+}
+
+// A body that got past the headers and still did not finish is tried once more
+// and no further. A third try pulls the same bytes over the same link, so a wedged
+// origin would cost four times the body budget and the download three times over.
+func TestGetBodyTimeoutIsRetriedOnce(t *testing.T) {
+	release := make(chan struct{})
+	ts := newTestServer(t, dribble(release))
+	defer close(release)
+	env := newTestEnv(t, ts, func(o *Options) {
+		o.HeaderTimeout = 2 * time.Second
+		o.BodyTimeout = 100 * time.Millisecond
+	})
+	_, err := env.client.Get(context.Background(), ts.URL, Request{})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
+	}
+	if !strings.Contains(err.Error(), "after 2 attempts") {
+		t.Errorf("err = %v, want it to say it stopped after 2 attempts", err)
+	}
+	if got := ts.calls.Load(); got != 2 {
+		t.Errorf("server calls = %d, want 2", got)
+	}
+	if got := len(env.sleeps.recorded()); got != 1 {
+		t.Errorf("sleeps = %d, want 1", got)
 	}
 }
 

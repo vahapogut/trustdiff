@@ -118,11 +118,11 @@ func newClient(t *testing.T, s *server, opts ...Option) (*Client, string) {
 	t.Helper()
 	dir := t.TempDir()
 	h, err := httpcache.New(httpcache.Options{
-		UserAgent: "trustdiff-test",
-		Dir:       dir,
-		Retries:   -1,
-		Timeout:   5 * time.Second,
-		HostRPS:   map[string]float64{strings.TrimPrefix(s.URL, "http://"): 1000},
+		UserAgent:     "trustdiff-test",
+		Dir:           dir,
+		Retries:       -1,
+		HeaderTimeout: 5 * time.Second,
+		HostRPS:       map[string]float64{strings.TrimPrefix(s.URL, "http://"): 1000},
 	})
 	if err != nil {
 		t.Fatalf("httpcache.New: %v", err)
@@ -762,12 +762,12 @@ func TestCacheTTLs(t *testing.T) {
 func newClientAt(t *testing.T, s *server, dir string, now time.Time) *Client {
 	t.Helper()
 	h, err := httpcache.New(httpcache.Options{
-		UserAgent: "trustdiff-test",
-		Dir:       dir,
-		Retries:   -1,
-		Timeout:   5 * time.Second,
-		HostRPS:   map[string]float64{strings.TrimPrefix(s.URL, "http://"): 1000},
-		Now:       func() time.Time { return now },
+		UserAgent:     "trustdiff-test",
+		Dir:           dir,
+		Retries:       -1,
+		HeaderTimeout: 5 * time.Second,
+		HostRPS:       map[string]float64{strings.TrimPrefix(s.URL, "http://"): 1000},
+		Now:           func() time.Time { return now },
 	})
 	if err != nil {
 		t.Fatalf("httpcache.New: %v", err)

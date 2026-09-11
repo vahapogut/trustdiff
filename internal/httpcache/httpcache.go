@@ -2,8 +2,9 @@
 // and advisory client goes through it, so this is where the polite behavior lives:
 // a disk cache keyed by request with ETag and Last-Modified revalidation and a TTL
 // per entry, a per-host rate limiter (crates.io asks for one request per second),
-// retries with exponential backoff and jitter that honor Retry-After, a timeout
-// per attempt, an identifying User-Agent, and the --offline and --no-cache modes.
+// retries with exponential backoff and jitter that honor Retry-After, one budget
+// for the response headers and a second for the body, an identifying User-Agent,
+// and the --offline and --no-cache modes.
 //
 // Get is the common case. Post exists for the batch query endpoints (OSV
 // querybatch, deps.dev versionbatch and findingsbatch), which are read-only
@@ -49,8 +50,18 @@ const (
 	// EnvDir names the environment variable that overrides the cache directory.
 	EnvDir = "TRUSTDIFF_CACHE_DIR"
 
-	defaultTimeout = 10 * time.Second
-	defaultRetries = 3
+	// defaultHeaderTimeout bounds one attempt up to the response headers: the
+	// connect, the TLS handshake and the wait for the status line. Every registry
+	// answered in well under a second on 2026-09-11, so ten seconds is the margin
+	// the single old budget was meant to give.
+	defaultHeaderTimeout = 10 * time.Second
+	// defaultBodyTimeout caps reading one body, counted from the moment the headers
+	// arrive. It is a budget of its own because a slow body says the document is
+	// large, not that the host is down: registry.npmjs.org/typescript was 2,007,058
+	// bytes on the wire on 2026-09-11, which ten seconds could only finish above
+	// 200 KiB/s, while forty five asks for 45 KiB/s.
+	defaultBodyTimeout = 45 * time.Second
+	defaultRetries     = 3
 	// defaultRPS applies to every host without an explicit HostRPS entry.
 	defaultRPS = 10
 	// crates.io requires an identifying User-Agent with contact information and
@@ -114,8 +125,13 @@ type Options struct {
 	// UserAgent is sent with every request and is required; callers pass
 	// version.UserAgent().
 	UserAgent string
-	// Timeout bounds one attempt, including reading the body. Default 10 s.
-	Timeout time.Duration
+	// HeaderTimeout bounds one attempt up to the response headers. Default 10 s.
+	HeaderTimeout time.Duration
+	// BodyTimeout bounds reading one response body once the headers are in.
+	// Default 45 s. It is separate because a slow body means a large document
+	// rather than a host that is not answering, and abandoning it early throws
+	// away the bytes that already arrived.
+	BodyTimeout time.Duration
 	// Retries is the number of additional attempts after the first one for 429,
 	// 5xx and transport errors. Zero selects the default of 3; a negative value
 	// disables retries.
@@ -164,12 +180,13 @@ type Response struct {
 // Client is a cached, rate limited, retrying HTTP client. It is safe for
 // concurrent use.
 type Client struct {
-	dir       string
-	offline   bool
-	noCache   bool
-	userAgent string
-	timeout   time.Duration
-	retries   int
+	dir           string
+	offline       bool
+	noCache       bool
+	userAgent     string
+	headerTimeout time.Duration
+	bodyTimeout   time.Duration
+	retries       int
 	// maxBody caps one response body; it is maxBodyBytes outside tests.
 	maxBody int64
 	hostRPS map[string]float64
@@ -195,11 +212,17 @@ func New(opts Options) (*Client, error) { //nolint:gocritic // Options by value 
 	if opts.UserAgent == "" {
 		return nil, errors.New("httpcache: Options.UserAgent is required")
 	}
-	if opts.Timeout < 0 {
-		return nil, fmt.Errorf("httpcache: Options.Timeout must not be negative, got %v", opts.Timeout)
+	if opts.HeaderTimeout < 0 {
+		return nil, fmt.Errorf("httpcache: Options.HeaderTimeout must not be negative, got %v", opts.HeaderTimeout)
 	}
-	if opts.Timeout == 0 {
-		opts.Timeout = defaultTimeout
+	if opts.HeaderTimeout == 0 {
+		opts.HeaderTimeout = defaultHeaderTimeout
+	}
+	if opts.BodyTimeout < 0 {
+		return nil, fmt.Errorf("httpcache: Options.BodyTimeout must not be negative, got %v", opts.BodyTimeout)
+	}
+	if opts.BodyTimeout == 0 {
+		opts.BodyTimeout = defaultBodyTimeout
 	}
 	retries := opts.Retries
 	switch {
@@ -243,20 +266,21 @@ func New(opts Options) (*Client, error) { //nolint:gocritic // Options by value 
 		now = time.Now
 	}
 	return &Client{
-		dir:       dir,
-		offline:   opts.Offline,
-		noCache:   opts.NoCache,
-		userAgent: opts.UserAgent,
-		timeout:   opts.Timeout,
-		retries:   retries,
-		maxBody:   maxBodyBytes,
-		hostRPS:   hostRPS,
-		http:      &http.Client{Transport: transport},
-		log:       logger,
-		now:       now,
-		sleep:     sleepContext,
-		limiters:  map[string]*rate.Limiter{},
-		keys:      map[string]*sync.Mutex{},
+		dir:           dir,
+		offline:       opts.Offline,
+		noCache:       opts.NoCache,
+		userAgent:     opts.UserAgent,
+		headerTimeout: opts.HeaderTimeout,
+		bodyTimeout:   opts.BodyTimeout,
+		retries:       retries,
+		maxBody:       maxBodyBytes,
+		hostRPS:       hostRPS,
+		http:          &http.Client{Transport: transport},
+		log:           logger,
+		now:           now,
+		sleep:         sleepContext,
+		limiters:      map[string]*rate.Limiter{},
+		keys:          map[string]*sync.Mutex{},
 	}, nil
 }
 
