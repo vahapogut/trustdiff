@@ -229,9 +229,9 @@ place.
 skip_upload: '{{ if isEnvSet "TAP_GITHUB_TOKEN" }}auto{{ else }}true{{ end }}'
 ```
 
-Both repositories exist as of 2026-09-10 and both already serve v0.4.0. What the
-token adds is that the release job writes them itself, instead of somebody doing
-it by hand afterwards.
+Both repositories exist, and each serves whatever release last reached it. What
+the token adds is that the release job writes them itself, instead of somebody
+doing it by hand afterwards.
 
 **When `TAP_GITHUB_TOKEN` is not set, the release still succeeds.** goreleaser
 writes the cask to `dist/homebrew/Casks/trustdiff.rb` and the manifest to
@@ -375,9 +375,9 @@ it leaves the tap alone. Download the cask and the manifest from the job's
 The first stable tag is the first real write. Afterwards:
 
 - `vahapogut/homebrew-tap` has a commit named `Brew cask update for trustdiff
-  version <the tag>` replacing `Casks/trustdiff.rb`. Both files are already there
-  from v0.4.0, which went in by hand, so what tells the job's commit from that one
-  is its author: goreleaserbot rather than you.
+  version <the tag>` replacing `Casks/trustdiff.rb`. The file is already there,
+  put in by hand for the versions section 6.3.1 names, so what tells the job's
+  commit from those is its author: goreleaserbot rather than you.
 - `vahapogut/scoop-bucket` has the matching `Scoop update for trustdiff version
   <the tag>` replacing `bucket/trustdiff.json`.
 - `brew install --cask vahapogut/tap/trustdiff` on macOS, then `trustdiff
