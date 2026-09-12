@@ -279,19 +279,24 @@ func (l *DataLoader) prefetchDownloads(ctx context.Context, refs []model.Package
 		}
 		l.log.Debug("prefetching download counts", "ecosystem", eco, "names", len(names))
 		counts, err := bulk.BulkDownloads(ctx, names)
+		if err != nil && ctx.Err() != nil {
+			return
+		}
 		if err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			l.logBatchFailure("download counts batch failed", len(names), err)
-			for _, name := range names {
-				l.downloads.store(model.PackageRef{Ecosystem: eco, Name: name}, -1, err)
-			}
-			continue
+			l.logBatchFailure("download counts batch failed", len(names)-len(counts), err)
 		}
 		for _, name := range names {
+			ref := model.PackageRef{Ecosystem: eco, Name: name}
 			if n, ok := counts[name]; ok {
-				l.downloads.store(model.PackageRef{Ecosystem: eco, Name: name}, n, nil)
+				l.downloads.store(ref, n, nil)
+				continue
+			}
+			// A name the batch answered nothing about is two different things. Where
+			// the batch failed, that failure is this name's answer and nothing asks
+			// again; where it succeeded, the API simply does not know the name, and
+			// the per name path is what says so.
+			if err != nil {
+				l.downloads.store(ref, -1, err)
 			}
 		}
 	}

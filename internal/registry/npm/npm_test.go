@@ -1269,3 +1269,44 @@ func TestWithoutTheNamesTakesTheURLOutOfAnyError(t *testing.T) {
 		})
 	}
 }
+
+// One refused request is not an answer about the names it never covered. The bulk
+// endpoint refuses scoped names, so they go through the point endpoint one at a
+// time, and a run that has counts for a thousand packages and a 429 for one has to
+// come back with both.
+func TestBulkDownloadsReturnsWhatItReadWhenOneRequestFails(t *testing.T) {
+	// The server answers the bulk request for the unscoped names and refuses the
+	// point request for the scoped one, which is the shape api.npmjs.org produced
+	// on 2026-09-12.
+	refusing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "@scope") {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"a":{"downloads":11,"package":"a"},"b":{"downloads":22,"package":"b"}}`))
+	}))
+	defer refusing.Close()
+	u, err := url.Parse(refusing.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := httpcache.New(httpcache.Options{
+		Dir:       t.TempDir(),
+		UserAgent: "trustdiff-test",
+		HostRPS:   map[string]float64{u.Host: 1000},
+		Retries:   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c2 := New(h, WithRegistryURL(refusing.URL), WithDownloadsURL(refusing.URL), WithLogger(slog.New(slog.DiscardHandler)))
+
+	got, err := c2.BulkDownloads(context.Background(), []string{"a", "b", "@scope/c"})
+	if err == nil {
+		t.Fatal("BulkDownloads returned no error when the scoped name was refused")
+	}
+	if want := map[string]int64{"a": 11, "b": 22}; !reflect.DeepEqual(got, want) {
+		t.Errorf("BulkDownloads = %v, want %v: the counts it read come back with the error", got, want)
+	}
+}

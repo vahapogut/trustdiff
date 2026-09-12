@@ -596,13 +596,25 @@ type bulkSourceR struct {
 	bulkCalls int
 	asked     [][]string
 	bulkErr   error
+	// partial makes the source answer for the names it knows and fail for the rest,
+	// which is what the npm client does when one request of a batch is refused.
+	partial bool
 }
 
 func (b *bulkSourceR) BulkDownloads(_ context.Context, names []string) (map[string]int64, error) {
 	b.bulkCalls++
 	b.asked = append(b.asked, append([]string(nil), names...))
 	if b.bulkErr != nil {
-		return nil, b.bulkErr
+		if !b.partial {
+			return nil, b.bulkErr
+		}
+		out := make(map[string]int64, len(names))
+		for _, name := range names {
+			if n, ok := b.downloads[name]; ok {
+				out[name] = n
+			}
+		}
+		return out, b.bulkErr
 	}
 	out := make(map[string]int64, len(names))
 	for _, name := range names {
@@ -693,5 +705,37 @@ func TestPrefetchDoesNotFallBackToOneRequestPerPackage(t *testing.T) {
 	}
 	if n := src.count("downloads"); n != 0 {
 		t.Errorf("the per name path was used %d times after the batch failed, which is the storm this prevents", n)
+	}
+}
+
+// A batch that answered for some of its names and failed on the rest is two
+// answers, not one failure. The npm client sends unscoped names in chunks of 128
+// and scoped names one at a time, so one throttled scoped name comes back beside
+// a thousand counts that were read. Measured on 2026-09-12: a scan of React's
+// lockfile lost the counts of 1,583 packages because api.npmjs.org refused the
+// request for @babel/plugin-syntax-flow, and every check that reads counts
+// reported itself skipped for the whole run.
+func TestPrefetchKeepsTheCountsABatchDidRead(t *testing.T) {
+	src := newFakeSourceR(model.NPM)
+	src.add(stableListR(model.NPM, "lib", "1.0.0"))
+	src.add(stableListR(model.NPM, "@scope/other", "2.0.0"))
+	src.downloads["lib"] = 42
+	bulk := &bulkSourceR{fakeSourceR: src, bulkErr: errors.New("429 Too Many Requests"), partial: true}
+	l := newDataLoader(registry.Registry{model.NPM: bulk}, nil, nil, nil)
+
+	l.Prefetch(t.Context(), []model.PackageRef{
+		model.MustParseRef("npm:lib@1.0.0"),
+		model.MustParseRef("npm:@scope/other@2.0.0"),
+	})
+
+	got, err := l.Downloads(t.Context(), model.NPM, "lib")
+	if err != nil || got != 42 {
+		t.Errorf("Downloads(lib) = %d, %v, want 42 and no error: the batch read that count", got, err)
+	}
+	if _, err := l.Downloads(t.Context(), model.NPM, "@scope/other"); err == nil {
+		t.Error("the name the batch did not answer for returned a count")
+	}
+	if n := src.count("downloads"); n != 0 {
+		t.Errorf("the per name path was used %d times, which is the storm this prevents", n)
 	}
 }

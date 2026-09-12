@@ -332,7 +332,14 @@ func (c *Client) Downloads(ctx context.Context, name string) (int64, error) {
 // single name, which it would answer in the point shape, go through Downloads.
 // A name the API does not know (null in a bulk answer, 404 from the point
 // endpoint) is left out rather than failing the call, so a missing key means
-// unknown. Any other failure aborts the call.
+// unknown.
+//
+// Any other failure stops the call and is returned with whatever was read before
+// it. One refused request is not an answer about the names it never covered: a
+// scan of React's lockfile on 2026-09-12 lost the counts of 1,583 packages because
+// api.npmjs.org refused the point request for @babel/plugin-syntax-flow, which is
+// one scoped name of several thousand. So the map is what was read and the error
+// is what stopped it, and a caller stores each of them for the names it belongs to.
 func (c *Client) BulkDownloads(ctx context.Context, names []string) (map[string]int64, error) {
 	var bulk, single []string
 	seen := make(map[string]bool, len(names))
@@ -358,7 +365,7 @@ func (c *Client) BulkDownloads(ctx context.Context, names []string) (map[string]
 			continue
 		}
 		if err := c.bulkChunk(ctx, chunk, out); err != nil {
-			return nil, err
+			return out, err
 		}
 	}
 	for _, name := range single {
@@ -368,7 +375,7 @@ func (c *Client) BulkDownloads(ctx context.Context, names []string) (map[string]
 			continue
 		}
 		if err != nil {
-			return nil, err
+			return out, err
 		}
 		out[name] = n
 	}
