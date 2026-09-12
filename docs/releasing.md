@@ -117,8 +117,13 @@ Pushing the tag starts one job. It needs no input and no approval.
 If the job goes red, find out how far it got before you touch anything. A
 failure before the release is created leaves nothing behind but the tag: delete
 the tag locally and remotely, fix the cause and tag again. A failure after the
-release is created, which is what a bad tap token looks like, leaves a complete
-release in place, and section 6.4 says what to do with it.
+release is created, which is what a bad tap token looks like, leaves the release
+published and its assets complete, but steps 5 and 6 never ran: it carries no
+build provenance attestation and neither tap was written. `brew upgrade` and
+`scoop update` keep handing out the version before it, and the archive anyone
+downloads fails the `gh attestation verify` in section 4. Do not re-run the job
+before reading section 6.4: a plain re-run rebuilds and re-uploads every
+artifact, and the assets are already on the release.
 
 ## 4. Verify the release
 
@@ -168,6 +173,32 @@ Download the archive for your platform, `checksums.txt` and
 If any of these fail, the release is not usable. Do not paper over it: delete
 the release and the tag, fix the pipeline, and tag again.
 
+Step 3 failing on its own is the exception. If steps 1, 2 and 4 pass and only
+the attestation is missing, nothing is wrong with the archives: they are what
+the tag built, and the signature over `checksums.txt` covers them. What it says
+is that the job stopped before step 5 in section 3, which is where the
+attestation is made. Do not delete the tag for this. Section 5 fills in the
+action's sha256 table and the README's `uses:` pin from the archives of this
+exact release, and once that commit is pushed, deleting the release leaves both
+pointing at archives that are gone.
+
+Fix what stopped the job first. Then delete the assets, keep the release and
+the tag, and re-run the job:
+
+```sh
+gh release view <tag> --json assets --jq '.assets[].name' |
+  xargs -n1 gh release delete-asset <tag> --yes
+```
+
+The re-run builds the same bytes, because the archives are reproducible from
+`SOURCE_DATE_EPOCH` and the toolchain is pinned, so the table stays correct. It
+then attests them and writes the two taps. The assets have to go first only
+when the tag predates `replace_existing_artifacts` in the `release:` block of
+`.goreleaser.yaml`, since goreleaser reads that file out of the tag it is
+building. Without the key every upload answers `422 Validation Failed` with
+`already_exists` and the job dies before the tap step again. With it, a plain
+re-run is enough.
+
 ## 5. Fill in the action's checksum table
 
 `action.yml` downloads a published archive rather than building from source, and
@@ -197,22 +228,44 @@ anything at run time. That table can only be written after the release exists.
    when the table does not cover the default version. Dispatch it on the branch
    and not on the tag: only the branch carries the pin commit.
 
-One thing this ordering cannot fix: the tag is pushed before this commit exists,
-so the action at tag `vX.Y.Z` always defaults to the release before it. That is why
-the README's workflow example pins `uses:` at the sha of this commit rather than at
-the tag: at this sha the default already is this release, and the example needs no
-`version:` input. It is also the only pin a reader can copy without failing their
-own `doctor --ci`, since DR110 reports a tagged `uses:` at `warn`.
+If the self-test goes red, what is wrong is `action.yml` and not the release. The
+action downloads a published archive, so nothing a runner finds in it touches the
+archives, the checksums or the signature: the tag stands, and the fix is a commit
+on the branch. Fix it, push, dispatch again, and keep going until all six legs are
+green. The dispatch after the v0.5.0 pin commit is what this looks like. It found
+two defects that had shipped in every release since v0.4.0: an expression in the
+`base` input's description, which a runner evaluates while it loads the manifest,
+at a moment when there is no event, so the action failed with `Unrecognized
+named-value: 'github'` before one step of it ran on any runner; and a sha256 line
+that `sha256sum` and `shasum` prefix with a backslash when the file name holds
+one, which a Windows runner's download path does, so a correct archive was
+rejected as not matching. Both sit in the half of the action that only a runner
+exercises, which is why nothing caught them until the self-test existed.
 
-So the example carries a sha that only exists once this commit is pushed, which
-makes it the one edit that cannot be made before the tag:
+One thing this ordering cannot fix: the tag is pushed before the pin commit
+exists, so the action at tag `vX.Y.Z` always defaults to the release before it.
+That is why the README's workflow example pins `uses:` at a sha on the branch
+rather than at the tag: from the pin commit on, the default already is this
+release, and the example needs no `version:` input. It is also the only pin a
+reader can copy without failing their own `doctor --ci`, since DR110 reports a
+tagged `uses:` at `warn`.
 
-8. **Manual.** After pushing the commit above, `git rev-parse HEAD`, and put that
-   sha in the README's workflow example with a trailing `# vX.Y.Z` comment. Commit
-   it as `docs: pin the readme example at the vX.Y.Z action commit`. `internal/cli`
-   `TestREADMEPinsTheActionAtACommit` fails while the example holds a tag, so this
-   cannot be forgotten quietly; it cannot check that the sha is the newest one,
-   because the newest one is the commit being written.
+So the example carries a sha that exists only once the commits above are pushed,
+which makes it the one edit that cannot be made before the tag:
+
+8. **Manual.** Put the sha of the newest `action.yml` commit the self-test passed
+   on into the README's workflow example, with a trailing `# vX.Y.Z` comment.
+   Where step 7 was green at the first dispatch, that is the pin commit, and
+   `git rev-parse HEAD` on the branch gives it. Where step 7 went red it is the
+   last fix commit instead: the action at the pin commit is the one the self-test
+   rejected, and pinning the example there hands every reader a defect that is
+   already fixed on the branch. `git log -1 --format=%H -- action.yml` names it in
+   both cases, as long as nothing has touched `action.yml` since the green run.
+   Commit it as `docs: pin the readme example at the vX.Y.Z action commit`.
+   `internal/cli` `TestREADMEPinsTheActionAtACommit` fails while the example holds
+   a tag, so this cannot be forgotten quietly; it checks the shape and not which
+   commit, because when the sha is written the newest one is the commit being
+   written, so a sha that a later `action.yml` fix leaves behind passes it too.
 
 Leaving an entry as `pending` is safe but slower for every caller: the action
 falls back to verifying the release's `checksums.txt` with cosign at run time,
@@ -329,24 +382,52 @@ implementation would return true for the empty string a missing secret expands
 to, and the guard would invert itself and try an authenticated push with no
 token on every release.
 
-### 6.3.1 What v0.4.0 and v0.4.1 did instead
+### 6.3.1 How the tap and the bucket got v0.4.0, v0.4.1 and v0.5.0
 
-Neither release wrote its own cask or manifest. v0.4.0 was released before the
-token existed. v0.4.1 was released with the secret present but holding an empty
-value, which `isEnvSet` reads as unset, exactly as the paragraph above describes:
-the job logged `brew.skip_upload is set` and `scoop.skip_upload is true`, went
-green, and left both repositories serving v0.4.0.
+The job wrote neither file for v0.4.0 and v0.4.1, and wrote both for v0.5.0 only
+on the second run. Each of the three failed in a different place.
 
-Both versions were put into the two repositories by hand instead. They are the
-files goreleaser generates, with every digest taken from the release's own
+v0.4.0 was released before the token existed. v0.4.1 was released with the secret
+present but holding an empty value, which `isEnvSet` reads as unset, exactly as
+the paragraph above describes: the job logged `brew.skip_upload is set` and
+`scoop.skip_upload is true`, went green, and left both repositories serving
+v0.4.0.
+
+v0.5.0 was released with a token that was there and could not write. The secret
+held a value, so step 0 passed, and goreleaser got the same answer on both
+writes: `403 Resource not accessible by personal access token`, on the PUT to
+`Casks/trustdiff.rb` and on the PUT to `bucket/trustdiff.json`. The token named
+the two repositories and granted nothing on them. Selecting repositories in a
+fine-grained token is not the same as granting a permission, and a token with no
+permission still reads a public repository, which is why nothing before
+goreleaser complained. goreleaser exited 1 with the GitHub release and its
+fourteen assets already published, so steps 5 and 6 never ran: the release
+carried no build provenance attestation, and nothing read the two repositories
+back. They went on serving v0.4.1.
+
+The first re-run changed nothing. goreleaser rebuilds and re-uploads every
+artifact, and GitHub answered every upload with `422 Validation Failed` and
+`already_exists` because the assets were still on the release, so the job failed
+again before it reached the tap. Recovering the release took three things in this
+order: the token was regenerated with Contents read and write on the two
+repositories, which is what section 6.2 asks for; the fourteen assets were
+deleted with `gh release delete-asset`, which leaves the release and the tag
+alone; and the job was re-run on the same tag. It wrote both files and attested
+the build, and the archives it uploaded are byte for byte the ones that were
+deleted, because `SOURCE_DATE_EPOCH` is the tagged commit's timestamp and the
+build is reproducible from it.
+
+The v0.4.0 and v0.4.1 files were put into the two repositories by hand. They are
+the files goreleaser generates, with every digest taken from the release's own
 `checksums.txt` after cosign verified its signature against the release
 workflow's identity for that tag, and all six archives were downloaded from the
 URLs in those files and checked against them before either was committed. The
 commits are named the way goreleaser names its own, so the history reads the same
 once the job takes over.
 
-Nothing needs undoing. The first release with a token that is actually there
-overwrites both files.
+The job has taken over. Both repositories serve v0.5.0 from a goreleaserbot
+commit that replaced the file put there by hand, and nothing from the two
+versions before it needs undoing.
 
 **Check the log, not the secret list.** `gh secret list` shows a name, not a
 value, so a secret set to the empty string looks exactly like a working one. What
@@ -362,6 +443,40 @@ is present and does not work, which is the one shape left: such a release stops
 at goreleaser, after the GitHub release exists, and section 6.4 says what to do
 with it.
 
+**Prove the token can write before you tag.** A token that is present and
+non-empty passes step 0 whatever it is allowed to do, and the permission itself
+is tested only when goreleaser writes the cask and the manifest, which is after
+the release is published. v0.5.0 is what that costs: the release went out with
+its 14 assets, goreleaser then failed with `403 Resource not accessible by
+personal access token` on both repositories, and because it exited 1 the two
+steps after it were skipped, so the release carried no build provenance
+attestation and both taps went on serving the version before. Ask each
+repository what the token may do, with the token in the environment and nothing
+else:
+
+```sh
+GH_TOKEN=<the token> gh api repos/vahapogut/homebrew-tap --jq .permissions.push
+GH_TOKEN=<the token> gh api repos/vahapogut/scoop-bucket --jq .permissions.push
+```
+
+A token that may write prints `true` for both repositories, and `false` or
+`null` is a token that cannot. The negative answer is the one this buys: it is
+certain, it costs nothing, and it catches the failure above before the tag.
+A `true` is not a write, and only the release job proves that; reading a tap
+proves nothing about writing to it either. Set `GH_TOKEN` on the command itself. With the variable unset,
+`gh` uses its own stored login, which owns both repositories and prints `true`
+no matter what the secret holds. In PowerShell, set `$env:GH_TOKEN` to the
+token, run the two lines, then clear it.
+
+The token needs two things and one without the other is the failure above.
+Repository access has to be Only select repositories with
+`vahapogut/homebrew-tap` and `vahapogut/scoop-bucket` picked, and repository
+permissions has to grant Contents: Read and write. Selecting the repositories
+grants nothing by itself; it says where a permission applies, not that there is
+one, and a token with no permission still reads a public repository, which is
+why nothing but the two writes complained. Section 6.2 is the full table. Run
+the two commands again after every rotation and renewal.
+
 ### 6.4 What the first release with the token looks like
 
 Push a release candidate first, with the version you are about to release and an
@@ -369,8 +484,11 @@ Push a release candidate first, with the version you are about to release and an
 `skip_upload` is `auto` when the token is present, goreleaser will log
 `prerelease detected with 'auto' upload, skipping homebrew publish` and the same
 for Scoop. That proves the guard, the tag parsing and the generated files, and
-it leaves the tap alone. Download the cask and the manifest from the job's
-`dist/` output and read them.
+it leaves the tap alone. The job uploads no `dist/` artifact, so read the two
+files where they are generated: check out the tag, run `make snapshot`, and
+open `dist/homebrew/Casks/trustdiff.rb` and `dist/scoop/bucket/trustdiff.json`.
+The version in them reads `-next` rather than the tag, because that is what a
+snapshot stamps.
 
 The first stable tag is the first real write. Afterwards:
 
@@ -405,9 +523,36 @@ Two things to expect the first time:
   cask install and a browser download hit the same wall and take the same one line
   to clear.
 - **A bad token.** The GitHub release is published before the tap is written, so
-  a token that cannot write to the tap leaves a complete, correct release behind
-  and turns the job red at the very end. The release does not need to be redone;
-  fix the token and either re-run the job or push the cask by hand.
+  a token that cannot write to the tap leaves the release behind with every
+  asset uploaded and signed, and turns the job red at the very end. A 403
+  `Resource not accessible by personal access token` means the token reaches the
+  two repositories and holds no permission on them; section 6.2 has the one
+  permission it needs. The release does not need to be redone, but goreleaser
+  exiting 1 skips the two steps after it in section 3: the build provenance
+  attestation and the tap read-back. Until the job runs to the end, the release
+  carries no attestation and both taps still serve the version before.
+
+**Recovering from a failed tap write.** Fix the token first, then take one of
+these two.
+
+- **Re-run the job.** `.goreleaser.yaml` sets
+  `release.replace_existing_artifacts`, so goreleaser overwrites the assets it
+  already uploaded instead of failing on each with `422 Validation Failed` and
+  `already_exists`. The job builds from the tagged commit, so on a tag pushed
+  before that key was added, delete the assets first, one
+  `gh release delete-asset <tag> <asset>` per asset, keeping the release and the
+  tag, then re-run. The archives come back byte identical either way, because
+  `SOURCE_DATE_EPOCH` is computed from the tagged commit. This is also the only
+  way to get the attestation.
+- **Push the two files by hand.** Check out the tag, run `make snapshot`, and
+  take the two generated files. `make snapshot` stamps a `-next` version, so the
+  version, the URLs and the digests in them name a release that does not exist:
+  replace all three with the release's own, every digest read from the
+  `checksums.txt` you verified in section 4, the way section 6.3.1 describes.
+  Commit each to its repository under the name the job would have used, `Brew
+  cask update for trustdiff version <the tag>` and `Scoop update for trustdiff
+  version <the tag>`. That moves both taps and nothing else; the attestation
+  still needs a re-run.
 
 ## 7. Who is allowed to make one
 
@@ -472,6 +617,31 @@ make the next one.
 2. Open the milestone for the next version and move anything that slipped.
 3. Check that the release page lists six archives, six SBOMs, `checksums.txt`
    and `checksums.txt.sigstore.json`. Twelve files plus two.
+4. Check that the release carries its build provenance attestation. Section 4
+   step 3 is that check, and a release that fails it is not a release to
+   delete: the attestation is made after goreleaser, so anything that turns
+   goreleaser red skips it while the archives and the signature stay correct,
+   and the release page looks the same either way. Re-run the release job;
+   there is nothing to place by hand. A re-run rebuilds and re-uploads every
+   artifact, so it reaches the attestation step only if the release will take
+   those uploads: without `replace_existing_artifacts` under `release:` in
+   `.goreleaser.yaml`, GitHub refuses each one as `already_exists` and the job
+   stops at goreleaser again.
+5. Check that the tap and the bucket serve the tag you just pushed. The job's
+   own step does this and is skipped for the same reason, so read the two files
+   back:
+
+   ```sh
+   gh api repos/vahapogut/homebrew-tap/contents/Casks/trustdiff.rb \
+     --jq .content | base64 -d | sed -n 's/^ *version "\([^"]*\)".*/\1/p'
+   gh api repos/vahapogut/scoop-bucket/contents/bucket/trustdiff.json \
+     --jq .content | base64 -d | sed -n 's/.*"version": *"\([^"]*\)".*/\1/p'
+   ```
+
+   Both must print the tag without its leading `v`. A version before this one
+   means goreleaser did not write them, and `brew` and `scoop` are still handing
+   out that version; section 6 says how to place them by hand and what the job
+   needs to do it itself.
 
 ## 9. The Bun scanner on npm
 
