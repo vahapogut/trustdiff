@@ -38,9 +38,11 @@
 #     - uses: actions/checkout@<sha>
 #       with:
 #         fetch-depth: 0       # diff needs the base commit's lockfiles
-#     - uses: vahapogut/trustdiff@v0.5.0
+#     # a commit and not the tag: the manifest inside v0.5.0 fails to load on a
+#     # runner, and this commit is the fix. The trailing comment names the
+#     # release it runs, which the version input already defaults to here.
+#     - uses: vahapogut/trustdiff@a381630fdbc9070b9e4d8d5a2f430d22c29df98b # v0.5.0
 #       with:
-#         version: v0.5.0    # the tag's own default is the release before it
 #         base: ${{ github.event.pull_request.base.sha }}
 
 name: trustdiff
