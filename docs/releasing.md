@@ -729,13 +729,42 @@ trustdiff can practise what it argues for, so the automatic path is deliberately
 taken; enabling direct publishing on the trusted publisher and changing the stage
 step back to `npm publish` is a real trade and belongs in a commit message.
 
-The workflow is idempotent for versions that are already public. It reads the
-version from `package.json`, asks the registry whether that version is there, and
-skips when it is. Most tags do not change the scanner, so most runs skip, and a skip
-is a notice rather than a failure: a red release for "nothing to do" teaches people
-to ignore red releases. A version that is staged but not yet approved is not on the
-registry, so re-running the job for the same tag tries to stage it twice; approve or
-reject the staged version first.
+The scanner is staged only when the git tag is exactly `v` plus its
+`package.json` version. A CLI-only tag such as `v0.5.2` with scanner `0.5.0`, or a
+prerelease tag with a stable scanner version, skips with `reason=tag-mismatch`
+before querying npm. Its summary says why nothing was staged. Bump the scanner
+version only when releasing scanner changes, in the release it belongs to.
+
+For a matching tag, the workflow reads npm's public version list and skips a
+version that is already public. Only a structured npm `E404` response permits the
+first-package bootstrap skip (`reason=absent`); network, authentication, server
+errors and malformed responses fail the job. A successful list without this
+version allows `npm stage publish --provenance --access public` to run.
+
+Public metadata does not include pending staged versions. Absence from `npm view`
+therefore does not prove a version is available to stage, and an `E409` does not
+prove it is public or still pending. Staging conflicts remain failures. Before
+retrying, a maintainer must inspect `npm stage list @trustdiff/bun-scanner`, check
+the public versions, and review any matching stage on npmjs.com. Resolve a
+pending stage only after reviewing its contents; investigate an unexplained
+conflict rather than treating it as success. The workflow cannot inspect or
+resolve stages: npm's [OIDC limitations](https://docs.npmjs.com/trusted-publishers/#limitations-and-future-improvements)
+exclude stage list/view/approve/reject. Approval remains a human step, as described
+in npm's [staged publishing guide](https://docs.npmjs.com/staged-publishing/).
+
+`workflow_dispatch` on a branch remains available for recovery and uses that
+checkout's scanner version, with the same public-version and registry-error
+checks. Dispatching on a tag still requires the exact version match. After a
+workflow fix reaches `main`, use that updated branch for recovery if needed:
+rerunning an old tag run uses its original commit and workflow, so it does not
+pick up the fix or retroactively turn the old red check green. Do not rewrite the
+tag to repair that check.
+
+The offline regression suite runs the same decision and summary helper used by
+the workflow, substituting an npm executable with fixture responses. Run
+`node --test scripts/npm-publish.test.mjs` from the repository root on Linux/WSL.
+The `bun-scanner` workflow runs it when the publishing workflow, helper or tests
+change, as well as when the scanner changes.
 
 Three things have to be done once before any of that can work. One command does the
 two that can be scripted and checks the third:
