@@ -2,7 +2,7 @@
 
 trustdiff is a single-binary command line tool that finds trust regressions in a project's dependency tree before they land. A trust regression is not a change in a package's code but a change in the signals that made the package trustworthy: a version published by an account that never published one before, a release that lost the provenance every earlier release had, a version that adds an install script or a dependency the previous one did not have, a name one keystroke away from a popular package, a version with a known malicious or vulnerable advisory. Each of these preceded a real incident (event-stream in 2018, ua-parser-js in 2021, Shai-Hulud in 2025, axios in 2026), and each is visible in registry metadata before anyone has looked at the code. Cooldowns buy time and malware feeds catch what is already known; trustdiff tells you, across npm (npm, pnpm, yarn, bun), PyPI (pip, uv, poetry) and crates.io, in one binary with no account and no telemetry, that a dependency's trust signals regressed relative to its own history.
 
-Version 0.5.0 ships `check` for single packages and for a manifest read at the versions its ranges resolve to, `diff` for pull requests with the GitHub Action, the pre-commit hook and SARIF output, `doctor` for the hardening settings your package managers already support, `baseline` for the registries that only answer about now, an offline advisory mirror, and a Bun scanner that stops an install before anything reaches the disk. It reads nine lockfile formats and evaluates npm, PyPI, crates.io and JSR; see the [roadmap](#roadmap).
+Version 0.5.1 ships `check` for single packages and for a manifest read at the versions its ranges resolve to, `diff` for pull requests with the GitHub Action, the pre-commit hook and SARIF output, `doctor` for the hardening settings your package managers already support, `baseline` for the registries that only answer about now, an offline advisory mirror, and a Bun scanner that stops an install before anything reaches the disk. It reads nine lockfile formats and evaluates npm, PyPI, crates.io and JSR; see the [roadmap](#roadmap).
 
 ## Demo
 
@@ -83,7 +83,7 @@ Both point at [vahapogut/homebrew-tap](https://github.com/vahapogut/homebrew-tap
 
 The Homebrew line names the cask in full on purpose. Since Homebrew 6.0 a tap that is not one of Homebrew's own has to be trusted before its code will run, and installing a fully qualified name trusts that one cask and nothing else. `brew tap vahapogut/tap` followed by the short name needs a separate `brew trust --cask vahapogut/tap/trustdiff`, and `brew trust vahapogut/tap` accepts everything the tap ever holds, which is more than anyone should hand a third party.
 
-The route that works on every platform, and the only one that lets you check the signature and the provenance yourself, is to download a release from the [releases page](https://github.com/vahapogut/trustdiff/releases). Every release ships one archive per platform (`trustdiff_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows), `checksums.txt`, its cosign bundle `checksums.txt.sigstore.json`, an SPDX SBOM per archive and GitHub build provenance. Download the archive for your platform together with the two checksum files and verify before you unpack; substitute the archive you downloaded for `trustdiff_0.5.0_linux_amd64.tar.gz`.
+The route that works on every platform, and the only one that lets you check the signature and the provenance yourself, is to download a release from the [releases page](https://github.com/vahapogut/trustdiff/releases). Every release ships one archive per platform (`trustdiff_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows), `checksums.txt`, its cosign bundle `checksums.txt.sigstore.json`, an SPDX SBOM per archive and GitHub build provenance. Download the archive for your platform together with the two checksum files and verify before you unpack; substitute the archive you downloaded for `trustdiff_0.5.1_linux_amd64.tar.gz`.
 
 1. Verify the signature on the checksum file (cosign v3 or later). The identity is the release workflow of this repository, running on a version tag.
 
@@ -105,14 +105,14 @@ The route that works on every platform, and the only one that lets you check the
    On Windows, compare the two outputs by eye:
 
    ```powershell
-   (Get-FileHash .\trustdiff_0.5.0_windows_amd64.zip -Algorithm SHA256).Hash
+   (Get-FileHash .\trustdiff_0.5.1_windows_amd64.zip -Algorithm SHA256).Hash
    Select-String windows_amd64 .\checksums.txt
    ```
 
 3. Verify the build provenance with the GitHub CLI.
 
    ```sh
-   gh attestation verify trustdiff_0.5.0_linux_amd64.tar.gz \
+   gh attestation verify trustdiff_0.5.1_linux_amd64.tar.gz \
      --owner vahapogut \
      --signer-workflow vahapogut/trustdiff/.github/workflows/release.yml
    ```

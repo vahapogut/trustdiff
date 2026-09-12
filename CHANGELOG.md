@@ -6,10 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-12
+
+A patch release for the GitHub Action, which had never worked in any release that
+shipped it. A runner refused to load `action.yml` at all, and on Windows the
+archive it downloaded was compared against a hash the shell had escaped. Both were
+found by the action self-test that shipped in 0.5.0, the first time it was
+dispatched, which is the whole reason that workflow exists. No Go code changed:
+the binaries of this release differ from 0.5.0's only in the version they print.
+
 ### Fixed
 
+- The GitHub Action loads at all. The `base` input's description carried `${{ github.event.pull_request.base.sha }}` as an example, and a runner evaluates every expression it finds in a manifest's inputs while loading it, where no event exists, so every use of `vahapogut/trustdiff` failed with `Unrecognized named-value: 'github'` before a single step of it ran, on every runner, in every release since v0.4.0. The action self-test that shipped in 0.5.0 caught it the first time it was dispatched, which is exactly what it was written for. The description now names the field without the braces, a comment inside a `run:` block no longer carries an expression either, and a test reads the manifest and fails on an expression in any description or script. The v0.5.1 tag is the first one whose manifest a runner can load.
 - The action verifies its download on Windows. It hashed the archive by naming it on the command line, and both `sha256sum` and `shasum` follow the GNU rule for a name that holds a backslash: the line is prefixed with one. A Windows runner's download directory is `D:\a\_temp/trustdiff`, so the hash came back as `\<hash>` and matched no expected value, on the pinned route and the cosign route alike; the action stopped there with "does not match its expected sha256", which is the right thing to do about a hash that does not match and the wrong hash to be comparing. Linux and macOS were never affected, which is how it survived every release since v0.4.0. The file is now read on stdin, where there is no name to escape, and a test runs the function as `action.yml` holds it against a path with a backslash in it. Found by the action self-test that shipped in 0.5.0, on the two Windows legs.
-- The GitHub Action loads at all. The `base` input's description carried `${{ github.event.pull_request.base.sha }}` as an example, and a runner evaluates every expression it finds in a manifest's inputs while loading it, where no event exists, so every use of `vahapogut/trustdiff` failed with `Unrecognized named-value: 'github'` before a single step of it ran, on every runner, in every release since v0.4.0. The action self-test that shipped in 0.5.0 caught it the first time it was dispatched, which is exactly what it was written for. The description now names the field without the braces, a comment inside a `run:` block no longer carries an expression either, and a test reads the manifest and fails on an expression in any description or script. Pin the action at a commit after this one rather than at the v0.5.0 tag.
+- A release job that failed after its archives were uploaded can be re-run. goreleaser uploads every artifact it builds and GitHub refuses a name that is already on the release with `422 already_exists`, so a run that published a release and then broke on something later, writing the Homebrew tap for instance, could not simply be repeated: the second run died on the uploads and never reached the step that had failed. `release.replace_existing_artifacts` makes goreleaser clear the asset that is in the way and upload again. The archives are reproducible from the tagged commit, so what replaces an asset is the same bytes.
 
 ## [0.5.0] - 2026-09-12
 
@@ -259,7 +269,8 @@ Project skeleton, published as a prerelease so that the release pipeline (checks
 - Continuous integration: lint, tests on Linux, macOS and Windows with Go 1.26 and 1.27, `govulncheck`, `gosec`, a binary size gate and a direct dependency budget gate.
 - Signed releases: reproducible builds for Linux, macOS and Windows on amd64 and arm64, `checksums.txt`, an SBOM, cosign keyless signatures and GitHub build provenance. `SECURITY.md` explains how to verify a download.
 
-[Unreleased]: https://github.com/vahapogut/trustdiff/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/vahapogut/trustdiff/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/vahapogut/trustdiff/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/vahapogut/trustdiff/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/vahapogut/trustdiff/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/vahapogut/trustdiff/compare/v0.3.0...v0.4.0
