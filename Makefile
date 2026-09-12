@@ -35,8 +35,11 @@ vuln:
 sec:
 	gosec -quiet ./...
 
+# The one target that names its tool through tools.mk rather than through PATH.
+# goreleaser is what the release pipeline itself runs, so a dry run of it has to
+# work on a machine that has run "make tools" and nothing else.
 snapshot:
-	goreleaser release --snapshot --clean --skip=sign,publish,sbom
+	"$(TOOLS_BIN)/goreleaser" release --snapshot --clean --skip=sign,publish,sbom
 
 # Record one live response into testdata: make fixture URL=https://... OUT=internal/.../testdata/x.json
 fixture:

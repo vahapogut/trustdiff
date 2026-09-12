@@ -1,5 +1,15 @@
 # Pinned developer tools. Versions checked against upstream releases on 2026-09-09.
 # `make tools` installs them into $(go env GOPATH)/bin; add that directory to PATH.
+#
+# TOOLS_BIN is that directory, so a target can name a tool without depending on
+# PATH. `go install` writes to GOBIN when it is set and to GOPATH/bin otherwise,
+# which is the same rule this resolves. A target that uses it works on a machine
+# where the directory is not on PATH; the targets that call a tool by bare name
+# still need PATH, and CONTRIBUTING.md says how to set it.
+TOOLS_BIN ?= $(shell go env GOBIN)
+ifeq ($(strip $(TOOLS_BIN)),)
+TOOLS_BIN := $(shell go env GOPATH)/bin
+endif
 
 GOLANGCI_LINT_VERSION ?= v2.13.2
 GORELEASER_VERSION    ?= v2.18.1
