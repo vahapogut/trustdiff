@@ -51,6 +51,13 @@ written, and a decision that is later reversed gets a new line rather than an ed
   eighteen times. npm documents no limit at all, crates.io asks for one request per
   second in its own policy, and the batch form carries most of a run, so the limit
   costs only the tail of scoped names.
+- `publisher-changed` stops blocking a move to trusted publishing that nothing can
+  place. The rule that blocked it was deliberate and tested: without two verified
+  attestations naming the same repository, a trusted publisher is what an account
+  takeover looks like. The measurement changed the balance rather than the
+  reasoning: 44 of the 81 block findings of one scan were legitimate migrations,
+  and a check that fails a build on the safest change a package can make is a check
+  people turn off. Two attestations that name different repositories still block.
 - `trust-downgrade` reports a cross line comparison at `warn` rather than skipping
   it. Skipping was the first fix and it threw away a real signal: a patch published
   to an old line from a stolen token is exactly a maintenance release whose

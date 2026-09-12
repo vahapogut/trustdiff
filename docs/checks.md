@@ -109,7 +109,11 @@ allow:
 
 **The one case reported below its level.** A package that moves to trusted publishing changes its publishing identity, which is exactly the shape this check is built to catch, and it is also the single most common publisher change happening right now: five of fifty entries of npm's own lockfile were in the middle of that migration on 2026-09-09. Blocking on it teaches people to turn the check off.
 
-So when the evaluated version and the release before it both carry an attestation deps.dev verified, and both name the same source repository, the finding is reported at `info` whatever level the policy sets: the package is still built where it was always built, and it is harder to compromise than it was, not easier. Where there is no such attestation, or where it names a different repository, the finding keeps its level. That is also what an account takeover with a trusted publisher of the attacker's own looks like, and nothing in the registry tells the two apart.
+So when the evaluated version and the release before it both carry an attestation deps.dev verified, and both name the same source repository, the finding is reported at `info` whatever level the policy sets: the package is still built where it was always built, and it is harder to compromise than it was, not easier.
+
+Where nothing says where either release was built, which is the ordinary state of a package whose earlier releases nobody attested, the finding is reported at `warn` and its evidence carries `evidence_kept`. A scan of npm/cli's lockfile on 2026-09-12 produced 81 `block` findings and 44 of them were exactly that: an ordinary package adopting trusted publishing and failing a gate for the one change that makes it harder to compromise. The finding stays and a run with `--fail-on warn` still fails on it, because a stolen account can register a trusted publisher of its own; what it no longer does is stop a build by itself. The demotion applies only while the release's own publishing evidence is no weaker than the previous one's.
+
+Where the two attestations name different repositories, the finding keeps its level. That is what an account takeover with a trusted publisher of the attacker's own looks like, and the explanation says so.
 
 **Evidence.**
 

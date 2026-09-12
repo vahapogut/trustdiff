@@ -50,10 +50,20 @@ import (
 // configured level. When the evaluated version and the release before it both carry
 // a verified attestation naming the same source repository, the package is still
 // built where it was always built and has become harder to compromise rather than
-// easier; the finding stays, at info, because the change is worth seeing. Where
-// there is no such attestation, or the repository is a different one, the finding
-// keeps its level: that is also what an account takeover with a trusted publisher
-// of the attacker's own looks like.
+// easier; the finding stays, at info, because the change is worth seeing.
+//
+// Where nothing says where either release was built, a migration whose publishing
+// evidence did not weaken is reported at warn rather than at the configured level.
+// Two attestations that name different repositories are not that case and keep the
+// level: that is what a trusted publisher of somebody else's looks like. Scanning npm/cli's
+// lockfile on 2026-09-12 produced 81 block findings and 44 of them were this: an
+// ordinary package adopting trusted publishing, which is the direction this tool
+// argues for, failing a gate for it. A stolen account can register a trusted
+// publisher of its own, so the finding stays and stays visible; what it no longer
+// does is stop a build over the one change that makes a package harder to
+// compromise. A migration that also weakened the evidence keeps its level, and so
+// does a release through a trusted publisher configuration that is not the one the
+// previous release used.
 //
 // Evidence keys of the registry way:
 //
@@ -195,11 +205,20 @@ func (c td002) fromHistory(ctx context.Context, s *Subject) (Result, string) {
 	}
 	migration := identity.trusted() && !trustedBefore
 	sameRepository := ""
+	evidenceKept := false
 	if migration {
 		explanation += "; the earlier releases were published by accounts, so this is either a migration to trusted publishing or a trusted publisher registered by whoever holds the account"
-		if repo := sameAttestedRepository(ctx, s, &history[0]); repo != "" {
+		repo, compared := sameAttestedRepository(ctx, s, &history[0])
+		if repo != "" {
 			sameRepository = repo
 			explanation += "; the verified attestation names " + repo + ", the repository the previous release was built from, which is what a migration looks like and not what a stolen account looks like"
+		}
+		if compared && repo == "" {
+			explanation += "; the two releases name different repositories, which is what a trusted publisher of somebody else's looks like"
+		}
+		if !compared && s.Version != nil && s.Version.Provenance.Strength() >= history[0].Provenance.Strength() {
+			evidenceKept = true
+			explanation += "; the publishing evidence is no weaker than the previous release's, so this is reported at warn rather than at the configured level"
 		}
 	}
 	evidence := map[string]any{
@@ -214,13 +233,23 @@ func (c td002) fromHistory(ctx context.Context, s *Subject) (Result, string) {
 	if sameRepository != "" {
 		evidence["attested_repository"] = sameRepository
 	}
+	if evidenceKept {
+		evidence["evidence_kept"] = true
+	}
 	finding := NewFinding(c, s, title, explanation, evidence)
-	if sameRepository != "" {
+	switch {
+	case sameRepository != "":
 		// A package that moved to trusted publishing and is still built from the
 		// repository it was always built from has become harder to compromise, not
 		// easier, and blocking it teaches people to turn this check off. The row
 		// stays, because the change is worth seeing, and it stays at info.
 		finding.Level = min(finding.Level, model.LevelInfo)
+	case evidenceKept:
+		// The same argument with less to stand on: the identity changed to a trusted
+		// publisher and the evidence did not weaken. That is what a migration looks
+		// like on a package whose earlier attestation nobody verified, which is most
+		// of them, and it is not worth a block on its own.
+		finding.Level = min(finding.Level, model.LevelWarn)
 	}
 	return Result{Findings: []model.Finding{finding}}, ""
 }
@@ -292,22 +321,22 @@ func noVersionReason(s *Subject) string {
 // took an account over and registered a trusted publisher of their own is building
 // from somewhere else, and either has no verified attestation or has one naming a
 // repository this package has never been built from.
-func sameAttestedRepository(ctx context.Context, s *Subject, previous *model.VersionInfo) string {
+func sameAttestedRepository(ctx context.Context, s *Subject, previous *model.VersionInfo) (repository string, compared bool) {
 	if s.DepsDev == nil || len(s.DepsDev.SourceRepositories) == 0 || s.Loader == nil || previous == nil {
-		return ""
+		return "", false
 	}
 	before, err := s.Loader.DepsDev(ctx, previous.Ref)
-	if err != nil || before == nil {
-		return ""
+	if err != nil || before == nil || len(before.SourceRepositories) == 0 {
+		return "", false
 	}
 	for _, now := range s.DepsDev.SourceRepositories {
 		for _, then := range before.SourceRepositories {
 			if strings.EqualFold(now, then) {
-				return now
+				return now, true
 			}
 		}
 	}
-	return ""
+	return "", true
 }
 
 // publisherIdentity is a publisher name taken apart: an account, or one of the

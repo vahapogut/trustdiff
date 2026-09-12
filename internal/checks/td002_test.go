@@ -51,8 +51,10 @@ func TestTD002PublisherChanged(t *testing.T) {
 		versions   []string
 		window     int
 		kind       string // publisher_kind; account when empty
-		evidence   map[string]any
-		text       []string
+		// level is what the finding must carry; block when the row does not say.
+		level    model.Level
+		evidence map[string]any
+		text     []string
 	}{
 		{
 			name: "fires when the publisher is new",
@@ -219,6 +221,9 @@ func TestTD002PublisherChanged(t *testing.T) {
 		},
 		{
 			name: "migration from an account to npm trusted publishing names the configuration",
+			// Nothing says where either release was built, which is where almost every
+			// real migration lands, so the finding reports at warn rather than block.
+			level: model.LevelWarn,
 			subject: func() *Subject {
 				return historyA(model.NPM,
 					releaseA{"2.3.2", "bdehamer", 40, false, false},
@@ -332,8 +337,12 @@ func TestTD002PublisherChanged(t *testing.T) {
 				return
 			}
 			f := res.Findings[0]
-			if f.Level != model.LevelBlock {
-				t.Errorf("level = %s, want block", f.Level)
+			wantLevel := tt.level
+			if wantLevel == model.LevelOff {
+				wantLevel = model.LevelBlock
+			}
+			if f.Level != wantLevel {
+				t.Errorf("level = %s, want %s", f.Level, wantLevel)
 			}
 			if got := stringsA(t, f.Evidence, "previous_publishers"); !equalA(got, tt.publishers) {
 				t.Errorf("previous_publishers = %v, want %v", got, tt.publishers)
@@ -563,13 +572,59 @@ func TestTD002MigrationToTrustedPublishingFromTheSameRepository(t *testing.T) {
 		t.Errorf("evidence names a repository although the two disagree: %v", other.Evidence)
 	}
 
-	// No verified attestation at all is the same answer: nothing says where this
-	// release was built.
+	// No verified attestation at all is the ordinary state of a package whose earlier
+	// releases nobody attested, and it is where almost every real migration lands:
+	// 44 of the 81 block findings of a scan of npm/cli's lockfile on 2026-09-12 were
+	// this shape, every one of them a package adopting trusted publishing. Blocking
+	// them teaches people to turn the check off, so the finding stays and reports at
+	// warn. A stolen account could look like this too, which is why it is still a
+	// finding and why a run that fails on warnings still fails.
 	none := historyA(model.NPM,
 		releaseA{"1.0.0", "alice", 40, false, false},
 		releaseA{"1.2.0", "github-trusted-publisher:0dd1c2e3", 1, false, false})
 	none.Loader = &loaderA{}
-	if got := runA(t, "TD002", none, outcomeA{findings: 1}).Findings[0]; got.Level != model.LevelBlock {
-		t.Errorf("level = %s, want block with no attestation to compare", got.Level)
+	if got := runA(t, "TD002", none, outcomeA{findings: 1}).Findings[0]; got.Level != model.LevelWarn {
+		t.Errorf("level = %s, want warn with no attestation to compare", got.Level)
 	}
+}
+
+// npm's trusted publishing replaces the account that published a release with a
+// synthetic identity, so the first release published that way is a publisher change
+// by any reading, and it is also the change this tool exists to encourage: the
+// package stopped being published from somebody's laptop. Measured on 2026-09-12 on
+// npm/cli's lockfile: 44 of the 81 block findings of one scan were exactly this.
+// A migration whose publishing evidence did not weaken is reported at warn, so it
+// is still seen and no longer fails a gate. One whose evidence weakened keeps the
+// level the policy set, because that is also what a stolen account with a trusted
+// publisher of its own looks like.
+func TestTD002MigrationToTrustedPublishingDoesNotBlock(t *testing.T) {
+	const trusted = "github-trusted-publisher:oidc:11607fbf-b2d2-4ab1-98ba-a91b9aa036a0"
+	build := func(now, before model.Provenance) *Subject {
+		s := historyA(model.NPM,
+			releaseA{version: "1.0.0", publisher: "alice", daysAgo: 40},
+			releaseA{version: "1.1.0", publisher: trusted, daysAgo: 10})
+		s.Version.Provenance = now
+		for i := range s.Package.Versions {
+			if s.Package.Versions[i].Ref.Version == "1.0.0" {
+				s.Package.Versions[i].Provenance = before
+			}
+		}
+		return s
+	}
+	attested := model.Provenance{Kind: model.ProvenanceAttestation, Verified: true}
+	signature := model.Provenance{Kind: model.ProvenanceSignature}
+
+	t.Run("evidence no weaker is a warning", func(t *testing.T) {
+		out := runA(t, "TD002", build(attested, signature), outcomeA{findings: 1})
+		if got := out.Findings[0].Level; got != model.LevelWarn {
+			t.Errorf("level = %s, want warn: a package that moved to trusted publishing without losing evidence must not fail a gate", got)
+		}
+	})
+
+	t.Run("evidence weaker keeps the level", func(t *testing.T) {
+		out := runA(t, "TD002", build(signature, attested), outcomeA{findings: 1})
+		if got := out.Findings[0].Level; got != model.LevelBlock {
+			t.Errorf("level = %s, want block: the identity changed and the evidence got weaker", got)
+		}
+	})
 }
