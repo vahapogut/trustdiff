@@ -259,7 +259,7 @@ classifications and the reports are in [docs/precision.md](precision.md) and
   release already listed as a maintainer, a name that existed before the one it
   resembles, and a comparison that crosses release lines.
 - One check stopped reading a data source's indexing lag as a finding, and one
-  constant moved on the strength of eight measured findings rather than a guess.
+  constant moved on the strength of seven measured findings rather than a guess.
 
 Two things the pass found and did not fix, which is why they are in the proposal
 below: a `scan` spends most of its wall clock asking for download counts one

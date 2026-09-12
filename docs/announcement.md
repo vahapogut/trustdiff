@@ -70,7 +70,7 @@ publisher changed" and failed the build for the safest change a package can make
 
 The one that was pure guesswork on my part: a constant saying that a package a
 hundred times behind the name it resembles is where a typo lands. Across ten
-lockfiles it fired eight times and caught no squats, only old packages with real
+lockfiles it fired seven times and caught no squats, only old packages with real
 users: `art` behind `arg`, `flot` behind `flat`, `@vx/responsive` behind the
 `@visx/responsive` the project renamed itself to three years later. The malware it
 was written for sits fourteen thousand times behind its target.

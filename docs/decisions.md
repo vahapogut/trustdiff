@@ -103,7 +103,7 @@ written, and a decision that is later reversed gets a new line rather than an ed
   which is what makes the comparison worth anything. The fifteen crates.io findings
   of the pass stay at block.
 - `typosquat-suspect`'s popularity gap moved from a hundredfold to a thousandfold
-  on the strength of eight findings. It is a measured constant, not a derived one,
+  on the strength of seven findings. It is a measured constant, not a derived one,
   and the residual risk is written where it is set: a squat between a hundred and a
   thousand times behind its target, older than a year and above the low-usage
   threshold, is now reported at warn rather than at the configured level.
