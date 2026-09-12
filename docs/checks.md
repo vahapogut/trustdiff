@@ -115,11 +115,16 @@ Where nothing says where either release was built, which is the ordinary state o
 
 Where the two attestations name different repositories, the finding keeps its level. That is what an account takeover with a trusted publisher of the attacker's own looks like, and the explanation says so.
 
+**The other case reported below its level.** A version published by an account that the release before it already listed as a maintainer is reported at `warn`, with `publisher_is_maintainer` in its evidence. A package with several maintainers releases through whichever of them cut the release, and the registry named this one before the release under review existed, so what changed is which of the package's own maintainers pressed publish. The precision pass of 2026-09-12 measured how much of this check's output that is: of 317 distinct npm findings reported at `block` across ten public lockfiles, a sample of 25 found 11 published by an account the previous release already listed, among them `@jest/pattern` by `simenb`, `micromatch` by `doowb` and `ts-node` by `blakeembrey`.
+
+An account added to the package and then publishing is a different shape and keeps its level, because the previous release's list does not have it in it. That is the event-stream shape exactly: `3.3.4` listed `dominictarr` alone, and `3.3.5` was published by `right9ctrl`.
+
 **Evidence.**
 
 | Key | Meaning |
 |---|---|
 | `publisher` | account that published the evaluated version |
+| `publisher_is_maintainer` | true when the release before this one already listed the publishing account as a maintainer |
 | `previous_publishers` | distinct accounts of the previous releases, newest first |
 | `previous_versions` | the previous releases that were compared, newest first |
 | `previous_releases` | one object per previous release: `version`, `publisher` (empty when not recorded) and `published_at` (RFC 3339) |

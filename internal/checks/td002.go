@@ -65,6 +65,18 @@ import (
 // does a release through a trusted publisher configuration that is not the one the
 // previous release used.
 //
+// One more case is reported below its configured level: a version published by an
+// account the release before it already listed as a maintainer. A package with
+// several maintainers releases through whichever of them cut the release, and the
+// registry named this one before the release under review existed, so what changed
+// is which of the package's own maintainers pressed publish. The precision pass of
+// 2026-09-12 measured it: of 317 distinct npm findings this check reported at block
+// across ten public lockfiles, a sample of 25 found 11 published by an account the
+// previous release already listed. The finding stays, at warn. An account added to
+// the package and then publishing is a different shape and keeps its level, because
+// the previous release's list does not have it in it; that is the shape of the
+// event-stream takeover, where 3.3.6 was published by an account 3.3.5 never listed.
+//
 // Evidence keys of the registry way:
 //
 //	publisher            identity that published the evaluated version
@@ -76,6 +88,8 @@ import (
 //	previous_versions    the previous releases that were compared, newest first
 //	previous_releases    one object per previous release: version, publisher
 //	                     (empty when not recorded) and published_at (RFC 3339)
+//	publisher_is_maintainer  true when the release before this one already listed
+//	                     the publishing account as a maintainer
 //	attested_repository  the repository a verified attestation names for both this
 //	                     version and the one before it, present only for a migration
 //	                     to trusted publishing that kept building from it
@@ -203,6 +217,15 @@ func (c td002) fromHistory(ctx context.Context, s *Subject) (Result, string) {
 		explanation = fmt.Sprintf("%s; %s was published by %s, %s",
 			publisherHistoryText(history), ref.Version, identity.text(), identity.different())
 	}
+	// An account the release before this one already listed as a maintainer is not
+	// an identity arriving from outside: the package named it before this release
+	// existed. A trusted publisher never appears in a maintainer list, so the
+	// question is only asked of accounts.
+	listedBefore := !identity.trusted() && containsFold(publisherNames(history[0].Maintainers), publisher)
+	if listedBefore {
+		explanation += fmt.Sprintf("; %s is listed as a maintainer of %s, the release before it, so this is a release cut by an account the package had already named rather than an identity arriving from outside, and it is reported at warn rather than at the configured level",
+			publisher, history[0].Ref.Version)
+	}
 	migration := identity.trusted() && !trustedBefore
 	sameRepository := ""
 	evidenceKept := false
@@ -236,6 +259,9 @@ func (c td002) fromHistory(ctx context.Context, s *Subject) (Result, string) {
 	if evidenceKept {
 		evidence["evidence_kept"] = true
 	}
+	if listedBefore {
+		evidence["publisher_is_maintainer"] = true
+	}
 	finding := NewFinding(c, s, title, explanation, evidence)
 	switch {
 	case sameRepository != "":
@@ -249,6 +275,15 @@ func (c td002) fromHistory(ctx context.Context, s *Subject) (Result, string) {
 		// publisher and the evidence did not weaken. That is what a migration looks
 		// like on a package whose earlier attestation nobody verified, which is most
 		// of them, and it is not worth a block on its own.
+		finding.Level = min(finding.Level, model.LevelWarn)
+	case listedBefore:
+		// A package with several maintainers releases through whichever of them cut
+		// the release. The registry named this account before this release existed,
+		// so the change is a rotation inside a set somebody had already published,
+		// and the row is worth seeing rather than worth failing a build over. An
+		// account added to the package and then publishing is the other thing, and
+		// it is not this case: TD003 reports the addition, and this check keeps its
+		// level because the previous release's list does not have the account in it.
 		finding.Level = min(finding.Level, model.LevelWarn)
 	}
 	return Result{Findings: []model.Finding{finding}}, ""

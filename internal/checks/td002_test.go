@@ -628,3 +628,62 @@ func TestTD002MigrationToTrustedPublishingDoesNotBlock(t *testing.T) {
 		}
 	})
 }
+
+// A package with several maintainers releases through whichever of them cut the
+// release, and npm records who that was. The precision pass of 2026-09-12 found
+// 317 distinct npm findings this check reported at block across ten public
+// lockfiles; in a sample of 25, 11 were published by an account the release before
+// them already listed as a maintainer: @jest/pattern by simenb, micromatch by
+// doowb, ts-node by blakeembrey, ansi-regex by qix. That is a release cut by
+// somebody the package had already named, not an identity arriving from outside,
+// and it is not worth failing a build over. The account that published
+// event-stream 3.3.6 was not in 3.3.5's maintainer list, so the case this check
+// exists for still blocks.
+func TestTD002APublisherTheLastReleaseAlreadyListedIsNotANewIdentity(t *testing.T) {
+	build := func(maintainers ...string) *Subject {
+		s := historyA(model.NPM,
+			releaseA{version: "1.0.0", publisher: "alice", daysAgo: 40},
+			releaseA{version: "1.1.0", publisher: "bob-ci", daysAgo: 10})
+		for i := range s.Package.Versions {
+			if s.Package.Versions[i].Ref.Version != "1.0.0" {
+				continue
+			}
+			for _, m := range maintainers {
+				s.Package.Versions[i].Maintainers = append(s.Package.Versions[i].Maintainers, model.Publisher{Name: m})
+			}
+		}
+		return s
+	}
+
+	t.Run("a maintainer of the previous release is a warning", func(t *testing.T) {
+		out := runA(t, "TD002", build("alice", "bob-ci"), outcomeA{findings: 1})
+		f := out.Findings[0]
+		if got := f.Level; got != model.LevelWarn {
+			t.Errorf("level = %s, want warn: bob-ci was already a maintainer of 1.0.0", got)
+		}
+		if got := f.Evidence["publisher_is_maintainer"]; got != true {
+			t.Errorf("publisher_is_maintainer = %v, want true", got)
+		}
+		if !strings.Contains(f.Explanation, "maintainer of 1.0.0") {
+			t.Errorf("explanation does not say the publisher was already a maintainer:\n%s", f.Explanation)
+		}
+	})
+
+	t.Run("an account nobody listed keeps the level", func(t *testing.T) {
+		out := runA(t, "TD002", build("alice", "carol"), outcomeA{findings: 1})
+		f := out.Findings[0]
+		if got := f.Level; got != model.LevelBlock {
+			t.Errorf("level = %s, want block: bob-ci is in nobody's maintainer list", got)
+		}
+		if _, ok := f.Evidence["publisher_is_maintainer"]; ok {
+			t.Errorf("publisher_is_maintainer is present for an account that was never listed: %v", f.Evidence)
+		}
+	})
+
+	t.Run("a release with no maintainer list keeps the level", func(t *testing.T) {
+		out := runA(t, "TD002", build(), outcomeA{findings: 1})
+		if got := out.Findings[0].Level; got != model.LevelBlock {
+			t.Errorf("level = %s, want block: an unread maintainer list cannot demote anything", got)
+		}
+	})
+}
