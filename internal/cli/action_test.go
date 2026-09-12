@@ -408,6 +408,30 @@ func TestReleaseArchivesCarryTheNotices(t *testing.T) {
 //
 // Only the release job. Everything in ci.yml floats forward on purpose, so
 // govulncheck sees the newest standard library rather than the one this freezes.
+// The release job signs with this repository's own OIDC identity, so whatever can
+// push a v* tag can produce a release that verifies. Two settings stand between a
+// tag and a signature: a ruleset that restricts who creates the tag, and an
+// environment with a required reviewer. The environment applies only while the job
+// declares it, and one deleted line puts the pipeline back to where a tag push was
+// the whole of the authorization. docs/releasing.md section 7 is the reasoning.
+func TestReleaseJobWaitsForTheReleaseEnvironment(t *testing.T) {
+	var release struct {
+		Jobs map[string]struct {
+			Environment string `yaml:"environment"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(repoFile(t, ".github", "workflows", "release.yml"), &release); err != nil {
+		t.Fatalf("parse release.yml: %v", err)
+	}
+	job, ok := release.Jobs["release"]
+	if !ok {
+		t.Fatalf("no job named release; release.yml has %v", keysOf(release.Jobs))
+	}
+	if job.Environment != "release" {
+		t.Errorf("the release job declares environment %q, and the approval applies only while it names release", job.Environment)
+	}
+}
+
 func TestReleasePinsTheToolchainGoModNames(t *testing.T) {
 	gomod := string(repoFile(t, "go.mod"))
 	toolchain := regexp.MustCompile(`(?m)^toolchain go(\S+)$`).FindStringSubmatch(gomod)

@@ -19,6 +19,12 @@ jobs:
   release:
     name: release
     runs-on: ubuntu-latest
+    # A person stands between a tag and a signed release. This environment has a
+    # required reviewer, so the job waits for an approval before it can sign
+    # anything, and docs/releasing.md section 7 says what it is for and how it was
+    # made. The environment has to exist first: naming one that does not fails the
+    # job with a message about a missing environment rather than a missing approval.
+    environment: release
     timeout-minutes: 30
     permissions:
       contents: write # create the release and upload its assets
