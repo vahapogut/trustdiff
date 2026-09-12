@@ -25,3 +25,13 @@ written, and a decision that is later reversed gets a new line rather than an ed
   push rather than once per commit where the commits of that push touch
   documentation alone, and again whenever Go code changes. Nothing lands
   unverified.
+- The precision pass uses ten public repositories, each pinned at the commit that
+  was its default branch head on 2026-09-12, one for every lockfile format this
+  release reads and two of them monorepos. `expressjs/express` was the first
+  choice for `package-lock.json` and was dropped: it carries no lockfile at its
+  head, checked through the contents API before anything was cloned.
+  `axios/axios` was verified as a spare and left out, because the format it covers
+  is already covered twice, by `npm/cli` and by the `apache/superset` frontend.
+- Every command of the precision pass runs with `TRUSTDIFF_NOW` pinned to
+  2026-09-12T12:00:00Z, so the ages in the reports are the ages this run saw and a
+  rerun of the same commits says the same thing.
