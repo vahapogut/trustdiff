@@ -77,7 +77,17 @@ afterwards with `gh release edit <tag> --prerelease`.
 
 ## 3. What the release workflow does on its own
 
-Pushing the tag starts one job. It needs no input and no approval.
+Pushing the tag starts one job, and the job waits. It runs in the `release`
+environment, which has one required reviewer, so nothing is built or signed until a
+person approves it: open the run under
+[Actions](https://github.com/vahapogut/trustdiff/actions/workflows/release.yml),
+press **Review deployments**, tick `release` and **Approve and deploy**. The waiting
+run shows the tag it was started for, which is the thing to check before approving.
+Section 7 says why the gate is there. Rejecting the deployment leaves the tag in
+place and publishes nothing, which is how a tag pushed by mistake is undone: reject
+it, then `git push --delete origin <tag>`.
+
+Once approved, the job needs no further input.
 
 0. Refuses to go on when `TAP_GITHUB_TOKEN` is empty and the tag is not a
    prerelease. That is the whole of what went wrong with v0.4.1, and it costs
