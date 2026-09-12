@@ -375,6 +375,30 @@ func (c *Client) BulkDownloads(ctx context.Context, names []string) (map[string]
 	return out, nil
 }
 
+// withoutTheNames replaces the names in the URL of a failed bulk request with how
+// many there were. The loader stores whatever this call returns against every name
+// it asked about, so the whole list would be repeated in the report once per
+// package: the precision pass of 2026-09-12 put 1,005 copies of a 3,000 character
+// URL into one report, 2.6 MB of it, and made every skip reason in that report
+// unreadable. The status and the endpoint are what a reader needs, and the names
+// are in the report already. Copying the typed error keeps errors.As and the status
+// code for the callers that read them.
+func withoutTheNames(err error, endpoint string, n int) error {
+	var status *httpcache.StatusError
+	if errors.As(err, &status) {
+		short := *status
+		short.URL = fmt.Sprintf("%s/downloads/point/last-week/ (%d names)", endpoint, n)
+		return &short
+	}
+	var link *url.Error
+	if errors.As(err, &link) {
+		short := *link
+		short.URL = fmt.Sprintf("%s/downloads/point/last-week/ (%d names)", endpoint, n)
+		return &short
+	}
+	return err
+}
+
 // bulkChunk asks the bulk endpoint for one chunk of unscoped names and adds the
 // counts it knows to out. Shape verified 2026-09-09: an object keyed by name
 // whose values are point objects, or null for a name the API does not know
@@ -387,10 +411,10 @@ func (c *Client) bulkChunk(ctx context.Context, names []string, out map[string]i
 	u := c.downloads + "/downloads/point/last-week/" + strings.Join(names, ",")
 	resp, err := c.http.Get(ctx, u, httpcache.Request{TTL: downloadsTTL})
 	if err != nil {
-		return fmt.Errorf("npm: bulk downloads: %w", err)
+		return fmt.Errorf("npm: bulk downloads of %d names: %w", len(names), withoutTheNames(err, c.downloads, len(names)))
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("npm: bulk downloads: unexpected status %d", resp.StatusCode)
+		return fmt.Errorf("npm: bulk downloads of %d names: unexpected status %d", len(names), resp.StatusCode)
 	}
 	var doc map[string]*pointDoc
 	if err := json.Unmarshal(resp.Body, &doc); err != nil {

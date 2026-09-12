@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -1180,5 +1181,60 @@ func TestPrepareIsNotAnInstallScript(t *testing.T) {
 	want := map[string]string{"postinstall": "node ./scripts/setup.js"}
 	if !reflect.DeepEqual(scripted.Scripts, want) {
 		t.Errorf("1.2.0 Scripts = %v, want the postinstall alone", scripted.Scripts)
+	}
+}
+
+// The URL of a bulk request carries up to 128 package names, and the loader stores
+// whatever this returns against every one of them, so a failure would put the whole
+// list into the report once per package. The precision pass of 2026-09-12 measured
+// it: api.npmjs.org refused the batches of a cold run, and 1,005 copies of a 3,000
+// character URL added 2.6 MB to one report and made every skip reason in it
+// unreadable. What a reader needs is the endpoint, how many names were asked for
+// and what came back.
+func TestBulkDownloadsDoesNotPutOneHundredAndTwentyEightNamesIntoItsError(t *testing.T) {
+	var asked int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		asked++
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+	u, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := httpcache.New(httpcache.Options{
+		Dir:       t.TempDir(),
+		UserAgent: "trustdiff-test",
+		HostRPS:   map[string]float64{u.Host: 1000},
+		Retries:   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := New(h, WithRegistryURL(srv.URL), WithDownloadsURL(srv.URL), WithLogger(slog.New(slog.DiscardHandler)))
+
+	names := make([]string, 0, bulkLimit)
+	for i := range bulkLimit {
+		names = append(names, fmt.Sprintf("trustdiff-name-%03d", i))
+	}
+	_, err = c.BulkDownloads(context.Background(), names)
+	if err == nil {
+		t.Fatal("BulkDownloads returned no error for a refused request")
+	}
+	msg := err.Error()
+	if len(msg) > 200 {
+		t.Errorf("the error is %d characters long:\n%s", len(msg), msg)
+	}
+	if strings.Contains(msg, names[1]) {
+		t.Errorf("the error names the packages it asked about:\n%s", msg)
+	}
+	for _, want := range []string{"128 names", "429"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the error does not say %q:\n%s", want, msg)
+		}
+	}
+	var status *httpcache.StatusError
+	if !errors.As(err, &status) || status.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("errors.As(&StatusError) = %v, %+v, want the 429 to survive", errors.As(err, &status), status)
 	}
 }
