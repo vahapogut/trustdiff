@@ -108,9 +108,6 @@ func newDataLoader(reg registry.Registry, adv advisory.Source, dd depsDevSource,
 // fails stores its error for every ref it covered, so the source is not asked again
 // for them; a batch that lost only some of its refs stores the error for those and
 // the answers for the rest; a batch that failed because ctx ended stores nothing.
-// The counts batch is the exception: a failure there stores nothing at all, because
-// the per name path can still answer and a batch that failed says nothing about any
-// single name.
 func (l *DataLoader) Prefetch(ctx context.Context, refs []model.PackageRef) {
 	versioned := uniqueVersioned(refs)
 	if len(versioned) == 0 {
@@ -253,6 +250,13 @@ type bulkDownloader interface {
 // scoped npm name, or did not know is not stored, so the per name path asks for it
 // and reports what it gets. Storing a zero for an unknown name would read as a
 // package nobody installs, which is the thing the low usage check is about.
+//
+// A batch that fails stores its error for every name it carried, rather than
+// leaving them to the per name path. That path is what the counts API refuses: one
+// failed batch used to become one request per package, which is how a scan of a
+// large lockfile drew 2,406 answers of 429 and then a block of the address itself,
+// measured on 2026-09-12. The checks that read counts report themselves as skipped
+// instead, which is what a policy with on_data_unavailable can act on.
 func (l *DataLoader) prefetchDownloads(ctx context.Context, refs []model.PackageRef) {
 	byEco := map[model.Ecosystem][]string{}
 	seen := map[model.PackageRef]bool{}
@@ -280,6 +284,9 @@ func (l *DataLoader) prefetchDownloads(ctx context.Context, refs []model.Package
 				return
 			}
 			l.logBatchFailure("download counts batch failed", len(names), err)
+			for _, name := range names {
+				l.downloads.store(model.PackageRef{Ecosystem: eco, Name: name}, -1, err)
+			}
 			continue
 		}
 		for _, name := range names {

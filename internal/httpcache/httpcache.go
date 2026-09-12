@@ -71,6 +71,15 @@ const (
 	// https://rust-lang.github.io/rfcs/3463-crates-io-policy-update.html.
 	cratesHost = "crates.io"
 	cratesRPS  = 1
+	// api.npmjs.org, the download counts API, documents no rate limit and enforces
+	// a hard one. Measured on 2026-09-12 while evaluating npm/cli's 1202 entry
+	// package-lock.json: at the default rate it answered 2,406 requests with 429,
+	// and once it had, a probe of twenty names one second apart was refused
+	// eighteen times, as was the batch form, with Cloudflare's "error code: 1015",
+	// which throttles the address rather than the request. One request per second
+	// is what keeps a scan from getting there; the batch form carries the rest.
+	npmCountsHost = "api.npmjs.org"
+	npmCountsRPS  = 1
 
 	baseBackoff   = 500 * time.Millisecond
 	maxBackoff    = 30 * time.Second
@@ -232,7 +241,7 @@ func New(opts Options) (*Client, error) { //nolint:gocritic // Options by value 
 	case retries < 0:
 		retries = 0
 	}
-	hostRPS := map[string]float64{cratesHost: cratesRPS}
+	hostRPS := map[string]float64{cratesHost: cratesRPS, npmCountsHost: npmCountsRPS}
 	for host, rps := range opts.HostRPS {
 		if rps <= 0 || math.IsNaN(rps) || math.IsInf(rps, 0) {
 			return nil, fmt.Errorf("httpcache: Options.HostRPS[%q] must be positive, got %v", host, rps)

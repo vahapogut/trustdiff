@@ -45,3 +45,16 @@ written, and a decision that is later reversed gets a new line rather than an ed
   was stopped once it had measured the rate limiting, rather than left to finish.
   Its numbers are the baseline this fix is measured against; the numbers in
   `docs/precision.md` come from a rerun of all ten repositories with the fix in.
+- `api.npmjs.org` was given one request per second rather than a rate measured to
+  be safe. No rate could be measured: by the time the question was asked the
+  address was already throttled, and twenty probes one second apart were refused
+  eighteen times. npm documents no limit at all, crates.io asks for one request per
+  second in its own policy, and the batch form carries most of a run, so the limit
+  costs only the tail of scoped names.
+- A download counts batch that fails now reports that failure for every name it
+  carried, rather than leaving those names to the per name path. The measurement
+  decided it: one refused batch used to become one request per package, which is
+  what drew the block in the first place. The cost is that the checks reading
+  counts report themselves as skipped for the whole run when the batch fails, which
+  `on_data_unavailable` can act on, and the previous behavior hid the outage behind
+  a thousand requests that mostly failed too.

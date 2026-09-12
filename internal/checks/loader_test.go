@@ -595,11 +595,15 @@ type bulkSourceR struct {
 	*fakeSourceR
 	bulkCalls int
 	asked     [][]string
+	bulkErr   error
 }
 
 func (b *bulkSourceR) BulkDownloads(_ context.Context, names []string) (map[string]int64, error) {
 	b.bulkCalls++
 	b.asked = append(b.asked, append([]string(nil), names...))
+	if b.bulkErr != nil {
+		return nil, b.bulkErr
+	}
 	out := make(map[string]int64, len(names))
 	for _, name := range names {
 		if n, ok := b.downloads[name]; ok {
@@ -661,5 +665,33 @@ func TestPrefetchAsksTheCountsApiOnceForTheWholeRun(t *testing.T) {
 	}
 	if n := src.count("downloads"); n != 1 {
 		t.Errorf("the per name path was used %d times for the unknown name, want once", n)
+	}
+}
+
+// A batch that fails used to leave every name to the per name path, which is how
+// one refused request became a thousand. api.npmjs.org answers a scan of a large
+// lockfile with 429 and then with Cloudflare's 1015, which blocks the address
+// altogether: measured on 2026-09-12, after which even one request per second and
+// the batch form itself were refused. So a failed batch is an answer about every
+// name it carried: the checks that read counts report themselves as skipped, which
+// a policy can fail the run on, and nothing asks again.
+func TestPrefetchDoesNotFallBackToOneRequestPerPackage(t *testing.T) {
+	src := newFakeSourceR(model.NPM)
+	src.add(stableListR(model.NPM, "lib", "1.0.0"))
+	src.downloads["lib"] = 42
+	bulk := &bulkSourceR{fakeSourceR: src, bulkErr: errors.New("429 Too Many Requests")}
+	l := newDataLoader(registry.Registry{model.NPM: bulk}, nil, nil, nil)
+
+	l.Prefetch(t.Context(), []model.PackageRef{model.MustParseRef("npm:lib@1.0.0")})
+	if bulk.bulkCalls != 1 {
+		t.Fatalf("the batch was asked %d times, want once", bulk.bulkCalls)
+	}
+
+	_, err := l.Downloads(t.Context(), model.NPM, "lib")
+	if err == nil {
+		t.Error("a name whose batch failed returned a count, and the batch answered nothing")
+	}
+	if n := src.count("downloads"); n != 0 {
+		t.Errorf("the per name path was used %d times after the batch failed, which is the storm this prevents", n)
 	}
 }

@@ -223,6 +223,12 @@ func TestNewDefaults(t *testing.T) {
 	if got := c.limiterFor("crates.io").Limit(); got != 1 {
 		t.Errorf("crates.io limit = %v, want 1 request per second", got)
 	}
+	// api.npmjs.org answers a scan of a large lockfile with 429 and then with
+	// Cloudflare's 1015, which blocks the address for everything including the
+	// batch form. Measured on 2026-09-12: see the constant's comment.
+	if got := c.limiterFor("api.npmjs.org").Limit(); got != 1 {
+		t.Errorf("api.npmjs.org limit = %v, want 1 request per second", got)
+	}
 	if got := c.limiterFor("registry.npmjs.org").Limit(); got != 10 {
 		t.Errorf("default limit = %v, want 10 requests per second", got)
 	}
