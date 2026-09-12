@@ -39,20 +39,19 @@ import (
 // to clear a low-usage threshold, so age and users alone called the 2017 npm
 // malware a package a project lives with. What tells it apart from a name that
 // really is lived with is that cross-env has fourteen thousand times its
-// downloads. A package a hundred times behind the name it imitates is where a typo
-// lands, whatever its age, so the demotion does not apply to it. Both counts have
-// to come from the registry's own weekly figures, which is one window for both
+// downloads. A package a thousand times behind the name it imitates is where a
+// typo lands, whatever its age, so the demotion does not apply to it. Both counts
+// have to come from the registry's own weekly figures, which is one window for both
 // names; a neighbor nobody could count vetoes nothing, for the same reason an
 // unread half cannot demote.
 //
 // One thing takes that veto back in turn: a name cannot have been registered to
 // catch the typos of a name that did not exist yet. A candidate whose first release
 // is earlier than the first release of the neighbor keeps its demotion whatever the
-// gap, and its evidence carries existed_before. @vx/responsive, what the visx
-// project published under before it renamed itself, is the case that found this:
-// the precision pass of 2026-09-12 blocked it for resembling @visx/responsive,
-// which npm first saw three and a half years later. crossenv is the other way
-// round, so the veto still holds where it was written to.
+// gap, and its evidence carries existed_before. chrome-launch is the case that
+// found this: the precision pass of 2026-09-12 blocked it, 1360 times behind
+// chrome-launcher, which npm first saw two and a half years after it. crossenv is
+// the other way round, so the veto still holds where it was written to.
 //
 // As a cross-check, deps.dev's similarly named packages are consulted through the
 // Loader: a neighbor that is much more popular (it is in the popular list, or its
@@ -92,10 +91,20 @@ const (
 	// neighbor needs than the candidate to count as much more popular.
 	depsDevNeighborFactor = 100
 	// popularityGapFactor is how far behind the name it resembles a candidate has
-	// to be before its own age and users stop counting for anything. It is the same
-	// hundredfold, because it is the same question asked of the same numbers: is
-	// this name the one people meant, or the one they mistyped.
-	popularityGapFactor = 100
+	// to be before its own age and users stop counting for anything. It was the
+	// hundredfold of depsDevNeighborFactor, and the precision pass of 2026-09-12
+	// measured what that costs: a hundredfold is the ordinary distance between a
+	// niche package and a giant, not the mark of a squat. Every block finding this
+	// veto produced across ten public lockfiles was a package with years of history
+	// and real users, between 104 and 476 times behind the name it resembled, and
+	// the malware the veto was written for sits fourteen thousand times behind
+	// (crossenv 934 weekly downloads against cross-env's 13.4 million, read on
+	// 2026-09-11). A thousandfold keeps that case and drops the ordinary spread. It
+	// is a measured constant, not a derived one: a squat that is between a hundred
+	// and a thousand times behind its target, older than a year and installed often
+	// enough to clear the low-usage threshold is reported at warn rather than at the
+	// configured level.
+	popularityGapFactor = 1000
 	// maxDepsDevNeighborLookups bounds the download lookups per subject.
 	maxDepsDevNeighborLookups = 5
 	// listDateLayout is the format of the list_fetched evidence.

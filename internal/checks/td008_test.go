@@ -675,6 +675,18 @@ func TestTyposquatSuspectBlocksANameItsNeighborDwarfs(t *testing.T) {
 			want:      model.LevelWarn,
 			standing:  standingEstablished,
 		},
+		{
+			// A few hundredfold is the ordinary distance between a niche package and
+			// a giant rather than the mark of a squat. The precision pass of
+			// 2026-09-12 found art 476 times behind arg, flot 448 times behind flat,
+			// @conventional-commits/parser 117 times behind conventional-commits-parser
+			// and clipboard-js 109 times behind clipboard, all of them packages with
+			// years of history and real users, all of them blocked.
+			name:      "a few hundred times behind is the ordinary spread",
+			downloads: map[string]int64{"cross-env": crossenvWeekly * 500},
+			want:      model.LevelWarn,
+			standing:  standingEstablished,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -720,19 +732,19 @@ func TestTyposquatSuspectBlocksANameItsNeighborDwarfs(t *testing.T) {
 
 // A name cannot be imitating one that did not exist when it was registered. The
 // popularity gap takes back the demotion this check gives a package a project has
-// been living with, and on 2026-09-12 it did that to @vx/responsive, the name the
-// visx project published under until it renamed itself: 33,061 weekly downloads
-// against @visx/responsive's 3,451,088 is a hundredfold gap, and the older name
-// was blocked for resembling the newer one. First publish dates read from the npm
-// registry that day: @vx/responsive 2017-03-22, @visx/responsive 2020-09-16.
-// crossenv is the other way round, 2017-07-19 against cross-env's 2015-10-01, so
-// the malware this veto was written for still blocks.
+// been living with, and on 2026-09-12 it did that to chrome-launch, a package from
+// 2014: 10,382 weekly downloads against chrome-launcher's 14,121,975 is 1360 times
+// behind, well past the thousandfold the veto now asks for, and chrome-launcher
+// was first published on 2017-05-14, two and a half years after the name it
+// supposedly caught the typos of. First publish dates and weekly counts read from
+// the npm registry that day. crossenv is the other way round, 2017-07-19 against
+// cross-env's 2015-10-01, so the malware this veto was written for still blocks.
 func TestTyposquatSuspectDoesNotBlockANameThatExistedFirst(t *testing.T) {
 	const (
-		vxWeekly   = 33_061
-		visxWeekly = 3_451_088
+		launchWeekly   = 10_382
+		launcherWeekly = 14_121_975
 	)
-	vxFirst := time.Date(2017, time.March, 22, 0, 0, 0, 0, time.UTC)
+	launchFirst := time.Date(2014, time.December, 28, 0, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name         string
 		neighborList *registry.VersionList
@@ -741,13 +753,13 @@ func TestTyposquatSuspectDoesNotBlockANameThatExistedFirst(t *testing.T) {
 	}{
 		{
 			name:         "the name that existed first keeps the demotion",
-			neighborList: &registry.VersionList{Ecosystem: model.NPM, Created: vxFirst.AddDate(3, 0, 0)},
+			neighborList: &registry.VersionList{Ecosystem: model.NPM, Created: launchFirst.AddDate(2, 5, 0)},
 			want:         model.LevelWarn,
 			standing:     standingEstablished,
 		},
 		{
 			name:         "a neighbor that was there first still vetoes",
-			neighborList: &registry.VersionList{Ecosystem: model.NPM, Created: vxFirst.AddDate(-2, 0, 0)},
+			neighborList: &registry.VersionList{Ecosystem: model.NPM, Created: launchFirst.AddDate(-2, 0, 0)},
 			want:         model.LevelBlock,
 			standing:     standingOvershadowed,
 		},
@@ -765,19 +777,19 @@ func TestTyposquatSuspectDoesNotBlockANameThatExistedFirst(t *testing.T) {
 			c := &typosquatSuspect{lists: typosquat.Embedded(), load: func(time.Time) *typosquat.Lists {
 				panic("load must not be called when lists are set")
 			}}
-			loader := &fakeLoaderT{downloads: map[string]int64{"@visx/responsive": visxWeekly}}
+			loader := &fakeLoaderT{downloads: map[string]int64{"chrome-launcher": launcherWeekly}}
 			if tt.neighborList != nil {
-				loader.versions = map[string]*registry.VersionList{"@visx/responsive": tt.neighborList}
+				loader.versions = map[string]*registry.VersionList{"chrome-launcher": tt.neighborList}
 			}
-			s := subjectT("npm:@vx/responsive@0.0.199", loader, vxWeekly)
-			s.Package = &registry.VersionList{Ecosystem: model.NPM, Created: vxFirst}
+			s := subjectT("npm:chrome-launch@1.1.4", loader, launchWeekly)
+			s.Package = &registry.VersionList{Ecosystem: model.NPM, Created: launchFirst}
 			res := c.Run(context.Background(), s)
 			if len(res.Findings) != 1 {
 				t.Fatalf("Run() returned %d findings, want one: %+v", len(res.Findings), res.Findings)
 			}
 			f := &res.Findings[0]
-			if got := f.Evidence["neighbor"]; got != "@visx/responsive" {
-				t.Fatalf("neighbor = %v, want @visx/responsive", got)
+			if got := f.Evidence["neighbor"]; got != "chrome-launcher" {
+				t.Fatalf("neighbor = %v, want chrome-launcher", got)
 			}
 			if got := f.Evidence["standing"]; got != tt.standing {
 				t.Errorf("standing = %v, want %s", got, tt.standing)
