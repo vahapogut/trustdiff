@@ -239,7 +239,7 @@ func (l *DataLoader) prefetchFindings(ctx context.Context, refs []model.PackageR
 // names in one request. npm is the one that can: its counts API takes up to 128
 // unscoped names at a time. A source that cannot is left to the per name path,
 // which is what every source was left to before, and what a scan of a large
-// lockfile was rate limited for: on npm/cli's 1202 entry lockfile, evaluated live
+// lockfile was rate limited for: on npm/cli's 1201 entry lockfile, evaluated live
 // on 2026-09-12, api.npmjs.org answered 1684 of those per name requests with 429.
 type bulkDownloader interface {
 	BulkDownloads(ctx context.Context, names []string) (map[string]int64, error)

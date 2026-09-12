@@ -614,7 +614,7 @@ func (b *bulkSourceR) BulkDownloads(_ context.Context, names []string) (map[stri
 }
 
 // A scan of a large lockfile asked the counts API once per package. On npm/cli's
-// 1202 entry package-lock.json, evaluated live on 2026-09-12, api.npmjs.org
+// 1201 entry package-lock.json, evaluated live on 2026-09-12, api.npmjs.org
 // answered 1684 of those requests with 429 and the client spent the run backing
 // off and retrying. The counts API takes up to 128 names in one request, which is
 // what Prefetch now uses, so the per name path is left with the names a batch
