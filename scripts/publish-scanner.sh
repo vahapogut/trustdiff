@@ -1,7 +1,7 @@
 #!/bin/sh
 # Do the one-time npm setup for @trustdiff/bun-scanner, in one command.
 #
-# docs/releasing.md section 8 explains why these steps exist. This script does the
+# docs/releasing.md section 9 explains why these steps exist. This script does the
 # two that can be scripted and checks the one that cannot:
 #
 #   1. The npm organisation. NOT scriptable. Organisations are created on
@@ -162,7 +162,7 @@ else
 	# permission flag is required". Staging is the one this project chooses, because
 	# the workflow runs "npm stage publish" and nothing else, and because a person
 	# between a build and a version the world can install is the whole argument this
-	# tool makes. docs/releasing.md section 8 says why at length.
+	# tool makes. docs/releasing.md section 9 says why at length.
 	npm trust github "${name}" --repo "${repo}" --file "${workflow}" --allow-stage-publish
 	echo "configured"
 fi

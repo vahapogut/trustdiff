@@ -697,28 +697,28 @@ npm login
 sh scripts/publish-scanner.sh
 ```
 
-It is safe to run twice. It stops with a link if the organisation does not exist,
+It is safe to run twice. It stops with a link if the organization does not exist,
 leaves an already published version alone, and leaves an already configured trusted
 publisher alone. It handles no credential of its own: npm asks for the one time
 password in its own prompt. The three steps, and why each is what it is, were
 confirmed against npm's own documentation on 2026-09-10.
 
-### 8.1 Create the npm organisation
+### 9.1 Create the npm organization
 
-Done on 2026-09-10: the organisation `trustdiff` exists and `vahapogut1` owns it.
+Done on 2026-09-10: the organization `trustdiff` exists and `vahapogut1` owns it.
 This is the one step nothing can do for you, so it is written out in full for the
 next scope this project ever needs.
 
 The scope has to exist and it cannot be a personal one. npm gives every account the
 scope matching its own name, and the npm account here is `vahapogut1`, so it owns
 `@vahapogut1` and nothing else;
-`@trustdiff` requires an organisation literally named `trustdiff`. Organisations are
+`@trustdiff` requires an organization literally named `trustdiff`. Organizations are
 created on npmjs.com only. `npm org` manages the members of one that already exists
 and cannot create it, and there is no API for it.
 
 Choose the free plan. It allows unlimited public packages, which is all this needs.
 
-Turn on two-factor authentication on the account too, because `npm trust` in 8.3
+Turn on two-factor authentication on the account too, because `npm trust` in 9.3
 refuses to run without it. It has to be a passkey or a security key. npm stopped
 accepting an authenticator app for a new enrolment, and `npm profile enable-2fa`
 answers a request to add one with `Adding a new TOTP 2FA is no longer supported`,
@@ -728,13 +728,13 @@ Add one at `https://www.npmjs.com/settings/<account>/tfa` and keep the recovery
 codes somewhere you will still have them if the device is lost.
 
 If the name `trustdiff` turns out to be taken, the fallbacks are
-`@vahapogut1/bun-scanner`, which needs no organisation at all, or the unscoped
+`@vahapogut1/bun-scanner`, which needs no organization at all, or the unscoped
 `trustdiff-bun-scanner`. Either means editing `name` in
 `integrations/bun-scanner/package.json`, the four references in its README, the
 `bunfig.toml` example in the root README, and the tarball assertion in the publish
 workflow.
 
-### 8.2 Publish the first version by hand
+### 9.2 Publish the first version by hand
 
 Done on 2026-09-10: 0.4.0 went out this way, and it is the only version that ever
 will. It was packed from the working tree rather than from the `v0.4.0` tag, so its
@@ -773,11 +773,11 @@ This first version goes out without a provenance attestation. Every version afte
 gets one, because every version after it comes from the workflow.
 
 Do not be alarmed when `npm view` answers 404 straight afterwards. A new package under
-a new organisation takes a few minutes to appear: the publish returns 200, `npm access
+a new organization takes a few minutes to appear: the publish returns 200, `npm access
 get status` already reports it as public, and the registry document is the last thing
 to catch up. On 2026-09-10 that took a little over three minutes.
 
-### 8.3 Add the trusted publisher
+### 9.3 Add the trusted publisher
 
 Done on 2026-09-10, with staging permission only. `npm trust list
 @trustdiff/bun-scanner` shows it.
