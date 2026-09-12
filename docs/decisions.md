@@ -107,3 +107,27 @@ written, and a decision that is later reversed gets a new line rather than an ed
   and the residual risk is written where it is set: a squat between a hundred and a
   thousand times behind its target, older than a year and above the low-usage
   threshold, is now reported at warn rather than at the configured level.
+- A failed batch of download counts answers for the names it covered and not for the
+  rest, which reverses half of the decision above about a batch that fails. That one
+  was right about the storm it prevented and wrong about its scope: the cold run
+  showed one refused request for a single scoped name costing React's scan the counts
+  of 1,583 packages, and superset's the same. The names a failure did cover still get
+  that failure as their answer and nothing asks again for them.
+- `docs/precision.md` reports one run rather than two. The cold run of all ten
+  repositories is what its tables count, including the two repositories whose
+  download counts `api.npmjs.org` refused, and the document says what that cost
+  rather than repeating the run until the numbers looked better. The three findings
+  a run with counts reports differently are shown as single package checks against
+  the live registry instead.
+- The release is tagged v0.5.2. It carries a Changed section, and this repository's
+  changelog preamble ties those to a minor release; the instruction that ran this
+  work named the patch. Every level change in it lowers a level, so nothing that
+  passed for one of those reasons starts failing, and the one change that can fail a
+  run which used to pass is reading a Yarn 1 `yarn.lock` that used to come back as
+  "not read", which is the fix a Yarn 1 project would ask for. The tag waits for an
+  approval in the `release` environment, so the number can still be changed before
+  anything is published: reject the deployment and delete the tag.
+- `.pre-commit-hooks.yaml` moves its `rev:` from v0.5.0 to v0.5.2. The rule written
+  next to it is to move it when the release changes what the hook does, and this one
+  does: a repository on Yarn 1 gets a hook that reads its lockfile instead of one
+  that matches it, runs, and reports that it could not be read.

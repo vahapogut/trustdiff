@@ -2,7 +2,7 @@
 #
 #   repos:
 #     - repo: https://github.com/vahapogut/trustdiff
-#       rev: v0.5.0
+#       rev: v0.5.2
 #       hooks:
 #         - id: trustdiff-diff
 #
@@ -27,8 +27,11 @@
   # way internal/lockfile detects them. It named four of the nine through v0.4.1, so
   # a yarn.lock, bun.lock, deno.lock, poetry.lock or requirements file could change
   # and the hook would never run: installed, green and not looking. The rev above
-  # names the first release that carries the full list, because a reader who pins an
-  # earlier one gets the four name gate however current this file looks.
+  # names the first release a reader can pin and get this file's behavior from: it
+  # was v0.5.0 while that release was the one that carried the full list, and it is
+  # v0.5.2 now, the first release that reads the yarn.lock Yarn 1 wrote. A reader
+  # who pins v0.5.0 or v0.5.1 gets a hook that matches a Yarn 1 lockfile, runs, and
+  # reports that it could not read it.
   #
   # This decides whether the hook runs, not what it reads. pass_filenames is false
   # below and diff finds the lockfiles in git itself, so a pattern wider than the

@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-09-12
+
+The precision release. Ten public repositories at pinned commits, every lockfile
+format this tool reads, every block finding classified by hand, and the false
+positives fixed rather than written down. [docs/precision.md](docs/precision.md) is
+the write-up; `docs/precision/` holds the reports every number in it is counted
+from.
+
+One change here can turn a run that passed into a run that fails: a `yarn.lock` in
+the format Yarn 1 wrote is read now instead of coming back as "not read", so a
+repository that carries one gets findings on it for the first time. Every other
+level change in this release lowers a level, so nothing that passed for one of
+those reasons starts failing.
+
 ### Added
 
 - `yarn.lock` in the format Yarn 1 wrote is read. Two different files answer to that name, and this release read only the one Yarn 2 and later write: a repository that never migrated got "not read" and every entry in it went unevaluated. React's lockfile, 2,394 entries, is one of those, and it is what the precision pass of 2026-09-12 found. The Yarn 1 format is now read entry by entry with the line each key sits on: the installed name of an `npm:` alias, the sha1 in a resolved URL where the file predates the `integrity` field, and a `file:`, `link:`, git remote, GitHub shorthand or tarball source where the entry is not a registry one. Two things Yarn 1 does not record are not invented: it marks no entry as direct and none as dev or optional, because that file says nothing about either.
@@ -291,7 +305,8 @@ Project skeleton, published as a prerelease so that the release pipeline (checks
 - Continuous integration: lint, tests on Linux, macOS and Windows with Go 1.26 and 1.27, `govulncheck`, `gosec`, a binary size gate and a direct dependency budget gate.
 - Signed releases: reproducible builds for Linux, macOS and Windows on amd64 and arm64, `checksums.txt`, an SBOM, cosign keyless signatures and GitHub build provenance. `SECURITY.md` explains how to verify a download.
 
-[Unreleased]: https://github.com/vahapogut/trustdiff/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/vahapogut/trustdiff/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/vahapogut/trustdiff/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/vahapogut/trustdiff/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/vahapogut/trustdiff/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/vahapogut/trustdiff/compare/v0.4.0...v0.4.1
