@@ -375,17 +375,17 @@ func (c *Client) BulkDownloads(ctx context.Context, names []string) (map[string]
 	return out, nil
 }
 
-// bulkFailure is the error of a failed bulk request with the package names taken
+// bulkDownloadsError is the error of a failed bulk request with the package names taken
 // out of what it prints. It keeps the error it was made from, so errors.Is and
 // errors.As see exactly what they saw before: the status code, the offline
 // sentinel, a canceled context.
-type bulkFailure struct {
+type bulkDownloadsError struct {
 	msg string
 	err error
 }
 
-func (e *bulkFailure) Error() string { return e.msg }
-func (e *bulkFailure) Unwrap() error { return e.err }
+func (e *bulkDownloadsError) Error() string { return e.msg }
+func (e *bulkDownloadsError) Unwrap() error { return e.err }
 
 // withoutTheNames replaces the URL of a failed bulk request, wherever it appears in
 // the message, with the endpoint and how many names it carried. The loader stores
@@ -400,7 +400,7 @@ func (e *bulkFailure) Unwrap() error { return e.err }
 // and an offline cache miss that is neither.
 func withoutTheNames(err error, requested, short string) error {
 	msg := strings.ReplaceAll(err.Error(), requested, short)
-	return &bulkFailure{msg: msg, err: err}
+	return &bulkDownloadsError{msg: msg, err: err}
 }
 
 // bulkChunk asks the bulk endpoint for one chunk of unscoped names and adds the
