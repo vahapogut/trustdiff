@@ -35,7 +35,7 @@
 #
 # Before this workflow can succeed, three things have to exist, and none of them
 # can be created from here. docs/releasing.md section 9 has the steps:
-#   1. The npm organisation named trustdiff, which is what makes the scope
+#   1. The npm organization named trustdiff, which is what makes the scope
 #      @trustdiff usable. A personal account only ever owns the scope matching
 #      its own name, so no personal account can publish under @trustdiff.
 #   2. Version 0.4.0 published by hand, once. npm cannot create a package through
@@ -137,7 +137,7 @@ jobs:
         # red releases, and both skips here are exactly that.
         #
         # The package does not exist yet: everything below would fail, because
-        # trusted publishing cannot create a package and the organisation may not
+        # trusted publishing cannot create a package and the organization may not
         # exist either. That is the state this repository is in until the three
         # one-time steps in docs/releasing.md section 9 are done, so it says so
         # and stops.

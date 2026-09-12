@@ -4,8 +4,8 @@
 # docs/releasing.md section 9 explains why these steps exist. This script does the
 # two that can be scripted and checks the one that cannot:
 #
-#   1. The npm organisation. NOT scriptable. Organisations are created on
-#      npmjs.com and nowhere else, and the scope has to be an organisation rather
+#   1. The npm organization. NOT scriptable. Organizations are created on
+#      npmjs.com and nowhere else, and the scope has to be an organization rather
 #      than a personal one because npm only ever gives an account the scope
 #      matching its own name. The script checks and stops with a link.
 #   2. The first version, published by hand. Trusted publishing cannot create a
@@ -92,11 +92,11 @@ if [ "${tfa}" = "off" ]; then
 fi
 echo "two-factor authentication: ${tfa}"
 
-# 1. The organisation, which is the one step nothing can do for you.
+# 1. The organization, which is the one step nothing can do for you.
 if ! npm org ls "${org}" >/dev/null 2>&1; then
 	cat >&2 <<-EOF
 
-		The npm organisation "${org}" is not one this account can see, so the scope
+		The npm organization "${org}" is not one this account can see, so the scope
 		${scope} cannot be published to yet.
 
 		Create it at https://www.npmjs.com/org/create
@@ -115,7 +115,7 @@ if ! npm org ls "${org}" >/dev/null 2>&1; then
 	EOF
 	exit 2
 fi
-echo "organisation ${org}: visible to this account"
+echo "organization ${org}: visible to this account"
 
 # 2. The first publish. Every later version comes from the workflow.
 if npm view "${name}@${version}" version >/dev/null 2>&1; then
