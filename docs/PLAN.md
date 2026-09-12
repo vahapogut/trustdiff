@@ -220,3 +220,64 @@ Pinned versions are chosen in task 0.0 from these observations and recorded in t
 Full Sigstore verification of attestations; CVSS v4 MacroVector scoring; calling GuardDog for source-level analysis; SBOM ingestion; a `watch` mode that re-checks a baseline periodically and opens issues; crates.io `db-dump` ingestion for large audits.
 
 Work started with task 0.0 on 2026-09-09.
+
+## 14. What shipped after v0.4.0
+
+Written 2026-09-12, after the precision pass of that day. Sections 1 to 13 above
+are the plan as it was approved on 2026-09-09 and are not edited; this section and
+the next are what happened next and what is proposed after it.
+
+| Release | Date | What it was |
+|---|---|---|
+| v0.4.1 | 2026-09-10 | The P0 section of an independent review of 0.4.0: five checks that passed silently when a source was down, `version-downgraded` (TD017), and the release work 0.4.0 itself needed |
+| v0.5.0 | 2026-09-12 | The P1, P2 and P3 sections of the same review. The engine fixes (the repository's own code no longer read as a dependency, a scope no longer paying for the distance between the packages inside it, a bump compared with the version the project had rather than only the release before it), the doctor rules re-verified against the current package manager documentation, and the parts that run inside somebody else's pipeline: the Bun scanner, the pre-commit hook, the action and the release workflows |
+| v0.5.1 | 2026-09-12 | The GitHub Action, which had never worked in any release that shipped it: a runner refused to load `action.yml` at all, and on Windows the archive was compared against a hash the shell had escaped. Both were found by the action self-test that shipped in 0.5.0, the first time it was dispatched |
+
+What the two 0.5.x releases cost to make is worth recording with them. v0.5.0
+needed the release job re-run after its Homebrew and Scoop pushes failed on a
+token without the Contents permission, and the re-run then failed on `422
+already_exists` for every asset it had already uploaded, which is why
+`release.replace_existing_artifacts` is set now. v0.5.1 exists because the action
+had never been exercised end to end from a published reference, which is why the
+self-test grew a seventh leg that does exactly that.
+
+## 15. The precision pass of 2026-09-12
+
+Ten public repositories at pinned commits, every lockfile format the tool reads,
+every block and warn finding classified by hand. The measurements, the
+classifications and the reports are in [docs/precision.md](precision.md) and
+`docs/precision/`. What it changed:
+
+- `yarn.lock` in the format Yarn 1 wrote is read. The parser handled only the Yarn
+  2 format, so a repository that never migrated got "not read" and every entry in
+  it went unevaluated. React's lockfile, 2,394 entries, is one of those.
+- The npm download counts API is asked once per 128 packages instead of once per
+  package, and at one request per second. Evaluating one 1,201 entry lockfile drew
+  2,406 answers of `429 Too Many Requests` before that.
+- Four checks changed level in cases the pass showed were not worth a block: a
+  package adopting trusted publishing, a release cut by an account the previous
+  release already listed as a maintainer, a name that existed before the one it
+  resembles, and a comparison that crosses release lines.
+- One check stopped reading a data source's indexing lag as a finding, and one
+  constant moved on the strength of eight measured findings rather than a guess.
+
+Two things the pass found and did not fix, which is why they are in the proposal
+below: a `scan` spends most of its wall clock asking for download counts one
+scoped name at a time, because npm's bulk form refuses scoped names; and 528 warn
+findings in one repository were npm entries with neither a location nor a hash,
+which is true of that lockfile and says more about how npm wrote it than about the
+project.
+
+## 16. Proposed M5 (v0.6.0)
+
+Ranked by what it is worth to somebody using the tool, which is not the order they
+are easiest to build. Not approved; this is the proposal.
+
+| # | Item | Why it is where it is | Est. |
+|---|---|---|---|
+| 5.1 | `watch` over a baseline: re-evaluate the packages a project already has, on a schedule, and report what changed since the baseline was recorded | Everything else here answers a question at the moment a lockfile changes. Most of the incidents this tool is built around happened to a version a project already had: a package is fine when it is installed and stops being fine three weeks later, when nothing in the repository changes and nothing runs. `baseline` already records the observed state and TD002 and TD003 already compare against it, so this is a command and a report rather than an engine | 12 h |
+| 5.2 | Sigstore bundle verification of npm attestations | The tool stores what a registry hands it and takes deps.dev's word for whether an attestation verifies. That is a third party in the trust path of the check that matters most when a token is stolen, and the precision pass produced the case for it: a release four days old blocked because deps.dev had not read its attestation yet. Verifying the bundle locally removes the dependency and the lag both. Section 13 defers it; the pass is the argument for undeferring it | 16 h |
+| 5.3 | Lazy download counts | A `scan` of a 1,201 entry npm lockfile spends most of its wall clock on `api.npmjs.org`, one scoped name at a time, because the bulk form refuses scoped names and the address is rate limited. Counts feed two checks. Asking only where an answer can change a finding, and saying so when it was not asked, is the difference between a scan that takes four minutes and one that takes twenty | 8 h |
+| 5.4 | GuardDog handoff | Everything here is registry metadata. `--guarddog` would hand the packages that already look wrong to a tool that reads the code, and report what it said, which is the natural next question after a finding rather than a wider net | 10 h |
+| 5.5 | crates.io ownership at the time of a release | `publisher-changed` demotes a release cut by an account npm listed as a maintainer of the previous version. crates.io publishes owners as current state only, so the same demotion cannot be made there and fifteen findings of the pass stayed at block. `db-dump` carries owner history; section 13 defers ingesting it | 10 h |
+| 5.6 | A policy preset for a project that vendors from git | The pass produced seven block findings for git dependencies pinned at a commit sha, in repositories that clearly meant it. The answer is an allow entry, and writing one per dependency by hand is the kind of work people skip. `trustdiff policy allow <finding>` writing the entry, with a reason and an expiry, is small and removes the reason to turn a check off | 6 h |
