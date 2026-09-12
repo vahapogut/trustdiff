@@ -89,7 +89,7 @@ A value that is neither true nor false, a timeout that is not a positive whole n
 
 `ignore` is there for the project that installs from a mirror where some data source is genuinely never reachable and has accepted what that means. It is not a way to quieten a noisy install: everything it hides is a package nobody checked.
 
-trustdiff's own settings are unchanged and are read from the same places as always: `--policy` has no equivalent here, so the policy comes from the `.trustdiff.yaml` found upward from the directory the install runs in, then the user-level policy, then the built-in defaults. That is where you set cooldowns, per-check levels, allow-lists and `--offline` behaviour.
+trustdiff's own settings are unchanged and are read from the same places as always: `--policy` has no equivalent here, so the policy comes from the `.trustdiff.yaml` found upward from the directory the install runs in, then the user-level policy, then the built-in defaults. That is where you set cooldowns, per-check levels, allow-lists and `--offline` behavior.
 
 ## Development
 
@@ -98,7 +98,7 @@ cd integrations/bun-scanner
 bun test
 ```
 
-The tests run against a stub binary written into a temporary directory, never against the real trustdiff, so they need no network, no Go toolchain and no released binary. They cover a clean scan, a blocking finding, a warning, a missing binary under every unchecked policy and under the require switch, a binary that fails, a run that is killed for taking too long, a malformed document, an empty package list, each of the ways a package can end up unchecked including a report that came back without it, a run that could not reach a data source, and a failure part way through a tree large enough to take two runs. A stub can be given one behaviour per run, which is how that last one is written. `.github/workflows/bun-scanner.yml` runs the same command on Linux and on Windows with the proxy variables pointed at a closed port, so an accidental network call fails the build.
+The tests run against a stub binary written into a temporary directory, never against the real trustdiff, so they need no network, no Go toolchain and no released binary. They cover a clean scan, a blocking finding, a warning, a missing binary under every unchecked policy and under the require switch, a binary that fails, a run that is killed for taking too long, a malformed document, an empty package list, each of the ways a package can end up unchecked including a report that came back without it, a run that could not reach a data source, and a failure part way through a tree large enough to take two runs. A stub can be given one behavior per run, which is how that last one is written. `.github/workflows/bun-scanner.yml` runs the same command on Linux and on Windows with the proxy variables pointed at a closed port, so an accidental network call fails the build.
 
 The package has no dependencies of any kind, `@types/bun` included, which is why `src/index.ts` carries its own copy of the Bun scanner interfaces rather than importing them. The copies are annotated with the date they were checked against Bun's `packages/bun-types/security.d.ts`; re-check them when Bun changes the API version.
 

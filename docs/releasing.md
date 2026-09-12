@@ -383,7 +383,7 @@ gh secret set TAP_GITHUB_TOKEN --repo vahapogut/trustdiff
 That is the whole step. The goreleaser step in `.github/workflows/release.yml`
 already passes `TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}` through to the
 process, so nothing in this repository has to change: storing the secret is what
-flips the behaviour, and the next stable tag publishes.
+flips the behavior, and the next stable tag publishes.
 
 An unset secret expands to the empty string in a workflow, and the guard treats
 an empty value as absent, so removing the secret is enough to turn tap publishing
