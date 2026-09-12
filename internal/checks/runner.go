@@ -304,7 +304,7 @@ func (rn *run) resolve(ctx context.Context, in *Input) resolution {
 		// that read a source skip with it, the ones that read the lockfile entry
 		// still run, exotic-source reports the entry, and on_data_unavailable is not
 		// involved. That is the same shape as a name npm's grammar refuses.
-		return resolution{ref: ref, skip: "the lockfile installs this entry from a directory of the project (" + in.Lock.Resolved + "), so the registry's package of this name is a different package"}
+		return resolution{ref: ref, skip: "the lockfile installs this entry from a directory of the project" + inParentheses(in.Lock.Resolved) + ", so the registry's package of this name is a different package"}
 	}
 	if ref.Ecosystem == model.NPM {
 		if problem := model.NPMNameProblem(ref.Name); problem != "" {

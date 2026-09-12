@@ -84,8 +84,32 @@ func TestRunnerAsksNoSourceAboutAnEntryThatIsADirectory(t *testing.T) {
 		if sk.Check == "TD016" || sk.Check == "TD017" {
 			continue
 		}
-		if !strings.Contains(sk.Reason, "directory") {
+		if !strings.Contains(sk.Reason, "(./scripts/eslint-rules)") {
 			t.Errorf("%s skipped with %q, want the directory named as the reason", sk.Check, sk.Reason)
+		}
+	}
+}
+
+// npm writes a workspace member twice: once as a link under node_modules, which the
+// parser drops, and once under the directory it lives in, which is the entry that
+// reaches the checks and which records no location of its own. The reason has to
+// read as a sentence for that entry too.
+func TestTheReasonNamesNoDirectoryWhenTheLockfileRecordsNone(t *testing.T) {
+	s := localSubjectL("npm:@npmcli/arborist@9.2.1", "")
+	in := Input{Ref: s.Ref, Location: s.Location, Lock: s.Lock}
+	out := newRunnerR(newFakeLoaderR()).Evaluate(context.Background(), []Input{in})
+	if len(out) != 1 {
+		t.Fatalf("outcomes = %d, want 1", len(out))
+	}
+	for _, sk := range out[0].Subject.Skipped {
+		if sk.Check == "TD016" || sk.Check == "TD017" {
+			continue
+		}
+		if strings.Contains(sk.Reason, "()") {
+			t.Errorf("%s skipped with %q, which names an empty directory", sk.Check, sk.Reason)
+		}
+		if !strings.Contains(sk.Reason, "a directory of the project, so") {
+			t.Errorf("%s skipped with %q, want the sentence to close without a location", sk.Check, sk.Reason)
 		}
 	}
 }
