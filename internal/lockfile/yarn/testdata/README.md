@@ -9,6 +9,19 @@ described under the table.
 |---|---|---|---|---|---|---|
 | `slate-v8.yarn.lock` | Slate | https://github.com/ianstormtaylor/slate/blob/45a16ee53fa7c54a551c755cb96af5cb39eb868d/yarn.lock | branch `main` at commit `45a16ee53fa7c54a551c755cb96af5cb39eb868d` | 2026-09-09 | MIT | 339 |
 | `babel-v6.yarn.lock` | Babel | https://github.com/babel/babel/blob/de7d75a78b770fa3fdad2e5a94fe7ae208b5bd63/yarn.lock | release `v7.21.0`, commit `de7d75a78b770fa3fdad2e5a94fe7ae208b5bd63` | 2026-09-09 | MIT | 279 |
+| `react-v1.yarn.lock` | React | https://github.com/facebook/react/blob/019019be403c3269e15b8d7ebefb57d30f84086b/yarn.lock | branch `main` at commit `019019be403c3269e15b8d7ebefb57d30f84086b` | 2026-09-12 | MIT | 5 |
+
+`react-v1.yarn.lock` is the Yarn 1 format, which the two files above are not. The
+original is 813 KB and 2,394 entries; five whole entries were kept and nothing
+inside one was touched, so each is exactly as Yarn 1 wrote it. What was kept: a
+scoped entry with dependencies, an `npm:` alias, a `link:` entry with no artifact
+to hash, a key with five descriptors, and a key whose descriptors are unquoted.
+
+`classic-edge-cases.yarn.lock` is hand built, because React's lockfile resolves
+everything from the registry and the shapes that are not a registry entry had to
+come from somewhere: a git remote, a GitHub shorthand, a tarball URL, a `file:`
+folder, an entry whose only hash is the sha1 in the resolved URL, and an entry
+with no version at all.
 
 **Both files are trimmed, not verbatim.** The originals are 604 KB and 583 KB,
 which is more than a fixture should weigh. Whole entries were removed and

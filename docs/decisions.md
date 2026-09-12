@@ -51,6 +51,12 @@ written, and a decision that is later reversed gets a new line rather than an ed
   eighteen times. npm documents no limit at all, crates.io asks for one request per
   second in its own policy, and the batch form carries most of a run, so the limit
   costs only the tail of scoped names.
+- The Yarn 1 lockfile format was implemented rather than documented as
+  unsupported. The precision pass picked React for the `yarn.lock` format and the
+  parser refused the file: two formats answer to that name and only the Yarn 2 one
+  was read, while the readme promised `yarn.lock` without qualification. The rule
+  for this run says a parser failure on one of these files is a bug, and the
+  repositories still on Yarn 1 are not a rounding error, so the format is read now.
 - `publisher-changed` stops blocking a move to trusted publishing that nothing can
   place. The rule that blocked it was deliberate and tested: without two verified
   attestations naming the same repository, a trusted publisher is what an account

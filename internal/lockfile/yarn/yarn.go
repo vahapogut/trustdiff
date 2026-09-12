@@ -1,5 +1,9 @@
-// Package yarn reads the yarn.lock that Yarn 2 and later write, which the project
-// calls Yarn Berry, and registers itself with the lockfile parser registry.
+// Package yarn reads both files that are called yarn.lock and registers itself
+// with the lockfile parser registry. This file reads the one Yarn 2 and later
+// write, which the project calls Yarn Berry; classic.go reads the one Yarn 1
+// wrote, which is a different format that only looks like yaml. What tells them
+// apart is the __metadata block, which every Berry file begins with and no Yarn 1
+// file has.
 //
 // The file is yaml: a mapping one of whose keys is "__metadata", which states the
 // format version, and whose every other key is one resolved package. The key is
@@ -157,6 +161,11 @@ func (parser) Parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", formatName, err)
 	}
+	// Two formats answer to this name. The one Yarn 1 writes carries no __metadata
+	// block and is not yaml at all; classic.go reads it.
+	if !hasMetadata(data) {
+		return parseClassic(path, data)
+	}
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, unreadable(data, err)
@@ -185,6 +194,20 @@ func (parser) Parse(path string, r io.Reader) (*lockfile.Lockfile, error) {
 		add(lf, &locks[i], direct)
 	}
 	return lf, nil
+}
+
+// hasMetadata reports whether the file states a __metadata block, which is what
+// every yarn.lock Yarn 2 and later write begins with and what no Yarn 1 file has.
+// The check reads lines rather than parsing, because what it decides is which
+// parser gets the bytes.
+func hasMetadata(data []byte) bool {
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == metadataKey+":" || line == `"`+metadataKey+`":` {
+			return true
+		}
+	}
+	return false
 }
 
 // unreadable explains a file this parser cannot read. A yarn.lock from Yarn 1 is a

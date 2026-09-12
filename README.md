@@ -277,7 +277,7 @@ scanner = "@trustdiff/bun-scanner"
 
 ### 2. A pull request gate
 
-`trustdiff diff` evaluates only what a lockfile change adds or modifies, against a git base that defaults to the merge base with `origin/main`. It reads `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `deno.lock`, `uv.lock`, `poetry.lock`, `Cargo.lock` and `requirements` files, and every finding carries the lockfile line the entry sits on:
+`trustdiff diff` evaluates only what a lockfile change adds or modifies, against a git base that defaults to the merge base with `origin/main`. It reads `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` in both the Yarn 1 and the Yarn 2 format, `bun.lock`, `deno.lock`, `uv.lock`, `poetry.lock`, `Cargo.lock` and `requirements` files, and every finding carries the lockfile line the entry sits on:
 
 ```sh
 trustdiff diff --format markdown
