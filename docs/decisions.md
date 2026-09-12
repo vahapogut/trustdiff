@@ -35,3 +35,13 @@ written, and a decision that is later reversed gets a new line rather than an ed
 - Every command of the precision pass runs with `TRUSTDIFF_NOW` pinned to
   2026-09-12T12:00:00Z, so the ages in the reports are the ages this run saw and a
   rerun of the same commits says the same thing.
+- The bulk download counts client deleted in 0.5.0 as code nothing called is
+  restored and wired into the loader's prefetch. The deletion was right when it was
+  made and the precision pass produced the reason to reverse it: a scan of
+  `npm/cli` drew 1684 answers of 429 from the counts API because it asked once per
+  package. Restoring the method, its tests and its fixture by reversing that commit
+  keeps the recorded facts about the endpoint rather than rediscovering them.
+- The first scan of the pass ran against the binary of the release under test and
+  was stopped once it had measured the rate limiting, rather than left to finish.
+  Its numbers are the baseline this fix is measured against; the numbers in
+  `docs/precision.md` come from a rerun of all ten repositories with the fix in.

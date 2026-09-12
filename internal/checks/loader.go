@@ -53,10 +53,10 @@ type DepsDevFindingsLoader interface {
 // before they are used as keys, so a dependency name copied from a manifest shares
 // the entry of the parsed ref.
 //
-// Prefetch warms the batch sources for every ref of a run in three calls (OSV
-// querybatch, deps.dev versionbatch and findingsbatch); the per-ref methods return
-// what Prefetch stored or fetch on demand for refs it did not cover, such as the
-// dependencies TD007 inspects.
+// Prefetch warms the batch sources for every ref of a run in four calls (OSV
+// querybatch, deps.dev versionbatch and findingsbatch, and the npm counts API for
+// every name at once); the per-ref methods return what Prefetch stored or fetch on
+// demand for refs it did not cover, such as the dependencies TD007 inspects.
 type DataLoader struct {
 	reg registry.Registry
 	adv advisory.Source
@@ -99,22 +99,25 @@ func newDataLoader(reg registry.Registry, adv advisory.Source, dd depsDevSource,
 	return &DataLoader{reg: reg, adv: adv, dd: dd, log: log}
 }
 
-// Prefetch warms the OSV and deps.dev batches for every ref that carries a
-// version. Refs without a version are skipped: the batch endpoints answer per
-// version, and the runner resolves bare refs before it calls Prefetch. Refs of an
-// ecosystem a source does not index are left out of its batch, as the source
-// itself would leave them out of its answer; the per-ref methods report them as
-// unsupported without a request. The three batches run concurrently. A batch that
+// Prefetch warms the OSV, deps.dev and download count batches for every ref that
+// carries a version. Refs without a version are skipped: the advisory endpoints
+// answer per version, and the runner resolves bare refs before it calls Prefetch.
+// Refs of an ecosystem a source does not index are left out of its batch, as the
+// source itself would leave them out of its answer; the per-ref methods report them
+// as unsupported without a request. The four batches run concurrently. A batch that
 // fails stores its error for every ref it covered, so the source is not asked again
 // for them; a batch that lost only some of its refs stores the error for those and
 // the answers for the rest; a batch that failed because ctx ended stores nothing.
+// The counts batch is the exception: a failure there stores nothing at all, because
+// the per name path can still answer and a batch that failed says nothing about any
+// single name.
 func (l *DataLoader) Prefetch(ctx context.Context, refs []model.PackageRef) {
 	versioned := uniqueVersioned(refs)
 	if len(versioned) == 0 {
 		return
 	}
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 	go func() {
 		defer wg.Done()
 		l.prefetchAdvisories(ctx, versioned)
@@ -126,6 +129,10 @@ func (l *DataLoader) Prefetch(ctx context.Context, refs []model.PackageRef) {
 	go func() {
 		defer wg.Done()
 		l.prefetchFindings(ctx, versioned)
+	}()
+	go func() {
+		defer wg.Done()
+		l.prefetchDownloads(ctx, versioned)
 	}()
 	wg.Wait()
 }
@@ -231,6 +238,58 @@ func (l *DataLoader) prefetchFindings(ctx context.Context, refs []model.PackageR
 // an expected condition (offline with a cold cache, an ecosystem the source does
 // not index, a source the run was built without) is already stated in the report
 // as the skipped reason and only goes to the debug log.
+// bulkDownloader is a registry source that can answer the download counts of many
+// names in one request. npm is the one that can: its counts API takes up to 128
+// unscoped names at a time. A source that cannot is left to the per name path,
+// which is what every source was left to before, and what a scan of a large
+// lockfile was rate limited for: on npm/cli's 1202 entry lockfile, evaluated live
+// on 2026-09-12, api.npmjs.org answered 1684 of those per name requests with 429.
+type bulkDownloader interface {
+	BulkDownloads(ctx context.Context, names []string) (map[string]int64, error)
+}
+
+// prefetchDownloads warms the download counts of every name of the run through the
+// sources that can answer many at once. A name the batch could not carry, such as a
+// scoped npm name, or did not know is not stored, so the per name path asks for it
+// and reports what it gets. Storing a zero for an unknown name would read as a
+// package nobody installs, which is the thing the low usage check is about.
+func (l *DataLoader) prefetchDownloads(ctx context.Context, refs []model.PackageRef) {
+	byEco := map[model.Ecosystem][]string{}
+	seen := map[model.PackageRef]bool{}
+	for _, ref := range refs {
+		key := model.PackageRef{Ecosystem: ref.Ecosystem, Name: model.NormalizeName(ref.Ecosystem, ref.Name)}
+		if key.Name == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		byEco[key.Ecosystem] = append(byEco[key.Ecosystem], key.Name)
+	}
+	for eco, names := range byEco {
+		src, ok := l.reg.For(eco)
+		if !ok {
+			continue
+		}
+		bulk, ok := src.(bulkDownloader)
+		if !ok {
+			continue
+		}
+		l.log.Debug("prefetching download counts", "ecosystem", eco, "names", len(names))
+		counts, err := bulk.BulkDownloads(ctx, names)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			l.logBatchFailure("download counts batch failed", len(names), err)
+			continue
+		}
+		for _, name := range names {
+			if n, ok := counts[name]; ok {
+				l.downloads.store(model.PackageRef{Ecosystem: eco, Name: name}, n, nil)
+			}
+		}
+	}
+}
+
 func (l *DataLoader) logBatchFailure(msg string, refs int, err error) {
 	// An offline run with no advisory index is the same kind of thing as an
 	// offline run with a cold cache: expected, already said in every skipped

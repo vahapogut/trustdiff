@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The action self-test loads the manifest a caller resolves, not only the one in the workspace. Its six legs run `uses: ./`, which is the copy a pull request changes; a caller writes `uses: vahapogut/trustdiff@<ref>` and a runner fetches that ref and loads the manifest inside it. Those are different files, and v0.5.0 is what the difference costs: six legs passed on the commit that was tagged, and the manifest inside that tag could not be loaded on any runner. A seventh job now runs the published reference end to end, pinned at the commit the release tag points at, which is the form DR110 asks for and the form the readme tells a caller to use. `docs/releasing.md` section 5 moves it with the checksum table, and a test fails while the release it names and the action's own default disagree.
 
+### Fixed
+
+- A scan asks npm's counts API once for every 128 packages rather than once per package. Measured on `npm/cli`'s 1202 entry `package-lock.json`, evaluated live on 2026-09-12: the per name path drew 1684 answers of `429 Too Many Requests`, and the run spent itself backing off and retrying rather than reading counts. npm documents a form of that endpoint which takes up to 128 names at once, and the loader's prefetch now uses it for every name of a run, so `scan` and `diff` make a handful of requests where they made one per package. A scoped name, which that form refuses with HTTP 400, and a name the API does not know are left to the per name path exactly as before, and a batch that fails changes nothing: the per name path can still answer, and a failed batch says nothing about any single name. The client method for this was written before the loader existed and deleted in 0.5.0 as code nothing called, which it was until a scan of a real lockfile said why it was needed.
+
 ## [0.5.1] - 2026-09-12
 
 A patch release for the GitHub Action, which had never worked in any release that

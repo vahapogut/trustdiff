@@ -588,3 +588,78 @@ func TestLoaderPrefetchPartialFailurePoisonsOnlyTheLostRefs(t *testing.T) {
 		t.Errorf("advisory source called %d times, want 1: both answers were memoized by Prefetch", adv.count("advisories"))
 	}
 }
+
+// bulkSourceR answers many names in one call, the way the npm client does, and
+// counts how often it was asked.
+type bulkSourceR struct {
+	*fakeSourceR
+	bulkCalls int
+	asked     [][]string
+}
+
+func (b *bulkSourceR) BulkDownloads(_ context.Context, names []string) (map[string]int64, error) {
+	b.bulkCalls++
+	b.asked = append(b.asked, append([]string(nil), names...))
+	out := make(map[string]int64, len(names))
+	for _, name := range names {
+		if n, ok := b.downloads[name]; ok {
+			out[name] = n
+		}
+	}
+	return out, nil
+}
+
+// A scan of a large lockfile asked the counts API once per package. On npm/cli's
+// 1202 entry package-lock.json, evaluated live on 2026-09-12, api.npmjs.org
+// answered 1684 of those requests with 429 and the client spent the run backing
+// off and retrying. The counts API takes up to 128 names in one request, which is
+// what Prefetch now uses, so the per name path is left with the names a batch
+// cannot carry and the ones it did not know.
+func TestPrefetchAsksTheCountsApiOnceForTheWholeRun(t *testing.T) {
+	src := newFakeSourceR(model.NPM)
+	src.add(stableListR(model.NPM, "lib", "1.0.0"))
+	src.add(stableListR(model.NPM, "other", "2.0.0"))
+	src.downloads["lib"] = 42
+	src.downloads["other"] = 7
+	bulk := &bulkSourceR{fakeSourceR: src}
+	l := newDataLoader(registry.Registry{model.NPM: bulk}, nil, nil, nil)
+
+	refs := []model.PackageRef{
+		model.MustParseRef("npm:lib@1.0.0"),
+		model.MustParseRef("npm:other@2.0.0"),
+		model.MustParseRef("npm:lib@1.0.0"),
+		model.MustParseRef("npm:unknown@3.0.0"),
+	}
+	l.Prefetch(t.Context(), refs)
+
+	if bulk.bulkCalls != 1 {
+		t.Fatalf("the counts API was asked %d times, want once for the whole run", bulk.bulkCalls)
+	}
+	if want := []string{"lib", "other", "unknown"}; !slices.Equal(bulk.asked[0], want) {
+		t.Errorf("asked for %v, want %v, each name once and in first seen order", bulk.asked[0], want)
+	}
+
+	// What the batch answered is answered from the memo, without a second request.
+	for _, tc := range []struct {
+		name string
+		want int64
+	}{{"lib", 42}, {"other", 7}} {
+		got, err := l.Downloads(t.Context(), model.NPM, tc.name)
+		if err != nil || got != tc.want {
+			t.Errorf("Downloads(%s) = %d, %v, want %d", tc.name, got, err, tc.want)
+		}
+	}
+	if n := src.count("downloads"); n != 0 {
+		t.Errorf("the per name path was used %d times for names the batch answered", n)
+	}
+
+	// A name the batch did not know is not an answer, so the per name path asks and
+	// reports what it gets. Leaving it in the memo as zero would read as a package
+	// nobody installs, which is what the low usage check is about.
+	if _, err := l.Downloads(t.Context(), model.NPM, "unknown"); err == nil {
+		t.Error("a name the batch did not know returned no error")
+	}
+	if n := src.count("downloads"); n != 1 {
+		t.Errorf("the per name path was used %d times for the unknown name, want once", n)
+	}
+}
