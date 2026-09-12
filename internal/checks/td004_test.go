@@ -254,3 +254,27 @@ func TestTD004ComparesWithTheVersionTheProjectHad(t *testing.T) {
 		})
 	}
 }
+
+// The release published before this one is not always an earlier version of it. A
+// maintenance release on an older line goes out after the newer line has moved on,
+// and comparing the two says nothing about what the project gave up: it says that
+// 9.x carries less than 10.x, which is a fact about the two lines and not about
+// this release. Measured on 2026-09-12 on npm/cli's lockfile, both trust-downgrade
+// block findings of that scan were this shape, @octokit/endpoint 9.0.6 against
+// 10.1.3 and semver 5.7.2 against 7.5.4. The check now says it has nothing to
+// compare with, so it reports at warn and says so.
+func TestTD004SkipsAMaintenanceReleaseOnAnOlderLine(t *testing.T) {
+	s := subjectA(model.NPM, "endpoint", "9.0.6")
+	s.Version.Provenance = model.Provenance{Kind: model.ProvenanceSignature}
+	previous := versionA(model.NPM, "endpoint", "10.1.3", agoA(30*dayA))
+	previous.Provenance = model.Provenance{Kind: model.ProvenanceAttestation, Verified: true}
+	s.Previous = &previous
+
+	f := runA(t, "TD004", s, outcomeA{findings: 1}).Findings[0]
+	if f.Level != model.LevelWarn {
+		t.Errorf("level = %s, want warn: the comparison is across release lines, not a loss this release made", f.Level)
+	}
+	if f.Evidence["maintenance_release"] != true {
+		t.Errorf("evidence = %v, want it to say this is a maintenance release", f.Evidence)
+	}
+}

@@ -51,6 +51,11 @@ written, and a decision that is later reversed gets a new line rather than an ed
   eighteen times. npm documents no limit at all, crates.io asks for one request per
   second in its own policy, and the batch form carries most of a run, so the limit
   costs only the tail of scoped names.
+- `trust-downgrade` reports a cross line comparison at `warn` rather than skipping
+  it. Skipping was the first fix and it threw away a real signal: a patch published
+  to an old line from a stolen token is exactly a maintenance release whose
+  provenance is weaker than the newer line's. `docs/checks.md` already carried such
+  a case as its example, which is what settled it.
 - A download counts batch that fails now reports that failure for every name it
   carried, rather than leaving those names to the per name path. The measurement
   decided it: one refused batch used to become one request per package, which is

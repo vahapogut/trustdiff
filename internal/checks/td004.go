@@ -6,6 +6,7 @@ import (
 
 	"github.com/vahapogut/trustdiff/internal/advisory/depsdev"
 	"github.com/vahapogut/trustdiff/internal/model"
+	"github.com/vahapogut/trustdiff/internal/model/version"
 )
 
 // TD004 trust-downgrade reports a version whose publishing evidence is weaker than
@@ -82,6 +83,20 @@ func (c td004) Run(ctx context.Context, s *Subject) Result {
 	}
 	if res, skipped := previousUnavailableSkip(c, s); skipped {
 		return res
+	}
+	// The release published before this one is not always an earlier version of it:
+	// a maintenance release on an older line goes out after the newer line has moved
+	// on, and comparing the two says that 9.x carries less than 10.x, which is a fact
+	// about the lines rather than about anything this release gave up. It is still
+	// worth seeing, because a patch published to an old line from a stolen token is
+	// exactly what it would look like, so the finding stays and reports at warn.
+	// Measured on 2026-09-12: both block findings of a scan of npm/cli's lockfile
+	// were that shape, and the example in docs/checks.md is another.
+	olderLine := false
+	if s.Previous != nil {
+		if cmp, err := version.Compare(s.Ref.Ecosystem, s.Previous.Ref.Version, s.Ref.Version); err == nil && cmp > 0 {
+			olderLine = true
+		}
 	}
 	if s.Previous == nil {
 		return Skip(c.ID(), "no earlier release to compare with")
@@ -186,7 +201,16 @@ func (c td004) Run(ctx context.Context, s *Subject) Result {
 	if verifiedBy != "" {
 		evidence["verified_by"] = verifiedBy
 	}
-	return Result{Findings: []model.Finding{NewFinding(c, s, title, explanation, evidence)}}
+	if olderLine && with == s.Previous {
+		explanation += fmt.Sprintf("; %s was published before %s and is a later version, so this is a maintenance release on an older line rather than a release that gave up what its own line had",
+			with.Ref.Version, ref.Version)
+		evidence["maintenance_release"] = true
+	}
+	finding := NewFinding(c, s, title, explanation, evidence)
+	if olderLine && with == s.Previous {
+		finding.Level = min(finding.Level, model.LevelWarn)
+	}
+	return Result{Findings: []model.Finding{finding}}
 }
 
 // predecessorProvenance reads what an earlier version was published with, and who
