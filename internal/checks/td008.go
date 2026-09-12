@@ -45,6 +45,15 @@ import (
 // names; a neighbor nobody could count vetoes nothing, for the same reason an
 // unread half cannot demote.
 //
+// One thing takes that veto back in turn: a name cannot have been registered to
+// catch the typos of a name that did not exist yet. A candidate whose first release
+// is earlier than the first release of the neighbor keeps its demotion whatever the
+// gap, and its evidence carries existed_before. @vx/responsive, what the visx
+// project published under before it renamed itself, is the case that found this:
+// the precision pass of 2026-09-12 blocked it for resembling @visx/responsive,
+// which npm first saw three and a half years later. crossenv is the other way
+// round, so the veto still holds where it was written to.
+//
 // As a cross-check, deps.dev's similarly named packages are consulted through the
 // Loader: a neighbor that is much more popular (it is in the popular list, or its
 // weekly downloads are at least 100 times the candidate's when both are known)
@@ -66,6 +75,8 @@ import (
 //	list_origin      where that list came from: "embedded" for the snapshot in
 //	                 the binary, the path of the refreshed file under the cache
 //	                 directory, or "custom" for lists a caller supplied
+//	existed_before   a much more popular neighbor the candidate was on the
+//	                 registry before, whose gap therefore vetoed nothing
 //	deps_dev_neighbor a similarly named, much more popular package deps.dev
 //	                  returned (when the cross-check found one)
 //
@@ -263,14 +274,20 @@ func (c *typosquatSuspect) standing(ctx context.Context, s *Subject, resembles [
 			return standingLowUsage, fmt.Sprintf(". The package has been on the registry since %s, but %d weekly downloads is below the low-usage threshold of %d",
 				first.UTC().Format(time.RFC3339), s.Downloads, threshold)
 		}
-		if name, theirs, gap := c.popularityGap(ctx, s, resembles); gap {
+		name, theirs, gap, older := c.popularityGap(ctx, s, resembles, first)
+		if gap {
 			evidence["weekly_downloads"] = s.Downloads
 			evidence["neighbor_weekly_downloads"] = theirs
 			return standingOvershadowed, fmt.Sprintf(". The package has been on the registry since %s and has %d weekly downloads, but %q has %d, which is %d times as many. A package that far behind the name it resembles is where a typo lands whatever its age, so the level stays at the configured one",
 				first.UTC().Format(time.RFC3339), s.Downloads, name, theirs, theirs/max(s.Downloads, 1))
 		}
-		return standingEstablished, fmt.Sprintf(". The level is lowered to warn because the package is one a project has been living with: it has been on the registry since %s and has %d weekly downloads, at or above the low-usage threshold of %d",
+		clause := fmt.Sprintf(". The level is lowered to warn because the package is one a project has been living with: it has been on the registry since %s and has %d weekly downloads, at or above the low-usage threshold of %d",
 			first.UTC().Format(time.RFC3339), s.Downloads, threshold)
+		if older != "" {
+			evidence["existed_before"] = older
+			clause += fmt.Sprintf("; it was also on the registry before %q was, so it is not a name registered to catch that one's typos, whatever the distance between their download counts", older)
+		}
+		return standingEstablished, clause
 	}
 	// No count from the registry. deps.dev answers the same question for the
 	// registries that publish none, which is what TD012 falls back to; anything
@@ -304,18 +321,47 @@ func resembled(match typosquat.Match, suspect bool, neighbor string) []string {
 // small count: the lookup simply found no gap, and the candidate keeps whatever its
 // own age and users earned it. The candidate's own count is known here already,
 // because a candidate with no count never reaches this far.
-func (c *typosquatSuspect) popularityGap(ctx context.Context, s *Subject, resembles []string) (name string, theirs int64, gap bool) {
+//
+// A neighbor that was not on the registry yet when the candidate was published
+// vetoes nothing, whatever the gap: a name cannot have been registered to catch
+// the typos of one that did not exist. older is the first such neighbor, for the
+// sentence that says why the gap did not count. The candidate's own first release
+// is first, which the caller has read already; a neighbor whose first release the
+// registry did not give is not older by default, because an unread date cannot
+// demote anything here.
+func (c *typosquatSuspect) popularityGap(ctx context.Context, s *Subject, resembles []string, first time.Time) (name string, theirs int64, gap bool, older string) {
 	if s.Loader == nil || s.Downloads < 0 {
-		return "", 0, false
+		return "", 0, false, ""
 	}
 	floor := popularityGapFactor * max(s.Downloads, 1)
 	for _, n := range resembles {
 		downloads, err := s.Loader.Downloads(ctx, s.Ref.Ecosystem, n)
-		if err == nil && downloads >= floor {
-			return n, downloads, true
+		if err != nil || downloads < floor {
+			continue
 		}
+		if c.predates(ctx, s, n, first) {
+			if older == "" {
+				older = n
+			}
+			continue
+		}
+		return n, downloads, true, ""
 	}
-	return "", 0, false
+	return "", 0, false, older
+}
+
+// predates reports whether the evaluated package was on the registry before the
+// name it resembles was.
+func (c *typosquatSuspect) predates(ctx context.Context, s *Subject, neighbor string, first time.Time) bool {
+	if first.IsZero() {
+		return false
+	}
+	list, err := s.Loader.Versions(ctx, s.Ref.Ecosystem, neighbor)
+	if err != nil || list == nil {
+		return false
+	}
+	theirs := firstPublished(list)
+	return !theirs.IsZero() && first.Before(theirs)
 }
 
 // hasDepsDevFinding reports whether deps.dev returned a finding of this type.

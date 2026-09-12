@@ -24,11 +24,16 @@ type fakeLoaderT struct {
 	similar    []depsdev.Similar
 	similarErr error
 	downloads  map[string]int64
+	versions   map[string]*registry.VersionList
 	calls      []string
 }
 
 func (l *fakeLoaderT) Prefetch(context.Context, []model.PackageRef) {}
-func (l *fakeLoaderT) Versions(context.Context, model.Ecosystem, string) (*registry.VersionList, error) {
+func (l *fakeLoaderT) Versions(_ context.Context, eco model.Ecosystem, name string) (*registry.VersionList, error) {
+	l.calls = append(l.calls, fmt.Sprintf("versions %s:%s", eco, name))
+	if list, ok := l.versions[name]; ok {
+		return list, nil
+	}
 	return nil, ErrNotConfigured
 }
 func (l *fakeLoaderT) VersionInfo(context.Context, model.PackageRef) (*model.VersionInfo, error) {
@@ -708,6 +713,77 @@ func TestTyposquatSuspectBlocksANameItsNeighborDwarfs(t *testing.T) {
 			}
 			if got := f.Evidence["weekly_downloads"]; got != int64(crossenvWeekly) {
 				t.Errorf("weekly_downloads = %v, want %d", got, crossenvWeekly)
+			}
+		})
+	}
+}
+
+// A name cannot be imitating one that did not exist when it was registered. The
+// popularity gap takes back the demotion this check gives a package a project has
+// been living with, and on 2026-09-12 it did that to @vx/responsive, the name the
+// visx project published under until it renamed itself: 33,061 weekly downloads
+// against @visx/responsive's 3,451,088 is a hundredfold gap, and the older name
+// was blocked for resembling the newer one. First publish dates read from the npm
+// registry that day: @vx/responsive 2017-03-22, @visx/responsive 2020-09-16.
+// crossenv is the other way round, 2017-07-19 against cross-env's 2015-10-01, so
+// the malware this veto was written for still blocks.
+func TestTyposquatSuspectDoesNotBlockANameThatExistedFirst(t *testing.T) {
+	const (
+		vxWeekly   = 33_061
+		visxWeekly = 3_451_088
+	)
+	vxFirst := time.Date(2017, time.March, 22, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name         string
+		neighborList *registry.VersionList
+		want         model.Level
+		standing     string
+	}{
+		{
+			name:         "the name that existed first keeps the demotion",
+			neighborList: &registry.VersionList{Ecosystem: model.NPM, Created: vxFirst.AddDate(3, 0, 0)},
+			want:         model.LevelWarn,
+			standing:     standingEstablished,
+		},
+		{
+			name:         "a neighbor that was there first still vetoes",
+			neighborList: &registry.VersionList{Ecosystem: model.NPM, Created: vxFirst.AddDate(-2, 0, 0)},
+			want:         model.LevelBlock,
+			standing:     standingOvershadowed,
+		},
+		{
+			// An unread date cannot demote anything, which is this check's rule for
+			// every half of every claim it makes.
+			name:         "a neighbor with no date to read still vetoes",
+			neighborList: nil,
+			want:         model.LevelBlock,
+			standing:     standingOvershadowed,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &typosquatSuspect{lists: typosquat.Embedded(), load: func(time.Time) *typosquat.Lists {
+				panic("load must not be called when lists are set")
+			}}
+			loader := &fakeLoaderT{downloads: map[string]int64{"@visx/responsive": visxWeekly}}
+			if tt.neighborList != nil {
+				loader.versions = map[string]*registry.VersionList{"@visx/responsive": tt.neighborList}
+			}
+			s := subjectT("npm:@vx/responsive@0.0.199", loader, vxWeekly)
+			s.Package = &registry.VersionList{Ecosystem: model.NPM, Created: vxFirst}
+			res := c.Run(context.Background(), s)
+			if len(res.Findings) != 1 {
+				t.Fatalf("Run() returned %d findings, want one: %+v", len(res.Findings), res.Findings)
+			}
+			f := &res.Findings[0]
+			if got := f.Evidence["neighbor"]; got != "@visx/responsive" {
+				t.Fatalf("neighbor = %v, want @visx/responsive", got)
+			}
+			if got := f.Evidence["standing"]; got != tt.standing {
+				t.Errorf("standing = %v, want %s", got, tt.standing)
+			}
+			if got := f.Level; got != tt.want {
+				t.Errorf("level = %s, want %s", got, tt.want)
 			}
 		})
 	}
