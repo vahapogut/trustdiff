@@ -577,7 +577,10 @@ because the whole point of the pipeline is that no human touches the build.
 
 Two repository settings close that, and neither is a file in this tree, so neither
 can be added by a commit. Both are one-time and both need a person with admin
-rights. Until they are done, the tag push is the whole of the authorization.
+rights. Both are in place since 2026-09-12: the ruleset is `release tags`, id
+23045449, and the environment is `release` with `vahapogut` as its one required
+reviewer. What follows is how they were made, so that they can be made again, and
+the commands that read back what they are now.
 
 1. **A tag ruleset restricting `v*` creation.** Settings, Rules, Rulesets, New tag
    ruleset: target `refs/tags/v*`, enforcement Active, restrict creations, and put
@@ -603,8 +606,34 @@ rights. Until they are done, the tag push is the whole of the authorization.
 2. **An environment with a required reviewer on the release job.** Settings,
    Environments, New environment named `release`, then add yourself as a required
    reviewer. The job then waits for an approval before it runs, so a tag pushed by
-   something that got past the ruleset still cannot sign anything on its own. The
-   workflow needs one line for this, which is the only part of item 2 that is a
+   something that got past the ruleset still cannot sign anything on its own.
+   Through the API, which is what this repository used:
+
+   ```sh
+   gh api repos/vahapogut/trustdiff/environments/release --method PUT --input - <<'JSON'
+   {
+     "wait_timer": 0,
+     "prevent_self_review": false,
+     "can_admins_bypass": false,
+     "reviewers": [{"type": "User", "id": 110431024}],
+     "deployment_branch_policy": null
+   }
+   JSON
+   ```
+
+   `gh api user --jq .id` gives the id. `prevent_self_review` is false because the
+   person who pushes the tag is the person who approves it here, and true would
+   leave the one reviewer the environment has unable to approve anything.
+   `can_admins_bypass` is false on purpose: the API defaults it to true, and an
+   approval that an admin can skip is not a gate against a token that can already
+   push a tag. Read it back with
+
+   ```sh
+   gh api repos/vahapogut/trustdiff/environments/release \
+     --jq '{name, can_admins_bypass, rules: [.protection_rules[] | {type, prevent_self_review, reviewers: [.reviewers[]?.reviewer.login]}]}'
+   ```
+
+   The workflow needs one line for this, which is the only part of item 2 that is a
    file change:
 
    ```yaml
