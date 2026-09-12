@@ -26,8 +26,10 @@ import (
 // for each side, deps.dev whenever deps.dev verified an attestation, whatever the
 // runner wrote into the Provenance beforehand. The previous version's deps.dev
 // verification is applied only when deps.dev has indexed the evaluated version
-// too: a fresh release that deps.dev has not seen yet compares by kind only, so
-// indexing lag never produces a downgrade. The check is skipped without a
+// too, and only when it has read that version's attestations: a fresh release
+// deps.dev has not seen, and one it has seen and not yet opened, both compare by
+// what the registry says about either side, so indexing lag never produces a
+// downgrade. The check is skipped without a
 // previous version, when the previous version's details could not be fetched,
 // and when a registry could not gather the provenance of either version.
 //
@@ -225,13 +227,39 @@ func predecessorProvenance(ctx context.Context, s *Subject, v *model.VersionInfo
 	if p.Verified {
 		return p, SourceRegistry
 	}
-	if p.Kind == model.ProvenanceAttestation && s.Loader != nil && s.DepsDev != nil && s.DepsDev.Found {
+	if p.Kind == model.ProvenanceAttestation && s.Loader != nil && depsDevMaySpeakForAPredecessor(s) {
 		if facts, err := s.Loader.DepsDev(ctx, v.Ref); err == nil && depsDevVerified(facts) {
 			p.Verified = true
 			return p, SourceDepsDev
 		}
 	}
 	return p, ""
+}
+
+// depsDevMaySpeakForAPredecessor reports whether deps.dev's verification of an
+// earlier release says anything when set beside what is known about the evaluated
+// one. It has to have seen the evaluated version at all, which is the condition
+// this started as: crediting a predecessor with a verification the new release
+// never had the chance to get invents a downgrade out of a release deps.dev has
+// not reached.
+//
+// It also has to have read the evaluated release's attestations. deps.dev indexes
+// a release before it verifies what the release carries, and in between it answers
+// with the release, its publish time and no attestation at all. Where the registry
+// says this release has an attestation and deps.dev lists none for it, the two
+// sides of the comparison are two indexing states rather than two releases. The
+// precision pass of 2026-09-12 found one of these: @maplibre/maplibre-gl-style-spec
+// 26.4.2, four days old, blocked against 26.4.1, whose attestation deps.dev had
+// verified; deps.dev had 26.4.2 and listed nothing for it, and npm recorded an
+// attestation for both.
+func depsDevMaySpeakForAPredecessor(s *Subject) bool {
+	if s.DepsDev == nil || !s.DepsDev.Found {
+		return false
+	}
+	if s.Version != nil && s.Version.Provenance.Kind == model.ProvenanceAttestation && !s.DepsDev.AttestationsListed {
+		return false
+	}
+	return true
 }
 
 // unverifiedByOutage reports the one shape a deps.dev outage can hide from this

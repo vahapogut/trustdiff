@@ -83,6 +83,13 @@ type VersionFacts struct {
 	// (npm provenance or PyPI PEP 740); SLSAVerified when it verified SLSA provenance.
 	AttestationVerified bool `json:"attestation_verified"`
 	SLSAVerified        bool `json:"slsa_verified"`
+	// AttestationsListed is true when deps.dev returned any attestation or SLSA
+	// provenance for the version at all, verified or not. It is what tells a
+	// release whose attestations deps.dev refused from one whose attestations it
+	// has not read yet: deps.dev indexes a release before it verifies what the
+	// release carries, and between those two moments it answers with the release
+	// and nothing else.
+	AttestationsListed bool `json:"attestations_listed"`
 	// SourceRepositories are the repositories the verified attestations name,
 	// distinct and in the order deps.dev returned them. It is what tells a
 	// migration to trusted publishing from a takeover: both change the publishing
@@ -364,6 +371,7 @@ func (c *Client) facts(ref model.PackageRef, v *versionDoc) VersionFacts {
 			f.AdvisoryKeys = append(f.AdvisoryKeys, a.ID)
 		}
 	}
+	f.AttestationsListed = len(v.Attestations) > 0 || len(v.SLSAProvenances) > 0
 	for _, a := range v.Attestations {
 		if a.Verified {
 			f.AttestationVerified = true

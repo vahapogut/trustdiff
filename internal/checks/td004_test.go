@@ -278,3 +278,43 @@ func TestTD004SkipsAMaintenanceReleaseOnAnOlderLine(t *testing.T) {
 		t.Errorf("evidence = %v, want it to say this is a maintenance release", f.Evidence)
 	}
 }
+
+// deps.dev indexes a release before it verifies the release's attestations, and
+// this check reads its verification of the previous version. Between those two
+// moments the previous version has a verified attestation and the new one has an
+// attestation nobody verified, which reads as a downgrade and is nothing but
+// deps.dev's own lag. The precision pass of 2026-09-12 caught one:
+// @maplibre/maplibre-gl-style-spec@26.4.2, published four days earlier, blocked
+// against 26.4.1. Read live that day, deps.dev had the release, with publishedAt,
+// and listed no attestation for it at all, while npm's registry recorded one for
+// both versions.
+//
+// So the previous version's deps.dev verification applies only when deps.dev
+// listed attestations for the evaluated version, verified or not. Where the
+// registry says this release carries an attestation and deps.dev lists none, the
+// two are compared by what the registry says about both.
+func TestTD004DepsDevIndexingLagIsNotADowngrade(t *testing.T) {
+	attestation := model.Provenance{Kind: model.ProvenanceAttestation}
+	build := func(evaluated *depsdev.VersionFacts) *Subject {
+		s := subjectA(model.NPM, "lib", "1.3.0")
+		s.Version.Provenance = attestation
+		withPreviousA(s, "1.2.0").Provenance = attestation
+		s.DepsDev = evaluated
+		s.Loader = &loaderA{depsDev: map[string]*depsdev.VersionFacts{
+			"npm:lib@1.2.0": {Found: true, AttestationsListed: true, AttestationVerified: true},
+		}}
+		return s
+	}
+
+	t.Run("deps.dev has the release but none of its attestations", func(t *testing.T) {
+		runA(t, "TD004", build(&depsdev.VersionFacts{Found: true}), outcomeA{})
+	})
+
+	t.Run("deps.dev read the attestations and did not verify them", func(t *testing.T) {
+		s := build(&depsdev.VersionFacts{Found: true, AttestationsListed: true})
+		f := runA(t, "TD004", s, outcomeA{findings: 1}).Findings[0]
+		if got := f.Level; got != model.LevelBlock {
+			t.Errorf("level = %s, want block: deps.dev verified one attestation and refused the other", got)
+		}
+	})
+}

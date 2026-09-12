@@ -315,7 +315,11 @@ func TestVersionsFixture(t *testing.T) {
 			SourceRepositories:  []string{"https://github.com/sigstore/sigstore-js"},
 			AttestationVerified: true,
 			SLSAVerified:        true,
-			CooldownEnd:         ts(t, "2025-02-19T20:35:48Z"),
+			// deps.dev returned attestations for this release, which is a different
+			// fact from having verified them: a release it has indexed and not yet
+			// read the attestations of answers with neither.
+			AttestationsListed: true,
+			CooldownEnd:        ts(t, "2025-02-19T20:35:48Z"),
 		}},
 		{ref("cargo:serde@1.0.210"), &VersionFacts{
 			Found:       true,
