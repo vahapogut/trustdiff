@@ -1,0 +1,128 @@
+{
+  "schema": "trustdiff.doctor/1",
+  "tool": {
+    "name": "trustdiff",
+    "version": "v0.5.1-29-gd9d294f",
+    "commit": "d9d294f",
+    "date": "2026-09-12T15:38:59Z",
+    "go_version": "go1.26.8"
+  },
+  "policy": {
+    "path": "",
+    "cooldown": "3d",
+    "fail_on": "never"
+  },
+  "root": ".",
+  "managers": [
+    {
+      "id": "pnpm",
+      "version": "11.19.0",
+      "version_exact": true,
+      "version_source": "the packageManager field of package.json",
+      "root": ".",
+      "evidence": [
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "the packageManager field of package.json"
+      ],
+      "files": [
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml"
+      ]
+    }
+  ],
+  "results": [
+    {
+      "rule": "DR010",
+      "name": "pnpm-minimum-release-age",
+      "manager": "pnpm",
+      "status": "weak",
+      "level": "warn",
+      "file": "pnpm-workspace.yaml",
+      "line": 33,
+      "current": "1440",
+      "want": "4320, which is 3 days",
+      "detail": "1440 is 1 day, and the policy asks for 3 days (4320 here)",
+      "docs": "https://pnpm.io/settings/dependency-resolution",
+      "verified": "2026-09-09"
+    },
+    {
+      "rule": "DR011",
+      "name": "pnpm-strict-dep-builds",
+      "manager": "pnpm",
+      "status": "set",
+      "level": "warn",
+      "file": "pnpm-workspace.yaml",
+      "want": "true",
+      "detail": "not set, and this version defaults to true",
+      "docs": "https://pnpm.io/settings/build",
+      "verified": "2026-09-09"
+    },
+    {
+      "rule": "DR014",
+      "name": "pnpm-block-exotic-subdeps",
+      "manager": "pnpm",
+      "status": "set",
+      "level": "info",
+      "file": "pnpm-workspace.yaml",
+      "want": "true",
+      "detail": "not set, and this version defaults to true",
+      "docs": "https://pnpm.io/settings/dependency-resolution",
+      "verified": "2026-09-10"
+    },
+    {
+      "rule": "DR015",
+      "name": "pnpm-trust-policy",
+      "manager": "pnpm",
+      "status": "set",
+      "level": "warn",
+      "file": "pnpm-workspace.yaml",
+      "line": 35,
+      "current": "no-downgrade",
+      "want": "no-downgrade",
+      "docs": "https://pnpm.io/settings/dependency-resolution",
+      "verified": "2026-09-09"
+    },
+    {
+      "rule": "DR012",
+      "name": "pnpm-allow-builds",
+      "manager": "pnpm",
+      "status": "advice",
+      "level": "info",
+      "file": "pnpm-workspace.yaml",
+      "line": 15,
+      "current": "'@parcel/watcher': true\n  '@swc/core': true\n  'esbuild': true\n  'puppeteer': true\n  'simple-git-hooks': true\n  'unrs-resolver': true",
+      "want": "nothing to set",
+      "detail": "allowBuilds maps a package to true or false, and a package that is not in it is refused. pnpm 11 removed onlyBuiltDependencies, neverBuiltDependencies and ignoredBuiltDependencies in its favor; the codemod pnpm-v10-to-v11 converts them.",
+      "docs": "https://pnpm.io/settings/build",
+      "verified": "2026-09-09"
+    },
+    {
+      "rule": "DR013",
+      "name": "pnpm-only-built-dependencies",
+      "manager": "pnpm",
+      "status": "not applicable",
+      "level": "info",
+      "detail": "pnpm 11.19.0 replaced this setting",
+      "docs": "https://pnpm.io/settings/build",
+      "verified": "2026-09-09"
+    }
+  ],
+  "notes": [],
+  "summary": {
+    "managers": 1,
+    "results": 6,
+    "statuses": {
+      "advice": 1,
+      "missing": 0,
+      "not applicable": 1,
+      "set": 3,
+      "unreadable": 0,
+      "weak": 1,
+      "wrong": 0
+    },
+    "exit_code": 0,
+    "exit_meaning": "no problems at or above the threshold"
+  }
+}

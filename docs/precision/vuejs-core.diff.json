@@ -1,0 +1,352 @@
+{
+  "schema": "trustdiff.report/1",
+  "tool": {
+    "name": "trustdiff",
+    "version": "v0.5.1-29-gd9d294f",
+    "commit": "d9d294f",
+    "date": "2026-09-12T15:38:59Z",
+    "go_version": "go1.26.8"
+  },
+  "policy": {
+    "path": "",
+    "cooldown": "3d",
+    "fail_on": "block"
+  },
+  "subjects": [
+    {
+      "ref": {
+        "ecosystem": "npm",
+        "name": "ansi-styles",
+        "version": "7.0.0"
+      },
+      "location": {
+        "path": "pnpm-lock.yaml",
+        "line": 1674
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD003",
+        "TD004",
+        "TD005",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "npm",
+        "name": "brace-expansion",
+        "version": "5.0.9"
+      },
+      "location": {
+        "path": "pnpm-lock.yaml",
+        "line": 1722
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD003",
+        "TD004",
+        "TD005",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "npm",
+        "name": "minimatch",
+        "version": "10.2.6"
+      },
+      "location": {
+        "path": "pnpm-lock.yaml",
+        "line": 2539
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD003",
+        "TD004",
+        "TD005",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "npm",
+        "name": "@types/semver",
+        "version": "7.8.0"
+      },
+      "location": {
+        "path": "pnpm-lock.yaml",
+        "line": 1369
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD003",
+        "TD004",
+        "TD005",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015",
+        "TD016",
+        "TD017"
+      ],
+      "skipped": [],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "npm",
+        "name": "npm-run-all2",
+        "version": "9.0.3"
+      },
+      "location": {
+        "path": "pnpm-lock.yaml",
+        "line": 2597
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD003",
+        "TD004",
+        "TD005",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015",
+        "TD016",
+        "TD017"
+      ],
+      "skipped": [],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "npm",
+        "name": "playwright-core",
+        "version": "1.62.1"
+      },
+      "location": {
+        "path": "pnpm-lock.yaml",
+        "line": 2686
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD003",
+        "TD004",
+        "TD005",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015",
+        "TD016",
+        "TD017"
+      ],
+      "skipped": [],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "npm",
+        "name": "playwright",
+        "version": "1.62.1"
+      },
+      "location": {
+        "path": "pnpm-lock.yaml",
+        "line": 2691
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD003",
+        "TD004",
+        "TD005",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015",
+        "TD016",
+        "TD017"
+      ],
+      "skipped": [],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "npm",
+        "name": "pretty-bytes",
+        "version": "7.1.1"
+      },
+      "location": {
+        "path": "pnpm-lock.yaml",
+        "line": 2757
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD003",
+        "TD004",
+        "TD005",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015",
+        "TD016",
+        "TD017"
+      ],
+      "skipped": [],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "npm",
+        "name": "sass",
+        "version": "1.102.0"
+      },
+      "location": {
+        "path": "pnpm-lock.yaml",
+        "line": 2898
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD003",
+        "TD004",
+        "TD005",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015",
+        "TD016",
+        "TD017"
+      ],
+      "skipped": [],
+      "findings": [],
+      "verdict": "ok"
+    }
+  ],
+  "summary": {
+    "subjects": 9,
+    "findings": {
+      "block": 0,
+      "info": 0,
+      "warn": 0
+    },
+    "skipped": 6,
+    "exit_code": 0,
+    "exit_meaning": "no blocking findings"
+  }
+}

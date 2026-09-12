@@ -1,0 +1,2691 @@
+{
+  "schema": "trustdiff.report/1",
+  "tool": {
+    "name": "trustdiff",
+    "version": "v0.5.1-29-gd9d294f",
+    "commit": "d9d294f",
+    "date": "2026-09-12T15:38:59Z",
+    "go_version": "go1.26.8"
+  },
+  "policy": {
+    "path": "",
+    "cooldown": "3d",
+    "fail_on": "block"
+  },
+  "subjects": [
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "aho-corasick",
+        "version": "1.1.5"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 5
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:aho-corasick (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "anyhow",
+        "version": "1.0.104"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 14
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:anyhow (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "anyhow",
+            "version": "1.0.104"
+          },
+          "title": "Runs code at install time: build.rs",
+          "explanation": "1.0.104 ships a build script (build.rs), which cargo compiles and runs before building the crate",
+          "evidence": {
+            "script_names": [
+              "build.rs"
+            ],
+            "scripts": {
+              "build.rs": "build script runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 14
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "arbitrary",
+        "version": "1.4.2"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 20
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:arbitrary (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "bstr",
+        "version": "1.13.0"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 29
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:bstr (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "cc",
+        "version": "1.4.0"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 40
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:cc (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "cfg-if",
+        "version": "1.0.4"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 52
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:cfg-if (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "crossbeam-channel",
+        "version": "0.5.16"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 58
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:crossbeam-channel (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "crossbeam-deque",
+        "version": "0.8.7"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 67
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:crossbeam-deque (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "crossbeam-deque",
+            "version": "0.8.7"
+          },
+          "title": "Runs code at install time: build.rs",
+          "explanation": "0.8.7 ships a build script (build.rs), which cargo compiles and runs before building the crate",
+          "evidence": {
+            "script_names": [
+              "build.rs"
+            ],
+            "scripts": {
+              "build.rs": "build script runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 67
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "crossbeam-epoch",
+        "version": "0.9.20"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 77
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:crossbeam-epoch (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "crossbeam-epoch",
+            "version": "0.9.20"
+          },
+          "title": "Runs code at install time: build.rs",
+          "explanation": "0.9.20 ships a build script (build.rs), which cargo compiles and runs before building the crate",
+          "evidence": {
+            "script_names": [
+              "build.rs"
+            ],
+            "scripts": {
+              "build.rs": "build script runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 77
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "crossbeam-utils",
+        "version": "0.8.22"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 86
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:crossbeam-utils (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "crossbeam-utils",
+            "version": "0.8.22"
+          },
+          "title": "Runs code at install time: build.rs",
+          "explanation": "0.8.22 ships a build script (build.rs), which cargo compiles and runs before building the crate",
+          "evidence": {
+            "script_names": [
+              "build.rs"
+            ],
+            "scripts": {
+              "build.rs": "build script runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 86
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "derive_arbitrary",
+        "version": "1.4.2"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 92
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:derive_arbitrary (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "derive_arbitrary",
+            "version": "1.4.2"
+          },
+          "title": "Runs code at install time: proc-macro",
+          "explanation": "1.4.2 is a procedural macro crate, whose code runs inside the compiler of every dependent",
+          "evidence": {
+            "script_names": [
+              "proc-macro"
+            ],
+            "scripts": {
+              "proc-macro": "procedural macro runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 92
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "encoding_rs",
+        "version": "0.8.35"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 103
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:encoding_rs (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "encoding_rs_io",
+        "version": "0.1.8"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 112
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:encoding_rs_io (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "find-msvc-tools",
+        "version": "0.1.9"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 121
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:find-msvc-tools (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "fst",
+        "version": "0.4.7"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 127
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:fst (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "fst",
+            "version": "0.4.7"
+          },
+          "title": "Runs code at install time: build.rs",
+          "explanation": "0.4.7 ships a build script (build.rs), which cargo compiles and runs before building the crate",
+          "evidence": {
+            "script_names": [
+              "build.rs"
+            ],
+            "scripts": {
+              "build.rs": "build script runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 127
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "getrandom",
+        "version": "0.4.3"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 133
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:getrandom (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "getrandom",
+            "version": "0.4.3"
+          },
+          "title": "Runs code at install time: build.rs",
+          "explanation": "0.4.3 ships a build script (build.rs), which cargo compiles and runs before building the crate",
+          "evidence": {
+            "script_names": [
+              "build.rs"
+            ],
+            "scripts": {
+              "build.rs": "build script runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 133
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "glob",
+        "version": "0.3.4"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 144
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:glob (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "itoa",
+        "version": "1.0.18"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 275
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:itoa (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "jobserver",
+        "version": "0.1.35"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 281
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:jobserver (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "lexopt",
+        "version": "0.3.2"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 291
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:lexopt (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "libc",
+        "version": "0.2.189"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 297
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:libc (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "libc",
+            "version": "0.2.189"
+          },
+          "title": "Runs code at install time: build.rs",
+          "explanation": "0.2.189 ships a build script (build.rs), which cargo compiles and runs before building the crate",
+          "evidence": {
+            "script_names": [
+              "build.rs"
+            ],
+            "scripts": {
+              "build.rs": "build script runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 297
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "log",
+        "version": "0.4.33"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 303
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:log (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "memchr",
+        "version": "2.8.3"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 309
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:memchr (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "memmap2",
+        "version": "0.9.11"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 315
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:memmap2 (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "pcre2",
+        "version": "0.2.11"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 324
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:pcre2 (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "pcre2-sys",
+        "version": "0.2.10"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 335
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:pcre2-sys (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "pcre2-sys",
+            "version": "0.2.10"
+          },
+          "title": "Runs code at install time: build.rs",
+          "explanation": "0.2.10 ships a build script (build.rs), which cargo compiles and runs before building the crate",
+          "evidence": {
+            "script_names": [
+              "build.rs"
+            ],
+            "scripts": {
+              "build.rs": "build script runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 335
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "pkg-config",
+        "version": "0.3.33"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 346
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:pkg-config (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "proc-macro2",
+        "version": "1.0.107"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 352
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:proc-macro2 (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "proc-macro2",
+            "version": "1.0.107"
+          },
+          "title": "Runs code at install time: build.rs",
+          "explanation": "1.0.107 ships a build script (build.rs), which cargo compiles and runs before building the crate",
+          "evidence": {
+            "script_names": [
+              "build.rs"
+            ],
+            "scripts": {
+              "build.rs": "build script runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 352
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "quote",
+        "version": "1.0.47"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 361
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:quote (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "quote",
+            "version": "1.0.47"
+          },
+          "title": "Runs code at install time: build.rs",
+          "explanation": "1.0.47 ships a build script (build.rs), which cargo compiles and runs before building the crate",
+          "evidence": {
+            "script_names": [
+              "build.rs"
+            ],
+            "scripts": {
+              "build.rs": "build script runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 361
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "r-efi",
+        "version": "6.0.0"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 370
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:r-efi (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "redb",
+        "version": "4.1.0"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 376
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:redb (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "redb",
+            "version": "4.1.0"
+          },
+          "title": "Runs code at install time: build.rs",
+          "explanation": "4.1.0 ships a build script (build.rs), which cargo compiles and runs before building the crate",
+          "evidence": {
+            "script_names": [
+              "build.rs"
+            ],
+            "scripts": {
+              "build.rs": "build script runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 376
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "regex",
+        "version": "1.13.1"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 385
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:regex (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "regex-automata",
+        "version": "0.4.18"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 397
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:regex-automata (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "regex-syntax",
+        "version": "0.8.11"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 408
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:regex-syntax (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "same-file",
+        "version": "1.0.6"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 434
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:same-file (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "serde",
+        "version": "1.0.229"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 443
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:serde (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "serde",
+            "version": "1.0.229"
+          },
+          "title": "Runs code at install time: build.rs",
+          "explanation": "1.0.229 ships a build script (build.rs), which cargo compiles and runs before building the crate",
+          "evidence": {
+            "script_names": [
+              "build.rs"
+            ],
+            "scripts": {
+              "build.rs": "build script runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 443
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "serde_core",
+        "version": "1.0.229"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 452
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:serde_core (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "serde_core",
+            "version": "1.0.229"
+          },
+          "title": "Runs code at install time: build.rs",
+          "explanation": "1.0.229 ships a build script (build.rs), which cargo compiles and runs before building the crate",
+          "evidence": {
+            "script_names": [
+              "build.rs"
+            ],
+            "scripts": {
+              "build.rs": "build script runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 452
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "serde_derive",
+        "version": "1.0.229"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 461
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:serde_derive (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "serde_derive",
+            "version": "1.0.229"
+          },
+          "title": "Runs code at install time: proc-macro",
+          "explanation": "1.0.229 is a procedural macro crate, whose code runs inside the compiler of every dependent",
+          "evidence": {
+            "script_names": [
+              "proc-macro"
+            ],
+            "scripts": {
+              "proc-macro": "procedural macro runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 461
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "serde_json",
+        "version": "1.0.151"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 472
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:serde_json (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "serde_json",
+            "version": "1.0.151"
+          },
+          "title": "Runs code at install time: build.rs",
+          "explanation": "1.0.151 ships a build script (build.rs), which cargo compiles and runs before building the crate",
+          "evidence": {
+            "script_names": [
+              "build.rs"
+            ],
+            "scripts": {
+              "build.rs": "build script runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 472
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "shlex",
+        "version": "2.0.1"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 485
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:shlex (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "syn",
+        "version": "2.0.119"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 491
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:syn (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "syn",
+        "version": "3.0.3"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 502
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:syn (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "termcolor",
+        "version": "1.4.1"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 513
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:termcolor (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "textwrap",
+        "version": "0.16.2"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 522
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:textwrap (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "tikv-jemalloc-sys",
+        "version": "0.7.1+5.3.1-0-g81034ce1f1373e37dc865038e1bc8eeecf559ce8"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 528
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:tikv-jemalloc-sys (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "tikv-jemalloc-sys",
+            "version": "0.7.1+5.3.1-0-g81034ce1f1373e37dc865038e1bc8eeecf559ce8"
+          },
+          "title": "Runs code at install time: build.rs",
+          "explanation": "0.7.1+5.3.1-0-g81034ce1f1373e37dc865038e1bc8eeecf559ce8 ships a build script (build.rs), which cargo compiles and runs before building the crate",
+          "evidence": {
+            "script_names": [
+              "build.rs"
+            ],
+            "scripts": {
+              "build.rs": "build script runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 528
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "tikv-jemallocator",
+        "version": "0.7.0"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 538
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:tikv-jemallocator (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "unicode-ident",
+        "version": "1.0.24"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 548
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:unicode-ident (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "walkdir",
+        "version": "2.5.0"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 554
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:walkdir (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "winapi-util",
+        "version": "0.1.11"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 564
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:winapi-util (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "windows-link",
+        "version": "0.2.1"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 573
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:windows-link (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "windows-sys",
+        "version": "0.61.2"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 579
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:windows-sys (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "zmij",
+        "version": "1.0.23"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 588
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:zmij (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "zmij",
+            "version": "1.0.23"
+          },
+          "title": "Runs code at install time: build.rs",
+          "explanation": "1.0.23 ships a build script (build.rs), which cargo compiles and runs before building the crate",
+          "evidence": {
+            "script_names": [
+              "build.rs"
+            ],
+            "scripts": {
+              "build.rs": "build script runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 588
+          }
+        }
+      ],
+      "verdict": "warn"
+    }
+  ],
+  "summary": {
+    "subjects": 52,
+    "findings": {
+      "block": 0,
+      "info": 0,
+      "warn": 18
+    },
+    "skipped": 156,
+    "exit_code": 0,
+    "exit_meaning": "no blocking findings"
+  }
+}

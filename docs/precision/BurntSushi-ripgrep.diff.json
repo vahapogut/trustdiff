@@ -1,0 +1,27 @@
+{
+  "schema": "trustdiff.report/1",
+  "tool": {
+    "name": "trustdiff",
+    "version": "v0.5.1-29-gd9d294f",
+    "commit": "d9d294f",
+    "date": "2026-09-12T15:38:59Z",
+    "go_version": "go1.26.8"
+  },
+  "policy": {
+    "path": "",
+    "cooldown": "3d",
+    "fail_on": "block"
+  },
+  "subjects": [],
+  "summary": {
+    "subjects": 0,
+    "findings": {
+      "block": 0,
+      "info": 0,
+      "warn": 0
+    },
+    "skipped": 0,
+    "exit_code": 0,
+    "exit_meaning": "no blocking findings"
+  }
+}

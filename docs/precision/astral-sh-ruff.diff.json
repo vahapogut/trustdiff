@@ -1,0 +1,457 @@
+{
+  "schema": "trustdiff.report/1",
+  "tool": {
+    "name": "trustdiff",
+    "version": "v0.5.1-29-gd9d294f",
+    "commit": "d9d294f",
+    "date": "2026-09-12T15:38:59Z",
+    "go_version": "go1.26.8"
+  },
+  "policy": {
+    "path": "",
+    "cooldown": "3d",
+    "fail_on": "block"
+  },
+  "subjects": [
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "char_str",
+        "version": "0.0.4"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 446
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015",
+        "TD016",
+        "TD017"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:char_str (record one with trustdiff baseline)"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "clap",
+        "version": "4.6.6"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 497
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015",
+        "TD016",
+        "TD017"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:clap (record one with trustdiff baseline)"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "clap_builder",
+        "version": "4.6.6"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 507
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015",
+        "TD016",
+        "TD017"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:clap_builder (record one with trustdiff baseline)"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "get-size-derive2",
+        "version": "0.11.0"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 1306
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015",
+        "TD016",
+        "TD017"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:get-size-derive2 (record one with trustdiff baseline)"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "get-size-derive2",
+            "version": "0.11.0"
+          },
+          "title": "Runs code at install time: proc-macro",
+          "explanation": "0.11.0 is a procedural macro crate, whose code runs inside the compiler of every dependent",
+          "evidence": {
+            "script_names": [
+              "proc-macro"
+            ],
+            "scripts": {
+              "proc-macro": "procedural macro runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 1306
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "get-size2",
+        "version": "0.11.0"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 1317
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015",
+        "TD016",
+        "TD017"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:get-size2 (record one with trustdiff baseline)"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "rkyv",
+        "version": "0.8.18"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 3050
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015",
+        "TD016",
+        "TD017"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:rkyv (record one with trustdiff baseline)"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "rkyv_derive",
+        "version": "0.8.18"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 3069
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015",
+        "TD016",
+        "TD017"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:rkyv_derive (record one with trustdiff baseline)"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "rkyv_derive",
+            "version": "0.8.18"
+          },
+          "title": "Runs code at install time: proc-macro",
+          "explanation": "0.8.18 is a procedural macro crate, whose code runs inside the compiler of every dependent",
+          "evidence": {
+            "script_names": [
+              "proc-macro"
+            ],
+            "scripts": {
+              "proc-macro": "procedural macro runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 3069
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "thiserror",
+        "version": "2.0.20"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 4391
+      },
+      "direct": true,
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015",
+        "TD016",
+        "TD017"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:thiserror (record one with trustdiff baseline)"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "thiserror",
+            "version": "2.0.20"
+          },
+          "title": "Runs code at install time: build.rs",
+          "explanation": "2.0.20 ships a build script (build.rs), which cargo compiles and runs before building the crate",
+          "evidence": {
+            "script_names": [
+              "build.rs"
+            ],
+            "scripts": {
+              "build.rs": "build script runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 4391
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "cargo",
+        "name": "thiserror-impl",
+        "version": "2.0.20"
+      },
+      "location": {
+        "path": "Cargo.lock",
+        "line": 4411
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015",
+        "TD016",
+        "TD017"
+      ],
+      "skipped": [
+        {
+          "check": "TD003",
+          "reason": "cargo records no maintainer set per version; no baseline entry for cargo:thiserror-impl (record one with trustdiff baseline)"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD006",
+          "name": "install-script-present",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "cargo",
+            "name": "thiserror-impl",
+            "version": "2.0.20"
+          },
+          "title": "Runs code at install time: proc-macro",
+          "explanation": "2.0.20 is a procedural macro crate, whose code runs inside the compiler of every dependent",
+          "evidence": {
+            "script_names": [
+              "proc-macro"
+            ],
+            "scripts": {
+              "proc-macro": "procedural macro runs at compile time"
+            }
+          },
+          "location": {
+            "path": "Cargo.lock",
+            "line": 4411
+          }
+        }
+      ],
+      "verdict": "warn"
+    }
+  ],
+  "summary": {
+    "subjects": 9,
+    "findings": {
+      "block": 0,
+      "info": 0,
+      "warn": 4
+    },
+    "skipped": 9,
+    "exit_code": 0,
+    "exit_meaning": "no blocking findings"
+  }
+}

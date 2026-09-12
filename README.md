@@ -388,6 +388,8 @@ Every check has a stable id, a name used in the policy file, a default level and
 
 An expired `allow` entry produces a warning of its own, [TD000](docs/checks.md#td000-expired-allow). Any check whose data is missing reports skipped with the reason, never a pass.
 
+What these checks report on ten real repositories, with every block finding classified by hand and the reports the counts come from: [docs/precision.md](docs/precision.md).
+
 ## Policy
 
 `trustdiff policy init` writes a fully commented `.trustdiff.yaml` into the current directory and `trustdiff policy validate` checks one against the published schema ([schema/policy.v1.json](schema/policy.v1.json), also usable for editor completion). The file is found upward from the working directory, then under `$XDG_CONFIG_HOME/trustdiff/policy.yaml`; `--policy` names one explicitly; without any, the built-in defaults apply. Unknown keys are errors, so a typo cannot silently disable a rule. An excerpt:

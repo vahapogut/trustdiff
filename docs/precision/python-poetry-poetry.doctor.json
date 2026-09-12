@@ -1,0 +1,62 @@
+{
+  "schema": "trustdiff.doctor/1",
+  "tool": {
+    "name": "trustdiff",
+    "version": "v0.5.1-29-gd9d294f",
+    "commit": "d9d294f",
+    "date": "2026-09-12T15:38:59Z",
+    "go_version": "go1.26.8"
+  },
+  "policy": {
+    "path": "",
+    "cooldown": "3d",
+    "fail_on": "never"
+  },
+  "root": ".",
+  "managers": [
+    {
+      "id": "poetry",
+      "root": ".",
+      "evidence": [
+        "poetry.lock",
+        "the [tool.poetry] table of pyproject.toml"
+      ],
+      "files": [
+        "poetry.lock",
+        "pyproject.toml"
+      ]
+    }
+  ],
+  "results": [
+    {
+      "rule": "DR070",
+      "name": "poetry-min-release-age",
+      "manager": "poetry",
+      "status": "missing",
+      "level": "warn",
+      "file": "poetry.toml",
+      "want": "3, which is 3 days",
+      "detail": "the poetry version could not be determined; this setting needs 2.4.0 or later",
+      "docs": "https://python-poetry.org/docs/configuration/",
+      "verified": "2026-09-09"
+    }
+  ],
+  "notes": [
+    "poetry --version could not be run (poetry is not on PATH), so the poetry version is unknown"
+  ],
+  "summary": {
+    "managers": 1,
+    "results": 1,
+    "statuses": {
+      "advice": 0,
+      "missing": 1,
+      "not applicable": 0,
+      "set": 0,
+      "unreadable": 0,
+      "weak": 0,
+      "wrong": 0
+    },
+    "exit_code": 0,
+    "exit_meaning": "no problems at or above the threshold"
+  }
+}

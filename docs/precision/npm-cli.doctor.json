@@ -1,0 +1,106 @@
+{
+  "schema": "trustdiff.doctor/1",
+  "tool": {
+    "name": "trustdiff",
+    "version": "v0.5.1-29-gd9d294f",
+    "commit": "d9d294f",
+    "date": "2026-09-12T15:38:59Z",
+    "go_version": "go1.26.8"
+  },
+  "policy": {
+    "path": "",
+    "cooldown": "3d",
+    "fail_on": "never"
+  },
+  "root": ".",
+  "managers": [
+    {
+      "id": "npm",
+      "version": "11.19.1",
+      "version_exact": true,
+      "version_source": "npm -v, the binary on this machine",
+      "root": ".",
+      "evidence": [
+        "package-lock.json"
+      ],
+      "files": [
+        ".npmrc",
+        "package-lock.json",
+        "package.json"
+      ]
+    }
+  ],
+  "results": [
+    {
+      "rule": "DR001",
+      "name": "npm-min-release-age",
+      "manager": "npm",
+      "status": "missing",
+      "level": "warn",
+      "file": ".npmrc",
+      "want": "3, which is 3 days",
+      "docs": "https://docs.npmjs.com/cli/v12/using-npm/config",
+      "verified": "2026-09-09"
+    },
+    {
+      "rule": "DR003",
+      "name": "npm-allow-git",
+      "manager": "npm",
+      "status": "missing",
+      "level": "info",
+      "file": ".npmrc",
+      "want": "none",
+      "docs": "https://docs.npmjs.com/cli/v12/using-npm/config",
+      "verified": "2026-09-09"
+    },
+    {
+      "rule": "DR004",
+      "name": "npm-allow-remote",
+      "manager": "npm",
+      "status": "missing",
+      "level": "info",
+      "file": ".npmrc",
+      "want": "none",
+      "docs": "https://docs.npmjs.com/cli/v12/using-npm/config",
+      "verified": "2026-09-09"
+    },
+    {
+      "rule": "DR002",
+      "name": "npm-strict-allow-scripts",
+      "manager": "npm",
+      "status": "advice",
+      "level": "warn",
+      "file": ".npmrc",
+      "want": "true",
+      "detail": "not set, and package.json states no allowScripts with anything in it, so turning it on would fail the install on every dependency that has an install script. Review them first, with npm approve-scripts, and this becomes the line that stops an unreviewed script from being skipped in silence",
+      "docs": "https://docs.npmjs.com/cli/v12/commands/npm-install-scripts",
+      "verified": "2026-09-11"
+    },
+    {
+      "rule": "DR005",
+      "name": "npm-strict-npmrc",
+      "manager": "npm",
+      "status": "not applicable",
+      "level": "info",
+      "detail": "needs npm 12.0.0 or later and this project pins 11.19.1",
+      "docs": "https://docs.npmjs.com/cli/v12/using-npm/npmrc",
+      "verified": "2026-09-09"
+    }
+  ],
+  "notes": [],
+  "summary": {
+    "managers": 1,
+    "results": 5,
+    "statuses": {
+      "advice": 1,
+      "missing": 3,
+      "not applicable": 1,
+      "set": 0,
+      "unreadable": 0,
+      "weak": 0,
+      "wrong": 0
+    },
+    "exit_code": 0,
+    "exit_meaning": "no problems at or above the threshold"
+  }
+}

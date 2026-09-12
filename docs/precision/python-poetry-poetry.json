@@ -1,0 +1,3888 @@
+{
+  "schema": "trustdiff.report/1",
+  "tool": {
+    "name": "trustdiff",
+    "version": "v0.5.1-29-gd9d294f",
+    "commit": "d9d294f",
+    "date": "2026-09-12T15:38:59Z",
+    "go_version": "go1.26.8"
+  },
+  "policy": {
+    "path": "",
+    "cooldown": "3d",
+    "fail_on": "block"
+  },
+  "subjects": [
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "anyio",
+        "version": "4.14.2"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 3
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:anyio (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:anyio (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "ast-serialize",
+        "version": "0.8.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 23
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:ast-serialize (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:ast-serialize (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "backports-tarfile",
+        "version": "1.2.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 90
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:backports-tarfile (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:backports-tarfile (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "backports-zstd",
+        "version": "1.7.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 107
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:backports-zstd (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:backports-zstd (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "build",
+        "version": "1.6.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 204
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:build (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:build (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "cachecontrol",
+        "version": "0.14.4"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 228
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:cachecontrol (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:cachecontrol (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD007",
+          "name": "new-dependency-introduced",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "pypi",
+            "name": "cachecontrol",
+            "version": "0.14.4"
+          },
+          "title": "New optional dependency cheroot (>=11.1.2; extra == \"dev\"), not declared by 0.14.3",
+          "explanation": "0.14.3 declared 2 runtime dependencies; 0.14.4 adds cheroot (>=11.1.2; extra == \"dev\"). The newest stable version is cheroot@11.1.2, published on 2025-11-07T17:26:53Z (308d18h33m6s ago); the package's first release dates from 2014-02-10T22:46:25Z (4596d13h13m34s ago); deps.dev knows cheroot@11.1.2. PyPI has no download counts. It is declared under the extra \"dev\", which pip installs only when that extra is requested, so the level stays at the configured one",
+          "evidence": {
+            "dependency": "cheroot",
+            "deps_dev_found": true,
+            "escalated": false,
+            "escalation_reasons": [],
+            "extra": "dev",
+            "first_published_at": "2014-02-10T22:46:25Z",
+            "min_weekly_downloads": 500,
+            "new_dependencies": [
+              "cheroot"
+            ],
+            "optional": true,
+            "pinned": false,
+            "previous_version": "0.14.3",
+            "published_at": "2025-11-07T17:26:53Z",
+            "requirement": ">=11.1.2; extra == \"dev\"",
+            "resolved_version": "11.1.2"
+          },
+          "location": {
+            "path": "poetry.lock",
+            "line": 228
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "certifi",
+        "version": "2026.7.22"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 250
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:certifi (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:certifi (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "cffi",
+        "version": "2.1.1"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 262
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:cffi (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:cffi (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "cfgv",
+        "version": "3.5.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 376
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:cfgv (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:cfgv (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "charset-normalizer",
+        "version": "3.5.1"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 388
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:charset-normalizer (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:charset-normalizer (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "cleo",
+        "version": "2.1.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 570
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:cleo (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:cleo (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "colorama",
+        "version": "0.4.6"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 586
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:colorama (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:colorama (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "coverage",
+        "version": "7.16.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 599
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:coverage (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:coverage (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "crashtest",
+        "version": "0.4.1"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 736
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:crashtest (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:crashtest (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "cryptography",
+        "version": "50.0.1"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 748
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:cryptography (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:cryptography (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "distlib",
+        "version": "0.4.3"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 812
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:distlib (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:distlib (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "dulwich",
+        "version": "1.2.14"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 824
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:dulwich (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:dulwich (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "exceptiongroup",
+        "version": "1.3.1"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 908
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:exceptiongroup (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:exceptiongroup (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "execnet",
+        "version": "2.1.2"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 927
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:execnet (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:execnet (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "fastjsonschema",
+        "version": "2.22.2"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 942
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:fastjsonschema (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:fastjsonschema (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "filelock",
+        "version": "3.32.4"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 957
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:filelock (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:filelock (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "findpython",
+        "version": "0.8.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 969
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:findpython (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:findpython (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "h11",
+        "version": "0.16.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 985
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:h11 (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:h11 (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "httpcore",
+        "version": "1.0.9"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 997
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:httpcore (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:httpcore (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "httpx",
+        "version": "0.28.1"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1019
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:httpx (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:httpx (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "identify",
+        "version": "2.6.19"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1044
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:identify (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:identify (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "idna",
+        "version": "3.19"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1059
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:idna (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:idna (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD007",
+          "name": "new-dependency-introduced",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "pypi",
+            "name": "idna",
+            "version": "3.19"
+          },
+          "title": "New optional dependency coverage (>=7.10.0; extra == \"all\"), not declared by 3.18",
+          "explanation": "3.18 declared 0 runtime dependencies; 3.19 adds coverage (>=7.10.0; extra == \"all\"), one of 3 new dependencies (coverage, hypothesis, ty). The newest stable version is coverage@7.16.0, published on 2026-08-28T21:50:37Z (14d14h9m22s ago); the package's first release dates from 2009-05-16T21:03:17Z (6327d14h56m42s ago); deps.dev knows coverage@7.16.0. PyPI has no download counts. It is declared under the extra \"all\", which pip installs only when that extra is requested, so the level stays at the configured one",
+          "evidence": {
+            "dependency": "coverage",
+            "deps_dev_found": true,
+            "escalated": false,
+            "escalation_reasons": [],
+            "extra": "all",
+            "first_published_at": "2009-05-16T21:03:17Z",
+            "min_weekly_downloads": 500,
+            "new_dependencies": [
+              "coverage",
+              "hypothesis",
+              "ty"
+            ],
+            "optional": true,
+            "pinned": false,
+            "previous_version": "3.18",
+            "published_at": "2026-08-28T21:50:37Z",
+            "requirement": ">=7.10.0; extra == \"all\"",
+            "resolved_version": "7.16.0"
+          },
+          "location": {
+            "path": "poetry.lock",
+            "line": 1059
+          }
+        },
+        {
+          "id": "TD007",
+          "name": "new-dependency-introduced",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "pypi",
+            "name": "idna",
+            "version": "3.19"
+          },
+          "title": "New optional dependency hypothesis (>=6.141.1; extra == \"all\"), not declared by 3.18",
+          "explanation": "3.18 declared 0 runtime dependencies; 3.19 adds hypothesis (>=6.141.1; extra == \"all\"), one of 3 new dependencies (coverage, hypothesis, ty). The newest stable version is hypothesis@6.168.0, published on 2026-09-08T18:46:21Z (3d17h13m38s ago); the package's first release dates from 2013-03-10T13:53:06Z (4933d22h6m53s ago); deps.dev knows hypothesis@6.168.0. PyPI has no download counts. It is declared under the extra \"all\", which pip installs only when that extra is requested, so the level stays at the configured one",
+          "evidence": {
+            "dependency": "hypothesis",
+            "deps_dev_found": true,
+            "escalated": false,
+            "escalation_reasons": [],
+            "extra": "all",
+            "first_published_at": "2013-03-10T13:53:06Z",
+            "min_weekly_downloads": 500,
+            "new_dependencies": [
+              "coverage",
+              "hypothesis",
+              "ty"
+            ],
+            "optional": true,
+            "pinned": false,
+            "previous_version": "3.18",
+            "published_at": "2026-09-08T18:46:21Z",
+            "requirement": ">=6.141.1; extra == \"all\"",
+            "resolved_version": "6.168.0"
+          },
+          "location": {
+            "path": "poetry.lock",
+            "line": 1059
+          }
+        },
+        {
+          "id": "TD007",
+          "name": "new-dependency-introduced",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "pypi",
+            "name": "idna",
+            "version": "3.19"
+          },
+          "title": "New optional dependency ty (>=0.0.37; extra == \"all\"), not declared by 3.18",
+          "explanation": "3.18 declared 0 runtime dependencies; 3.19 adds ty (>=0.0.37; extra == \"all\"), one of 3 new dependencies (coverage, hypothesis, ty). The newest stable version is ty@0.0.80, published on 2026-09-09T21:18:10Z (2d14h41m49s ago); the package's first release dates from 2025-04-30T20:31:09Z (499d15h28m50s ago); deps.dev knows ty@0.0.80. PyPI has no download counts. It is declared under the extra \"all\", which pip installs only when that extra is requested, so the level stays at the configured one",
+          "evidence": {
+            "dependency": "ty",
+            "deps_dev_found": true,
+            "escalated": false,
+            "escalation_reasons": [],
+            "extra": "all",
+            "first_published_at": "2025-04-30T20:31:09Z",
+            "min_weekly_downloads": 500,
+            "new_dependencies": [
+              "coverage",
+              "hypothesis",
+              "ty"
+            ],
+            "optional": true,
+            "pinned": false,
+            "previous_version": "3.18",
+            "published_at": "2026-09-09T21:18:10Z",
+            "requirement": ">=0.0.37; extra == \"all\"",
+            "resolved_version": "0.0.80"
+          },
+          "location": {
+            "path": "poetry.lock",
+            "line": 1059
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "importlib-metadata",
+        "version": "9.0.1"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1074
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:importlib-metadata (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:importlib-metadata (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "iniconfig",
+        "version": "2.3.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1099
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:iniconfig (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:iniconfig (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "installer",
+        "version": "1.0.1"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1111
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:installer (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:installer (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "jaraco-classes",
+        "version": "3.4.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1123
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:jaraco-classes (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:jaraco-classes (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "jaraco-context",
+        "version": "6.1.2"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1142
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:jaraco-context (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:jaraco-context (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "jaraco-functools",
+        "version": "4.6.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1165
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:jaraco-functools (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:jaraco-functools (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "jeepney",
+        "version": "0.9.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1188
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:jeepney (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:jeepney (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "keyring",
+        "version": "25.7.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1205
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:keyring (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:keyring (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "librt",
+        "version": "0.15.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1235
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:librt (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:librt (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "more-itertools",
+        "version": "11.1.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1383
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:more-itertools (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:more-itertools (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "msgpack",
+        "version": "1.2.2"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1395
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:msgpack (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:msgpack (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "mypy",
+        "version": "2.3.1"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1493
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:mypy (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:mypy (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "mypy-extensions",
+        "version": "1.1.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1573
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:mypy-extensions (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:mypy-extensions (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "nodeenv",
+        "version": "1.10.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1585
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:nodeenv (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:nodeenv (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "packaging",
+        "version": "26.2"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1597
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:packaging (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:packaging (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "pathspec",
+        "version": "1.1.1"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1609
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:pathspec (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:pathspec (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "pbs-installer",
+        "version": "2026.8.25"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1626
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:pbs-installer (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:pbs-installer (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "pkginfo",
+        "version": "1.12.1.2"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1647
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:pkginfo (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:pkginfo (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "platformdirs",
+        "version": "4.11.5"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1662
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:platformdirs (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:platformdirs (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "pluggy",
+        "version": "1.6.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1674
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:pluggy (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:pluggy (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD007",
+          "name": "new-dependency-introduced",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "pypi",
+            "name": "pluggy",
+            "version": "1.6.0"
+          },
+          "title": "New optional dependency coverage (; extra == \"testing\"), not declared by 1.5.0",
+          "explanation": "1.5.0 declared 0 runtime dependencies; 1.6.0 adds coverage (; extra == \"testing\"). The newest stable version is coverage@7.16.0, published on 2026-08-28T21:50:37Z (14d14h9m22s ago); the package's first release dates from 2009-05-16T21:03:17Z (6327d14h56m42s ago); deps.dev knows coverage@7.16.0. PyPI has no download counts. It is declared under the extra \"testing\", which pip installs only when that extra is requested, so the level stays at the configured one",
+          "evidence": {
+            "dependency": "coverage",
+            "deps_dev_found": true,
+            "escalated": false,
+            "escalation_reasons": [],
+            "extra": "testing",
+            "first_published_at": "2009-05-16T21:03:17Z",
+            "min_weekly_downloads": 500,
+            "new_dependencies": [
+              "coverage"
+            ],
+            "optional": true,
+            "pinned": false,
+            "previous_version": "1.5.0",
+            "published_at": "2026-08-28T21:50:37Z",
+            "requirement": "; extra == \"testing\"",
+            "resolved_version": "7.16.0"
+          },
+          "location": {
+            "path": "poetry.lock",
+            "line": 1674
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "poetry-core",
+        "version": "2.4.1"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1690
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:poetry-core (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:poetry-core (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD013",
+          "name": "exotic-source",
+          "level": "block",
+          "ref": {
+            "ecosystem": "pypi",
+            "name": "poetry-core",
+            "version": "2.4.1"
+          },
+          "title": "resolved from a git repository instead of PyPI",
+          "explanation": "poetry.lock resolves pypi:poetry-core@2.4.1 from a git repository (https://github.com/python-poetry/poetry-core.git#b9663e42c808543377ae523611c4cfad68016f30) rather than from PyPI. None of the registry's protections apply to it: the release cannot be yanked, advisories are not matched against it, and there is no publisher, provenance or download history to compare with the previous version. The version number the lockfile records is what the fetched manifest claimed, not a version anyone published. The revision b9663e42c808543377ae523611c4cfad68016f30 is a full commit sha, so at least the content is pinned.",
+          "evidence": {
+            "lockfile": "poetry.lock",
+            "resolved": "https://github.com/python-poetry/poetry-core.git#b9663e42c808543377ae523611c4cfad68016f30",
+            "source": "git"
+          },
+          "location": {
+            "path": "poetry.lock",
+            "line": 1690
+          }
+        }
+      ],
+      "verdict": "block"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "pre-commit",
+        "version": "4.6.2"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1706
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:pre-commit (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:pre-commit (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "psutil",
+        "version": "7.2.2"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1725
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:psutil (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:psutil (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [
+        {
+          "id": "TD007",
+          "name": "new-dependency-introduced",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "pypi",
+            "name": "psutil",
+            "version": "7.2.2"
+          },
+          "title": "New optional dependency colorama (; os_name == \"nt\" and extra == \"dev\"), not declared by 7.2.1",
+          "explanation": "7.2.1 declared 0 runtime dependencies; 7.2.2 adds colorama (; os_name == \"nt\" and extra == \"dev\"), one of 4 new dependencies (colorama, pyreadline3, pywin32, wmi). The newest stable version is colorama@0.4.6, published on 2022-10-25T02:36:20Z (1418d9h23m39s ago); the package's first release dates from 2010-04-20T02:02:19Z (5989d9h57m40s ago); deps.dev knows colorama@0.4.6. PyPI has no download counts. It is declared under the extra \"dev\", which pip installs only when that extra is requested, so the level stays at the configured one",
+          "evidence": {
+            "dependency": "colorama",
+            "deps_dev_found": true,
+            "escalated": false,
+            "escalation_reasons": [],
+            "extra": "dev",
+            "first_published_at": "2010-04-20T02:02:19Z",
+            "min_weekly_downloads": 500,
+            "new_dependencies": [
+              "colorama",
+              "pyreadline3",
+              "pywin32",
+              "wmi"
+            ],
+            "optional": true,
+            "pinned": false,
+            "previous_version": "7.2.1",
+            "published_at": "2022-10-25T02:36:20Z",
+            "requirement": "; os_name == \"nt\" and extra == \"dev\"",
+            "resolved_version": "0.4.6"
+          },
+          "location": {
+            "path": "poetry.lock",
+            "line": 1725
+          }
+        },
+        {
+          "id": "TD007",
+          "name": "new-dependency-introduced",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "pypi",
+            "name": "psutil",
+            "version": "7.2.2"
+          },
+          "title": "New optional dependency pyreadline3 (; os_name == \"nt\" and extra == \"dev\"), not declared by 7.2.1",
+          "explanation": "7.2.1 declared 0 runtime dependencies; 7.2.2 adds pyreadline3 (; os_name == \"nt\" and extra == \"dev\"), one of 4 new dependencies (colorama, pyreadline3, pywin32, wmi). The newest stable version is pyreadline3@3.5.6, published on 2026-05-14T17:55:03Z (120d18h4m56s ago); the package's first release dates from 2020-10-21T18:30:22Z (2151d17h29m37s ago); deps.dev knows pyreadline3@3.5.6. PyPI has no download counts. It is declared under the extra \"dev\", which pip installs only when that extra is requested, so the level stays at the configured one",
+          "evidence": {
+            "dependency": "pyreadline3",
+            "deps_dev_found": true,
+            "escalated": false,
+            "escalation_reasons": [],
+            "extra": "dev",
+            "first_published_at": "2020-10-21T18:30:22Z",
+            "min_weekly_downloads": 500,
+            "new_dependencies": [
+              "colorama",
+              "pyreadline3",
+              "pywin32",
+              "wmi"
+            ],
+            "optional": true,
+            "pinned": false,
+            "previous_version": "7.2.1",
+            "published_at": "2026-05-14T17:55:03Z",
+            "requirement": "; os_name == \"nt\" and extra == \"dev\"",
+            "resolved_version": "3.5.6"
+          },
+          "location": {
+            "path": "poetry.lock",
+            "line": 1725
+          }
+        },
+        {
+          "id": "TD007",
+          "name": "new-dependency-introduced",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "pypi",
+            "name": "psutil",
+            "version": "7.2.2"
+          },
+          "title": "New optional dependency pywin32 (; (os_name == \"nt\" and implementation_name != \"pypy\") and extra == \"dev\" || ; (os_name == \"nt\" and implementation_name != \"pypy\") and extra == \"test\"), not declared by 7.2.1",
+          "explanation": "7.2.1 declared 0 runtime dependencies; 7.2.2 adds pywin32 (; (os_name == \"nt\" and implementation_name != \"pypy\") and extra == \"dev\" || ; (os_name == \"nt\" and implementation_name != \"pypy\") and extra == \"test\"), one of 4 new dependencies (colorama, pyreadline3, pywin32, wmi). The newest stable version is pywin32@312, published on 2026-06-04T07:49:04Z (100d4h10m55s ago); the package's first release dates from 2018-01-21T05:48:10Z (3156d6h11m49s ago); deps.dev knows pywin32@312. PyPI has no download counts. It is declared under the extra \"dev\", which pip installs only when that extra is requested, so the level stays at the configured one",
+          "evidence": {
+            "dependency": "pywin32",
+            "deps_dev_found": true,
+            "escalated": false,
+            "escalation_reasons": [],
+            "extra": "dev",
+            "first_published_at": "2018-01-21T05:48:10Z",
+            "min_weekly_downloads": 500,
+            "new_dependencies": [
+              "colorama",
+              "pyreadline3",
+              "pywin32",
+              "wmi"
+            ],
+            "optional": true,
+            "pinned": false,
+            "previous_version": "7.2.1",
+            "published_at": "2026-06-04T07:49:04Z",
+            "requirement": "; (os_name == \"nt\" and implementation_name != \"pypy\") and extra == \"dev\" || ; (os_name == \"nt\" and implementation_name != \"pypy\") and extra == \"test\"",
+            "resolved_version": "312"
+          },
+          "location": {
+            "path": "poetry.lock",
+            "line": 1725
+          }
+        },
+        {
+          "id": "TD007",
+          "name": "new-dependency-introduced",
+          "level": "warn",
+          "ref": {
+            "ecosystem": "pypi",
+            "name": "psutil",
+            "version": "7.2.2"
+          },
+          "title": "New optional dependency wmi (; (os_name == \"nt\" and implementation_name != \"pypy\") and extra == \"dev\" || ; (os_name == \"nt\" and implementation_name != \"pypy\") and extra == \"test\"), not declared by 7.2.1",
+          "explanation": "7.2.1 declared 0 runtime dependencies; 7.2.2 adds wmi (; (os_name == \"nt\" and implementation_name != \"pypy\") and extra == \"dev\" || ; (os_name == \"nt\" and implementation_name != \"pypy\") and extra == \"test\"), one of 4 new dependencies (colorama, pyreadline3, pywin32, wmi). The newest stable version is wmi@1.5.1, published on 2020-04-28T08:22:56Z (2328d3h37m3s ago); the package's first release dates from 2011-04-12T16:46:10Z (5631d19h13m49s ago); deps.dev knows wmi@1.5.1. PyPI has no download counts. It is declared under the extra \"dev\", which pip installs only when that extra is requested, so the level stays at the configured one",
+          "evidence": {
+            "dependency": "wmi",
+            "deps_dev_found": true,
+            "escalated": false,
+            "escalation_reasons": [],
+            "extra": "dev",
+            "first_published_at": "2011-04-12T16:46:10Z",
+            "min_weekly_downloads": 500,
+            "new_dependencies": [
+              "colorama",
+              "pyreadline3",
+              "pywin32",
+              "wmi"
+            ],
+            "optional": true,
+            "pinned": false,
+            "previous_version": "7.2.1",
+            "published_at": "2020-04-28T08:22:56Z",
+            "requirement": "; (os_name == \"nt\" and implementation_name != \"pypy\") and extra == \"dev\" || ; (os_name == \"nt\" and implementation_name != \"pypy\") and extra == \"test\"",
+            "resolved_version": "1.5.1"
+          },
+          "location": {
+            "path": "poetry.lock",
+            "line": 1725
+          }
+        }
+      ],
+      "verdict": "warn"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "pycparser",
+        "version": "3.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1760
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:pycparser (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:pycparser (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "pygments",
+        "version": "2.21.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1773
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:pygments (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:pygments (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "pyproject-hooks",
+        "version": "1.2.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1788
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:pyproject-hooks (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:pyproject-hooks (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "pytest",
+        "version": "9.1.1"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1800
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:pytest (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:pytest (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "pytest-cov",
+        "version": "7.1.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1824
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:pytest-cov (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:pytest-cov (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "pytest-github-actions-annotate-failures",
+        "version": "0.1.8"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1844
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:pytest-github-actions-annotate-failures (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:pytest-github-actions-annotate-failures (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "pytest-mock",
+        "version": "3.15.1"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1859
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:pytest-mock (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:pytest-mock (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "pytest-randomly",
+        "version": "4.1.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1877
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:pytest-randomly (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:pytest-randomly (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "pytest-xdist",
+        "version": "3.8.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1892
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:pytest-xdist (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:pytest-xdist (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "python-discovery",
+        "version": "1.6.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1914
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:python-discovery (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:python-discovery (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "pywin32-ctypes",
+        "version": "0.2.3"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1929
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:pywin32-ctypes (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:pywin32-ctypes (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "pyyaml",
+        "version": "6.0.3"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 1942
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:pyyaml (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:pyyaml (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "rapidfuzz",
+        "version": "3.14.5"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 2025
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:rapidfuzz (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:rapidfuzz (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "rapidfuzz",
+        "version": "3.14.6"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 2122
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:rapidfuzz (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:rapidfuzz (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "requests",
+        "version": "2.34.2"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 2239
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:requests (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:requests (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "requests-toolbelt",
+        "version": "1.0.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 2261
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:requests-toolbelt (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:requests-toolbelt (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "responses",
+        "version": "0.26.3"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 2276
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:responses (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:responses (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "secretstorage",
+        "version": "3.5.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 2296
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:secretstorage (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:secretstorage (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "shellingham",
+        "version": "1.5.4"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 2313
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:shellingham (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:shellingham (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "tomli",
+        "version": "2.4.1"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 2325
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:tomli (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:tomli (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "tomlkit",
+        "version": "0.15.1"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 2383
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:tomlkit (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:tomlkit (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "trove-classifiers",
+        "version": "2026.6.1.19"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 2395
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:trove-classifiers (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:trove-classifiers (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "types-requests",
+        "version": "2.33.0.20260712"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 2407
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:types-requests (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:types-requests (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "typing-extensions",
+        "version": "4.16.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 2422
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:typing-extensions (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:typing-extensions (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "urllib3",
+        "version": "2.7.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 2435
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:urllib3 (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:urllib3 (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "virtualenv",
+        "version": "21.7.7"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 2453
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:virtualenv (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:virtualenv (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "xattr",
+        "version": "1.3.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 2472
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:xattr (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:xattr (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    },
+    {
+      "ref": {
+        "ecosystem": "pypi",
+        "name": "zipp",
+        "version": "4.1.0"
+      },
+      "location": {
+        "path": "poetry.lock",
+        "line": 2539
+      },
+      "evaluated": [
+        "TD001",
+        "TD004",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015"
+      ],
+      "skipped": [
+        {
+          "check": "TD002",
+          "reason": "pypi records no publisher per version; no baseline entry for pypi:zipp (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD003",
+          "reason": "pypi records no maintainer set per version; no baseline entry for pypi:zipp (record one with trustdiff baseline)"
+        },
+        {
+          "check": "TD016",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        },
+        {
+          "check": "TD017",
+          "reason": "no entry in the base lockfile to compare with: the entry is new, or the run compared against no base"
+        }
+      ],
+      "findings": [],
+      "verdict": "ok"
+    }
+  ],
+  "summary": {
+    "subjects": 78,
+    "findings": {
+      "block": 1,
+      "info": 0,
+      "warn": 9
+    },
+    "skipped": 312,
+    "exit_code": 1,
+    "exit_meaning": "blocking findings"
+  }
+}

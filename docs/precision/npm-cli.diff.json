@@ -1,0 +1,61 @@
+{
+  "schema": "trustdiff.report/1",
+  "tool": {
+    "name": "trustdiff",
+    "version": "v0.5.1-29-gd9d294f",
+    "commit": "d9d294f",
+    "date": "2026-09-12T15:38:59Z",
+    "go_version": "go1.26.8"
+  },
+  "policy": {
+    "path": "",
+    "cooldown": "3d",
+    "fail_on": "block"
+  },
+  "subjects": [
+    {
+      "ref": {
+        "ecosystem": "npm",
+        "name": "undici",
+        "version": "6.28.0"
+      },
+      "location": {
+        "path": "package-lock.json",
+        "line": 14329
+      },
+      "evaluated": [
+        "TD001",
+        "TD002",
+        "TD003",
+        "TD004",
+        "TD005",
+        "TD006",
+        "TD007",
+        "TD008",
+        "TD009",
+        "TD010",
+        "TD011",
+        "TD012",
+        "TD013",
+        "TD014",
+        "TD015",
+        "TD016",
+        "TD017"
+      ],
+      "skipped": [],
+      "findings": [],
+      "verdict": "ok"
+    }
+  ],
+  "summary": {
+    "subjects": 1,
+    "findings": {
+      "block": 0,
+      "info": 0,
+      "warn": 0
+    },
+    "skipped": 0,
+    "exit_code": 0,
+    "exit_meaning": "no blocking findings"
+  }
+}

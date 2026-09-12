@@ -1,0 +1,74 @@
+{
+  "schema": "trustdiff.doctor/1",
+  "tool": {
+    "name": "trustdiff",
+    "version": "v0.5.1-29-gd9d294f",
+    "commit": "d9d294f",
+    "date": "2026-09-12T15:38:59Z",
+    "go_version": "go1.26.8"
+  },
+  "policy": {
+    "path": "",
+    "cooldown": "3d",
+    "fail_on": "never"
+  },
+  "root": ".",
+  "managers": [
+    {
+      "id": "cargo",
+      "version": "1.95.0",
+      "version_exact": true,
+      "version_source": "cargo --version, the binary on this machine",
+      "root": ".",
+      "evidence": [
+        "Cargo.lock",
+        "Cargo.toml"
+      ],
+      "files": [
+        "Cargo.lock",
+        "Cargo.toml"
+      ]
+    }
+  ],
+  "results": [
+    {
+      "rule": "DR080",
+      "name": "cargo-cooldown",
+      "manager": "cargo",
+      "status": "advice",
+      "level": "info",
+      "want": "nothing to set",
+      "detail": "Stable Cargo has no cooldown. RFC 3923 was merged on 2026-05-18 and is implemented on nightly only. Until it lands, a Rust project's defenses are cargo-deny for policy, cargo-vet for review records, cargo-audit for advisories, and cargo install --locked so an install uses the lockfile it was tested with.",
+      "docs": "https://github.com/rust-lang/rfcs/pull/3923",
+      "verified": "2026-09-09"
+    },
+    {
+      "rule": "DR081",
+      "name": "cargo-min-publish-age",
+      "manager": "cargo",
+      "status": "advice",
+      "level": "info",
+      "file": ".cargo/config.toml",
+      "want": "nothing to set",
+      "detail": "registry.global-min-publish-age takes a value such as \"3 days\" and works only on nightly with -Zmin-publish-age. On a stable toolchain it is accepted and ignored, so a project that set it is not protected and has no way to tell.",
+      "docs": "https://doc.rust-lang.org/cargo/reference/unstable.html",
+      "verified": "2026-09-09"
+    }
+  ],
+  "notes": [],
+  "summary": {
+    "managers": 1,
+    "results": 2,
+    "statuses": {
+      "advice": 2,
+      "missing": 0,
+      "not applicable": 0,
+      "set": 0,
+      "unreadable": 0,
+      "weak": 0,
+      "wrong": 0
+    },
+    "exit_code": 0,
+    "exit_meaning": "no problems at or above the threshold"
+  }
+}

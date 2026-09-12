@@ -1,0 +1,96 @@
+{
+  "schema": "trustdiff.doctor/1",
+  "tool": {
+    "name": "trustdiff",
+    "version": "v0.5.1-29-gd9d294f",
+    "commit": "d9d294f",
+    "date": "2026-09-12T15:38:59Z",
+    "go_version": "go1.26.8"
+  },
+  "policy": {
+    "path": "",
+    "cooldown": "3d",
+    "fail_on": "never"
+  },
+  "root": ".",
+  "managers": [
+    {
+      "id": "yarn",
+      "version": "1.22.22",
+      "version_exact": true,
+      "version_source": "the packageManager field of package.json",
+      "root": ".",
+      "evidence": [
+        "the packageManager field of package.json",
+        "yarn.lock"
+      ],
+      "files": [
+        "package.json",
+        "yarn.lock"
+      ]
+    }
+  ],
+  "results": [
+    {
+      "rule": "DR021",
+      "name": "yarn-enable-scripts",
+      "manager": "yarn",
+      "status": "missing",
+      "level": "warn",
+      "file": ".yarnrc.yml",
+      "want": "false",
+      "docs": "https://yarnpkg.com/configuration/yarnrc",
+      "verified": "2026-09-09"
+    },
+    {
+      "rule": "DR022",
+      "name": "yarn-checksum-behavior",
+      "manager": "yarn",
+      "status": "set",
+      "level": "warn",
+      "file": ".yarnrc.yml",
+      "want": "throw",
+      "detail": "not set, and this version defaults to throw",
+      "docs": "https://yarnpkg.com/configuration/yarnrc",
+      "verified": "2026-09-09"
+    },
+    {
+      "rule": "DR023",
+      "name": "yarn-hardened-mode",
+      "manager": "yarn",
+      "status": "advice",
+      "level": "info",
+      "file": ".yarnrc.yml",
+      "want": "nothing to set",
+      "detail": "Yarn turns hardened mode on by itself for a pull request against a public repository. Elsewhere it is off, and turning it on costs install time, so it belongs in the CI environment rather than in the file.",
+      "docs": "https://yarnpkg.com/configuration/yarnrc",
+      "verified": "2026-09-09"
+    },
+    {
+      "rule": "DR020",
+      "name": "yarn-minimal-age-gate",
+      "manager": "yarn",
+      "status": "not applicable",
+      "level": "warn",
+      "detail": "needs yarn 4.10.0 or later and this project pins 1.22.22",
+      "docs": "https://yarnpkg.com/configuration/yarnrc",
+      "verified": "2026-09-11"
+    }
+  ],
+  "notes": [],
+  "summary": {
+    "managers": 1,
+    "results": 4,
+    "statuses": {
+      "advice": 1,
+      "missing": 1,
+      "not applicable": 1,
+      "set": 1,
+      "unreadable": 0,
+      "weak": 0,
+      "wrong": 0
+    },
+    "exit_code": 0,
+    "exit_meaning": "no problems at or above the threshold"
+  }
+}

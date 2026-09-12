@@ -1,0 +1,85 @@
+{
+  "schema": "trustdiff.doctor/1",
+  "tool": {
+    "name": "trustdiff",
+    "version": "v0.5.1-29-gd9d294f",
+    "commit": "d9d294f",
+    "date": "2026-09-12T15:38:59Z",
+    "go_version": "go1.26.8"
+  },
+  "policy": {
+    "path": "",
+    "cooldown": "3d",
+    "fail_on": "never"
+  },
+  "root": ".",
+  "managers": [
+    {
+      "id": "deno",
+      "root": ".",
+      "evidence": [
+        "deno.json",
+        "deno.lock"
+      ],
+      "files": [
+        "deno.json",
+        "deno.lock"
+      ]
+    }
+  ],
+  "results": [
+    {
+      "rule": "DR040",
+      "name": "deno-minimum-dependency-age",
+      "manager": "deno",
+      "status": "missing",
+      "level": "warn",
+      "file": "deno.json",
+      "want": "P3D",
+      "detail": "the deno version could not be determined; this setting needs 2.6 or later",
+      "docs": "https://docs.deno.com/runtime/reference/deno_json/",
+      "verified": "2026-09-10"
+    },
+    {
+      "rule": "DR041",
+      "name": "deno-frozen-lockfile",
+      "manager": "deno",
+      "status": "missing",
+      "level": "warn",
+      "file": "deno.json",
+      "want": "true",
+      "docs": "https://docs.deno.com/runtime/reference/deno_json/",
+      "verified": "2026-09-09"
+    },
+    {
+      "rule": "DR042",
+      "name": "deno-lockfile",
+      "manager": "deno",
+      "status": "set",
+      "level": "warn",
+      "file": "deno.json",
+      "want": "a lockfile, which is the default",
+      "detail": "not set, and Deno writes a lockfile by default",
+      "docs": "https://docs.deno.com/runtime/reference/deno_json/",
+      "verified": "2026-09-09"
+    }
+  ],
+  "notes": [
+    "deno -v could not be run (deno is not on PATH), so the deno version is unknown"
+  ],
+  "summary": {
+    "managers": 1,
+    "results": 3,
+    "statuses": {
+      "advice": 0,
+      "missing": 2,
+      "not applicable": 0,
+      "set": 1,
+      "unreadable": 0,
+      "weak": 0,
+      "wrong": 0
+    },
+    "exit_code": 0,
+    "exit_meaning": "no problems at or above the threshold"
+  }
+}

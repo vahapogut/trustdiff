@@ -2,6 +2,8 @@
 
 trustdiff evaluates a package version with the checks listed here. Every check has a stable id (`TD001`) that reports, SARIF rules and allow entries refer to, and a short name (`young-version`) that the policy file uses. Ids never change meaning; a check that is retired keeps its id.
 
+What these checks report on ten real public repositories, with every block finding classified by hand, is [precision.md](precision.md); several of the defaults below are what that measurement left them at.
+
 Levels come from the policy. The defaults quoted in each section are what a run without a `.trustdiff.yaml` uses; every one of them can be set to `block`, `warn`, `info` or `off`, per ecosystem if needed, and `--fail-on` decides which levels turn into exit code 1. See the commented file that `trustdiff policy init` writes.
 
 A check never passes for lack of data. When a registry, OSV, deps.dev or the download counts could not be fetched, or when the registry does not record what the check needs, the check reports `skipped` with the reason, the human report lists it under the card, and the JSON report lists it in `skipped`. A version with no evaluated check gets the verdict `skipped`, not `ok`.
