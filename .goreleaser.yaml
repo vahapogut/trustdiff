@@ -115,6 +115,15 @@ release:
     owner: vahapogut
     name: trustdiff
   draft: false
+  # goreleaser uploads every artifact it builds, and GitHub answers an upload
+  # whose name is already on the release with 422 already_exists. Without this
+  # key a re-run of a tag whose release already exists fails that way on every
+  # archive, so a release that got through the upload and then broke on the tap
+  # push never gets back to the tap: the second run stops before it. With the
+  # key goreleaser deletes the asset that is in the way and uploads again, so
+  # the re-run reaches the tap blocks below. Rebuilding the same commit yields
+  # the same archive, so what replaces an asset is the same bytes.
+  replace_existing_artifacts: true
   # A tag with a suffix (v0.1.0-rc1) is marked as a prerelease automatically.
   # A plain tag that must not be marked latest, such as v0.0.1, is edited
   # afterwards with "gh release edit <tag> --prerelease".
