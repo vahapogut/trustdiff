@@ -233,12 +233,21 @@ anything at run time. That table can only be written after the release exists.
    `warn` and this repository is judged by its own rules, and
    `TestActionSelfTestAlsoRunsThePublishedReference` fails while its comment and
    the `default:` above disagree.
-5. `git diff action.yml .github/workflows/action-selftest.yml` and read it. Six
-   hashes changed, the `default:` and the `pinned_version=` changed, the two
-   example snippets in the header comment changed, the published leg's ref
-   changed, nothing else.
-6. Commit as `chore(action): pin v0.4.0 and checksums`.
-7. Dispatch the `action-selftest` workflow on the default branch, once the commit
+5. Set the readme's workflow example to the same reference. It is the line a
+   reader copies, `- uses: vahapogut/trustdiff@<sha> # <tag>` near "A pull request
+   gate", and the sha is the commit this step is about to make rather than the one
+   the tag points at: at the tag the action still defaults to the release before
+   it. So commit first, then rewrite the line with the commit's own sha and amend,
+   or push the pin commit and correct the readme in the next one.
+   `TestREADMEPinsTheActionAtACommit` checks that it is a 40 character sha with a
+   `# vX.Y.Z` beside it, which is the half that rots silently; nothing can check
+   that it is the newest such commit.
+6. `git diff action.yml .github/workflows/action-selftest.yml README.md` and read
+   it. Six hashes changed, the `default:` and the `pinned_version=` changed, the
+   two example snippets in the header comment changed, the published leg's ref
+   changed, the readme's example changed, nothing else.
+7. Commit as `chore(action): pin v0.4.0 and checksums`.
+8. Dispatch the `action-selftest` workflow on the default branch, once the commit
    above is pushed. It runs `action.yml` from `./` on ubuntu, macos and windows,
    on both verification routes, against the release that commit just pinned, and
    one more job runs `uses: vahapogut/trustdiff@<the tag>`, which is the only leg
