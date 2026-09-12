@@ -14,6 +14,14 @@ A lockfile names a version once per place it installs it, and those places are o
 version comes from and what guards it. A line that resolves the same version from somewhere else, or drops its hash, is a subject
 of its own reported on its own line, because that is a different install however the version reads.
 
+A lockfile entry that installs a directory of the project, which is what a workspace member and a `link:` entry are, is not the
+registry's package of that name. Every check that reads a registry or an advisory database reports itself skipped for such an entry,
+naming the directory, because what those sources would say is about a different package: another maintainer set, another publisher,
+another set of advisories. `exotic-source` reports the entry at `info` as it always did. It is an answer rather than an outage, so
+`on_data_unavailable` is not involved. The precision pass of 2026-09-12 is where this came from: React's `yarn.lock` links
+`eslint-plugin-react-internal` to `./scripts/eslint-rules`, npm holds a package of that name that OSV lists as malicious, and the scan
+reported React's own lint rules as malware at `block`.
+
 Evidence keys are part of the JSON report (`schema/report.v1.json`, schema `trustdiff.report/1`). Within a schema version keys are added, never renamed or removed. The example under each check is the human report as `trustdiff check` prints it, captured against the live registries on 2026-09-09 unless the section says otherwise.
 
 Ecosystems: npm, PyPI and crates.io from 0.1.0, JSR from 0.4.0. A `jsr:` ref runs the checks JSR carries the data for and reports the rest as skipped with the reason; the applicability table lives in the package comment of `internal/registry/jsr`.

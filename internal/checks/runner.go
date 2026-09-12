@@ -296,6 +296,16 @@ func (rn *run) forEach(n int, fn func(i int)) {
 // advisory checks to run.
 func (rn *run) resolve(ctx context.Context, in *Input) resolution {
 	ref := in.Ref
+	if in.Lock != nil && entrySource(in.Lock) == lockfile.SourcePath {
+		// The entry installs a directory of the project, so the registry's package
+		// of the same name is a different package and everything it could say about
+		// it is about something else: another maintainer set, another publisher,
+		// another set of advisories. It is an answer, not an outage, so the checks
+		// that read a source skip with it, the ones that read the lockfile entry
+		// still run, exotic-source reports the entry, and on_data_unavailable is not
+		// involved. That is the same shape as a name npm's grammar refuses.
+		return resolution{ref: ref, skip: "the lockfile installs this entry from a directory of the project (" + in.Lock.Resolved + "), so the registry's package of this name is a different package"}
+	}
 	if ref.Ecosystem == model.NPM {
 		if problem := model.NPMNameProblem(ref.Name); problem != "" {
 			// A name npm's own grammar refuses cannot be on the registry, so there is
