@@ -1238,3 +1238,34 @@ func TestBulkDownloadsDoesNotPutOneHundredAndTwentyEightNamesIntoItsError(t *tes
 		t.Errorf("errors.As(&StatusError) = %v, %+v, want the 429 to survive", errors.As(err, &status), status)
 	}
 }
+
+// The names come out of the message whatever kind of error it is. A status the
+// server sent is one type, a transport failure another, and an offline cache miss
+// is neither, so the substitution is on the text and every one of them has to lose
+// the list.
+func TestWithoutTheNamesTakesTheURLOutOfAnyError(t *testing.T) {
+	const requested = "https://api.npmjs.org/downloads/point/last-week/a,b,c"
+	const short = "https://api.npmjs.org/downloads/point/last-week/ (3 names)"
+	sentinel := errors.New("offline and not in the cache")
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"a status", &httpcache.StatusError{Method: "GET", URL: requested, StatusCode: 429}},
+		{"a transport failure", &url.Error{Op: "Get", URL: requested, Err: errors.New("dial tcp: no such host")}},
+		{"an offline cache miss", fmt.Errorf("npm: downloads: GET %s: %w", requested, sentinel)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := withoutTheNames(tc.err, requested, short)
+			if strings.Contains(got.Error(), requested) {
+				t.Errorf("the names are still in the message:\n%s", got.Error())
+			}
+			if !strings.Contains(got.Error(), short) {
+				t.Errorf("the message does not name the endpoint and the count:\n%s", got.Error())
+			}
+			if !errors.Is(got, tc.err) && !errors.Is(got, sentinel) {
+				t.Errorf("the error it was made from is no longer in the chain: %v", got)
+			}
+		})
+	}
+}

@@ -375,28 +375,32 @@ func (c *Client) BulkDownloads(ctx context.Context, names []string) (map[string]
 	return out, nil
 }
 
-// withoutTheNames replaces the names in the URL of a failed bulk request with how
-// many there were. The loader stores whatever this call returns against every name
-// it asked about, so the whole list would be repeated in the report once per
-// package: the precision pass of 2026-09-12 put 1,005 copies of a 3,000 character
-// URL into one report, 2.6 MB of it, and made every skip reason in that report
-// unreadable. The status and the endpoint are what a reader needs, and the names
-// are in the report already. Copying the typed error keeps errors.As and the status
-// code for the callers that read them.
-func withoutTheNames(err error, endpoint string, n int) error {
-	var status *httpcache.StatusError
-	if errors.As(err, &status) {
-		short := *status
-		short.URL = fmt.Sprintf("%s/downloads/point/last-week/ (%d names)", endpoint, n)
-		return &short
-	}
-	var link *url.Error
-	if errors.As(err, &link) {
-		short := *link
-		short.URL = fmt.Sprintf("%s/downloads/point/last-week/ (%d names)", endpoint, n)
-		return &short
-	}
-	return err
+// bulkFailure is the error of a failed bulk request with the package names taken
+// out of what it prints. It keeps the error it was made from, so errors.Is and
+// errors.As see exactly what they saw before: the status code, the offline
+// sentinel, a canceled context.
+type bulkFailure struct {
+	msg string
+	err error
+}
+
+func (e *bulkFailure) Error() string { return e.msg }
+func (e *bulkFailure) Unwrap() error { return e.err }
+
+// withoutTheNames replaces the URL of a failed bulk request, wherever it appears in
+// the message, with the endpoint and how many names it carried. The loader stores
+// whatever this call returns against every name it asked about, so the whole list
+// would otherwise be repeated in the report once per package: the precision pass of
+// 2026-09-12 put 1,005 copies of a 3,000 character URL into one report, 2.6 MB of
+// it, and made every skip reason in that report unreadable. The status and the
+// endpoint are what a reader needs, and the names are in the report already.
+//
+// The substitution is on the text and not on a typed field, because the errors this
+// can come back as are not one type: a status the server sent, a transport failure,
+// and an offline cache miss that is neither.
+func withoutTheNames(err error, requested, short string) error {
+	msg := strings.ReplaceAll(err.Error(), requested, short)
+	return &bulkFailure{msg: msg, err: err}
 }
 
 // bulkChunk asks the bulk endpoint for one chunk of unscoped names and adds the
@@ -411,7 +415,8 @@ func (c *Client) bulkChunk(ctx context.Context, names []string, out map[string]i
 	u := c.downloads + "/downloads/point/last-week/" + strings.Join(names, ",")
 	resp, err := c.http.Get(ctx, u, httpcache.Request{TTL: downloadsTTL})
 	if err != nil {
-		return fmt.Errorf("npm: bulk downloads of %d names: %w", len(names), withoutTheNames(err, c.downloads, len(names)))
+		short := fmt.Sprintf("%s/downloads/point/last-week/ (%d names)", c.downloads, len(names))
+		return fmt.Errorf("npm: bulk downloads: %w", withoutTheNames(err, u, short))
 	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("npm: bulk downloads of %d names: unexpected status %d", len(names), resp.StatusCode)
