@@ -23,21 +23,22 @@ test:
 test-integration:
 	go test -tags integration ./...
 
+# Every target that runs a pinned tool names it through tools.mk rather than
+# through PATH, so "make tools" is the whole of the setup: a machine that has run
+# it can lint, scan and build a release snapshot without touching its PATH. vet and
+# the test targets call the go tool itself, which is already there by definition.
 lint:
-	golangci-lint run ./...
+	"$(TOOLS_BIN)/golangci-lint" run ./...
 
 vet:
 	go vet ./...
 
 vuln:
-	govulncheck ./...
+	"$(TOOLS_BIN)/govulncheck" ./...
 
 sec:
-	gosec -quiet ./...
+	"$(TOOLS_BIN)/gosec" -quiet ./...
 
-# The one target that names its tool through tools.mk rather than through PATH.
-# goreleaser is what the release pipeline itself runs, so a dry run of it has to
-# work on a machine that has run "make tools" and nothing else.
 snapshot:
 	"$(TOOLS_BIN)/goreleaser" release --snapshot --clean --skip=sign,publish,sbom
 

@@ -8,7 +8,7 @@ This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). Security pr
 
 1. Go. `go.mod` declares `go 1.26.0` and `toolchain go1.26.8`. With the default `GOTOOLCHAIN=auto`, any Go 1.21 or newer you already have downloads that toolchain the first time it builds the module, so nothing needs to be installed by hand. `go version` inside the repository should print go1.26.8.
 2. make. It is preinstalled on macOS and most Linux distributions. On Windows install it with `choco install make` or `scoop install make` and run the targets from Git Bash, which ships with Git for Windows.
-3. Tools. `make tools` installs the pinned versions of golangci-lint, goreleaser, cosign, govulncheck, gosec and staticcheck into `$(go env GOPATH)/bin`. The versions live in `tools.mk`; bump them there, never ad hoc. Add that directory to your `PATH`:
+3. Tools. `make tools` installs the pinned versions of golangci-lint, goreleaser, cosign, govulncheck, gosec and staticcheck into `$(go env GOPATH)/bin`. The versions live in `tools.mk`; bump them there, never ad hoc. `make` names every one of them through that directory, so it needs nothing on your `PATH`; add it anyway to run them by hand:
 
    ```sh
    export PATH="$(go env GOPATH)/bin:$PATH"            # bash, zsh
