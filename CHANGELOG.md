@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The action self-test loads the manifest a caller resolves, not only the one in the workspace. Its six legs run `uses: ./`, which is the copy a pull request changes; a caller writes `uses: vahapogut/trustdiff@<ref>` and a runner fetches that ref and loads the manifest inside it. Those are different files, and v0.5.0 is what the difference costs: six legs passed on the commit that was tagged, and the manifest inside that tag could not be loaded on any runner. A seventh job now runs the published reference end to end, pinned at the commit the release tag points at, which is the form DR110 asks for and the form the readme tells a caller to use. `docs/releasing.md` section 5 moves it with the checksum table, and a test fails while the release it names and the action's own default disagree.
+
 ## [0.5.1] - 2026-09-12
 
 A patch release for the GitHub Action, which had never worked in any release that

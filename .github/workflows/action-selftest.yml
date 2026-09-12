@@ -136,3 +136,74 @@ jobs:
           echo
           grep -q '"version": "2.1.0"' "$REPORT"
           echo "action.yml ran on ${RUNNER_OS}/${RUNNER_ARCH}, verified by ${VERIFICATION}, and wrote ${REPORT}"
+
+
+  # The job above loads action.yml out of the workspace, which is the copy a pull
+  # request changes. A caller writes "uses: vahapogut/trustdiff@<ref>" instead, and
+  # a runner then fetches that ref and loads the manifest inside it: a different
+  # file, which can be broken while the workspace copy is green. v0.5.0 is what
+  # that costs. Six workspace legs passed on the commit that was tagged, and the
+  # manifest inside the tag could not be loaded on any runner at all.
+  #
+  # The ref is written out rather than built from an input, because uses: takes no
+  # expression, and it is the commit the release tag points at rather than the tag
+  # name: DR110 reports a tagged uses: at warn, this repository is judged by its
+  # own rules, and a caller who follows the readme pins a commit too. The trailing
+  # comment names the release. docs/releasing.md section 5 moves both with the
+  # table in action.yml, and a test fails while they disagree. One runner is enough here: a manifest that fails to load fails the
+  # same way everywhere, and what differs per operating system is the archive
+  # handling the six legs above cover.
+  #
+  # The action at a tag defaults to the release before it, because the checksum
+  # table is filled in after the tag is pushed. So this leg says that the reference
+  # resolves, loads and runs; which archive it fetches is the job above's business.
+  published:
+    name: action.yml at the published reference
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Commit a lockfile change on top of the checkout
+        id: fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.email selftest@example.invalid
+          git config user.name "action selftest"
+          cp testdata/demo-repo/base/package-lock.json package-lock.json
+          git add package-lock.json
+          git commit --quiet -m "the lockfile before the change"
+          base=$(git rev-parse HEAD)
+          cp testdata/demo-repo/head/package-lock.json package-lock.json
+          git commit --quiet -am "the lockfile after the change"
+          echo "base=${base}" >> "$GITHUB_OUTPUT"
+
+      - name: Run the action the way a caller writes it
+        id: trustdiff
+        uses: vahapogut/trustdiff@3c64f7eca6d27091f3fd5f3b1c6474235ab25357 # v0.5.1
+        with:
+          base: ${{ steps.fixture.outputs.base }}
+          fail-on: never
+          format: sarif
+          upload-sarif: "false"
+
+      - name: Check what the action reported
+        shell: bash
+        env:
+          CODE: ${{ steps.trustdiff.outputs.exit-code }}
+          REPORT: ${{ steps.trustdiff.outputs.report }}
+        run: |
+          set -euo pipefail
+          if [ "$CODE" != 0 ]; then
+            echo "::error::trustdiff exited ${CODE} under --fail-on never, which means it could not run rather than that it found something"
+            exit 1
+          fi
+          if [ -z "$REPORT" ] || [ ! -s "$REPORT" ]; then
+            echo "::error::the action reported no SARIF file, so nothing was written"
+            exit 1
+          fi
+          grep -q '"version": "2.1.0"' "$REPORT"
+          echo "the manifest at the published reference loaded, ran and wrote ${REPORT}"

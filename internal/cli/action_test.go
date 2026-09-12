@@ -169,6 +169,60 @@ func TestActionDigestsAPathThatHoldsABackslash(t *testing.T) {
 	}
 }
 
+// The job above loads the action out of the workspace, with "uses: ./". That is the
+// copy a pull request changes, and it is not the copy a caller resolves: writing
+// "uses: vahapogut/trustdiff@<ref>" makes a runner fetch that ref and load the
+// manifest inside it, which can be broken there while the workspace is green. v0.5.0
+// is what that costs. Its manifest could not be loaded on any runner, six workspace
+// legs passed on the same commit, and the defect reached a tag. One leg therefore
+// runs the reference a caller writes. Its ref moves with each release, which
+// docs/releasing.md section 5 says when, and it has to name the same release the
+// action itself defaults to, so the two cannot drift apart quietly.
+func TestActionSelfTestAlsoRunsThePublishedReference(t *testing.T) {
+	var wf actionSelfTest
+	if err := yaml.Unmarshal(repoFile(t, ".github", "workflows", "action-selftest.yml"), &wf); err != nil {
+		t.Fatalf("parse the workflow: %v", err)
+	}
+	job, ok := wf.Jobs["published"]
+	if !ok {
+		t.Fatalf("no job named published, so nothing loads the manifest a caller resolves; the workflow has %v", keysOf(wf.Jobs))
+	}
+
+	var ref string
+	for _, step := range job.Steps {
+		if !strings.HasPrefix(step.Uses, "vahapogut/trustdiff@") {
+			continue
+		}
+		ref = strings.TrimPrefix(step.Uses, "vahapogut/trustdiff@")
+		if step.With["upload-sarif"] != "false" {
+			t.Errorf("the action step uploads SARIF (upload-sarif=%q), and this job has no write token", step.With["upload-sarif"])
+		}
+	}
+	if ref == "" {
+		t.Fatal(`no step runs "uses: vahapogut/trustdiff@<ref>", so the published manifest is still never loaded`)
+	}
+	if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(ref) {
+		t.Errorf("the published leg runs %q; DR110 reports a tag at warn, and this repository is judged by its own rules", ref)
+	}
+
+	// Which release that commit is lives in the comment beside it, and a YAML
+	// parser drops comments, so the line itself is read.
+	workflow := string(repoFile(t, ".github", "workflows", "action-selftest.yml"))
+	line := regexp.MustCompile(`(?m)^ *uses: vahapogut/trustdiff@[0-9a-f]{40} # (v[0-9]+\.[0-9]+\.[0-9]+)$`).FindStringSubmatch(workflow)
+	if line == nil {
+		t.Fatal("the published leg's uses: line does not name a commit with the release in a trailing comment")
+	}
+
+	action := string(repoFile(t, "action.yml"))
+	def := regexp.MustCompile(`(?m)^    default: (v[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.-]*)$`).FindStringSubmatch(action)
+	if def == nil {
+		t.Fatal("action.yml has no version default to compare the leg against")
+	}
+	if line[1] != def[1] {
+		t.Errorf("the published leg runs %s and action.yml defaults to %s; both name the current release and move together at every release", line[1], def[1])
+	}
+}
+
 // The pinned route quietly becomes the cosign route when the version asked for is
 // The manifest is a template the runner parses before it runs anything, and it
 // evaluates every expression it finds in the inputs and the outputs it converts.

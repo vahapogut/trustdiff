@@ -215,14 +215,25 @@ anything at run time. That table can only be written after the release exists.
    `default:` above it or the table is never consulted.
 4. Replace all six values in the `case "${os}_${arch}"` table with the ones from
    `checksums.txt`, matching each line by archive name. Copy them; do not retype
-   them.
-5. `git diff action.yml` and read it. Six hashes changed, the `default:` and the
-   `pinned_version=` changed, the two example snippets in the header comment
+   them. Then set the ref of the published leg in
+   `.github/workflows/action-selftest.yml` to the commit this tag points at,
+   `git rev-parse <the tag>^{}`, with the tag itself in the trailing comment. It
+   is the one place in the repository that names the reference a caller resolves,
+   it is a commit rather than a tag because DR110 reports a tagged `uses:` at
+   `warn` and this repository is judged by its own rules, and
+   `TestActionSelfTestAlsoRunsThePublishedReference` fails while its comment and
+   the `default:` above disagree.
+5. `git diff action.yml .github/workflows/action-selftest.yml` and read it. Six
+   hashes changed, the `default:` and the `pinned_version=` changed, the two
+   example snippets in the header comment changed, the published leg's ref
    changed, nothing else.
 6. Commit as `chore(action): pin v0.4.0 and checksums`.
 7. Dispatch the `action-selftest` workflow on the default branch, once the commit
    above is pushed. It runs `action.yml` from `./` on ubuntu, macos and windows,
-   on both verification routes, against the release that commit just pinned. That
+   on both verification routes, against the release that commit just pinned, and
+   one more job runs `uses: vahapogut/trustdiff@<the tag>`, which is the only leg
+   that loads the manifest a runner resolves rather than the one in the
+   workspace. That
    is the first time the new table and the new archives are read by the code that
    reads them for everybody else, and the pinned leg fails rather than falls back
    when the table does not cover the default version. Dispatch it on the branch
@@ -231,8 +242,8 @@ anything at run time. That table can only be written after the release exists.
 If the self-test goes red, what is wrong is `action.yml` and not the release. The
 action downloads a published archive, so nothing a runner finds in it touches the
 archives, the checksums or the signature: the tag stands, and the fix is a commit
-on the branch. Fix it, push, dispatch again, and keep going until all six legs are
-green. The dispatch after the v0.5.0 pin commit is what this looks like. It found
+on the branch. Fix it, push, dispatch again, and keep going until all seven legs
+are green. The dispatch after the v0.5.0 pin commit is what this looks like. It found
 two defects that had shipped in every release since v0.4.0: an expression in the
 `base` input's description, which a runner evaluates while it loads the manifest,
 at a moment when there is no event, so the action failed with `Unrecognized
