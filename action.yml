@@ -63,7 +63,7 @@ inputs:
     # The pin and the sha256 table below are updated after every release, in a
     # commit named "chore(action): pin <tag> and checksums". v0.1.0 is not a
     # usable default here: it has no diff command.
-    default: v0.5.0
+    default: v0.5.1
   base:
     description: >-
       Git ref or commit to compare against. Leave it empty to let trustdiff use
@@ -131,7 +131,7 @@ runs:
         # unset input resolves to. It is updated after every release, in a commit
         # named "chore(action): pin <tag> and checksums", together with the table
         # below and the default of the version input.
-        pinned_version=v0.5.0
+        pinned_version=v0.5.1
 
         # An empty version is the default, not an error. A caller who passes the
         # value of a variable of their own sends the empty string when that
@@ -184,12 +184,12 @@ runs:
         sha=""
         if [ "$version" = "$pinned_version" ]; then
           case "${os}_${arch}" in
-            linux_amd64)    sha=82dc406d9c569657b7903e2b59dd75f707e720f3fd2f66efe90971d575639d75 ;;
-            linux_arm64)    sha=4ba6ffec59fdee11fdb3175a03ad258252b8a3230e04ea283bff1f41dbdded75 ;;
-            darwin_amd64)   sha=e944cbeea9925227dba2a66879a9e9e9d4a1881304a033b13cac711d80614375 ;;
-            darwin_arm64)   sha=3377b9f15b99528cd968a32088f7dbb485df7c30731d69a04f5c07c06aebe2f4 ;;
-            windows_amd64)  sha=5a5548b004569eff6d20628851ec0b9baa1ff4858c31619ca0c47daa6a4d82db ;;
-            windows_arm64)  sha=ba049e5e2873792b1c7f3b50acee7ecd2e6fb218a230be4134d78f2b99e1e339 ;;
+            linux_amd64)    sha=ec29f0201dbb185cde03f4c6671aa8b9e9566a2b05a29f1a6b3e8338407c856b ;;
+            linux_arm64)    sha=a6b286fb68e8393d0606d6c64f2fb2395a1bd48492c4aa7df25b97aa6aca724e ;;
+            darwin_amd64)   sha=a1227bff9acce64a4af7a5c350745a9948cb2f5e28444622dca8c6bcd553ec9d ;;
+            darwin_arm64)   sha=41b85d1b838d770885e93cddce2391e2e648f1f1d76508b9ced15c823e1be26a ;;
+            windows_amd64)  sha=035bdb88ca54c65d4d19a948ebe49eb97482c4cd9674f153a4a1fefc8fd5b319 ;;
+            windows_arm64)  sha=e73002dcd06e06b43ffa683fcd36ca275215792b5f2eadb88ccb440382a32fe6 ;;
           esac
         fi
         verify=pinned
