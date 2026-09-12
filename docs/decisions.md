@@ -76,3 +76,34 @@ written, and a decision that is later reversed gets a new line rather than an ed
   counts report themselves as skipped for the whole run when the batch fails, which
   `on_data_unavailable` can act on, and the previous behavior hid the outage behind
   a thousand requests that mostly failed too.
+- The download counts batching, the rate limit and the check changes of this pass
+  were measured against a rerun of all ten repositories with a cold HTTP cache,
+  and that rerun is what `docs/precision.md` reports. A warm cache would have made
+  the run times a lower bound of nothing in particular and the 429 counts an
+  artifact of what an earlier run had already fetched.
+- `exotic-source` keeps its `block` for a git dependency pinned at a full commit
+  sha. Seven of the eight block findings of this shape in the pass were pinned
+  ones, in repositories that clearly meant it, and demoting them was considered and
+  dropped: the check's whole claim is that none of the registry's protections apply
+  to such an entry, and pinning the sha fixes which bytes arrive, not whose they
+  are. The mode that matters is `diff`, where a pull request repointing a
+  dependency at somebody else's repository, pinned at a sha, is exactly what this
+  is for. The answer for a repository that vendors dev tools from git is the allow
+  entry the check documents.
+- `integrity-missing` keeps its `warn` for npm entries with neither a location nor
+  a hash. 528 of the 810 warn findings of one scan were that, all of them in
+  npm/cli's own lockfile, which records no `resolved` and no `integrity` for 740
+  dev entries; the other npm lockfile of the pass had 26 in 3,424 entries. The
+  finding is true either way, it is already below the level that fails a build, and
+  a project whose manager writes lockfiles like that can set the check to `info`.
+- `publisher-changed` demotes on the maintainer set npm records per version and
+  does not attempt the same for crates.io. crates.io publishes owners as current
+  state only, so the set a run reads is the set after whatever it is being asked
+  about; npm's per-version list is a snapshot from before the release under review,
+  which is what makes the comparison worth anything. The fifteen crates.io findings
+  of the pass stay at block.
+- `typosquat-suspect`'s popularity gap moved from a hundredfold to a thousandfold
+  on the strength of eight findings. It is a measured constant, not a derived one,
+  and the residual risk is written where it is set: a squat between a hundred and a
+  thousand times behind its target, older than a year and above the low-usage
+  threshold, is now reported at warn rather than at the configured level.
