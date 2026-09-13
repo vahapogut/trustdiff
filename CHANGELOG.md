@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- The npm workflow no longer tries to stage the Bun scanner on a tag that is not the scanner's. It ran on every version tag, read the scanner's own version from its `package.json`, and treated a tag that named a different version as a notice to print rather than a reason to stop, so the `v0.5.2` tag, a CLI release with scanner `0.5.0`, tried to stage `0.5.0` again and failed with `E409`, because an earlier run had already staged it and a staged version is not in public metadata. A tag that is not exactly `v` plus the scanner's version now skips before the registry is asked anything, with `reason=tag-mismatch` in the job summary. A branch dispatch still stages the version in that checkout, which is the recovery path. The registry check is stricter at the same time: only npm's structured `E404` counts as "the package does not exist yet", and a network, authentication or server error, or a response that is not a version list, fails the job rather than being read as a version that is missing. The decision is one Node helper, `scripts/npm-publish.mjs`, that the workflow runs and that `scripts/npm-publish.test.mjs` exercises against a stub npm on every change to either, in the `bun-scanner` workflow. (#6)
+
 ## [0.5.2] - 2026-09-12
 
 The precision release. Ten public repositories at pinned commits, every lockfile
