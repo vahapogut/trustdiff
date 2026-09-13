@@ -363,7 +363,7 @@ What it reports:
 How it asks:
 
 9. **The counts API is asked once per 128 packages** instead of once per package,
-   which is what 2,406 answers of `429 Too Many Requests` on one lockfile bought.
+   which is what 1,684 answers of `429 Too Many Requests` on one lockfile bought.
 10. **`api.npmjs.org` gets one request per second**, the rate crates.io asks for in
     its own policy, because npm documents none and enforces one.
 11. **A refused request costs only the names it covered.** The client discarded every

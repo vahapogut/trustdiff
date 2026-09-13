@@ -167,3 +167,11 @@ written, and a decision that is later reversed gets a new line rather than an ed
   post those two communities forbid, for somebody else to press the button on. The
   drafts stay as notes for the author to rewrite in their own words, and the file
   says so at the top.
+- The announcement's per package figure is 1,684 answers of 429, not 2,406, and
+  `docs/precision.md` item 9 now agrees. Two scans of npm/cli's lockfile produced
+  the two numbers: 1,684 is the one commit 1d4b939 quotes for asking once per
+  package, before the batch form existed; 2,406 is the one commit 89d951e quotes,
+  from a run in which the batch form was refused and every name fell back to a
+  request of its own. The changelog already kept them apart; the announcement and
+  item 9 had put the larger number on the wrong cause. The Show HN title lost its
+  dash and "they land" to fit Hacker News's 80 character limit.
