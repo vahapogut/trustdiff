@@ -147,3 +147,15 @@ written, and a decision that is later reversed gets a new line rather than an ed
   rather than telling a reader to go and check whether they exist. Both were read
   back through the API on 2026-09-13, and the sentence carries that date, because a
   setting can be changed without a commit and a document cannot notice.
+- Discussions was already enabled when this run read it back, so nothing was
+  changed there.
+- The npm half of this run goes through the browser and through a person, not
+  through this session. `npm whoami` answered 401 in the terminal this run uses, and
+  the package's settings page on npmjs.com asked for a security key before it would
+  show anything. Neither a login nor a second factor is something this session
+  enters, so it stopped at that page and asked for one.
+- The race detector runs as one more leg of the existing test job rather than as a
+  job of its own. It shares the job's checkout, toolchain and proxy settings, so it
+  cannot drift from the run it is a stricter copy of, and matrix include makes it a
+  new combination because race: true overwrites the race: false every other leg
+  carries.
