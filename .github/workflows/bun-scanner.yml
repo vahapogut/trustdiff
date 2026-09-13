@@ -10,10 +10,11 @@
 # account; integrations/bun-scanner/README.md says what that takes.
 #
 # Every "uses:" reference is pinned to a full commit SHA and the trailing comment names
-# the tag. Pins were resolved on 2026-09-10 with
+# the tag. Pins were resolved on 2026-09-10, setup-node on 2026-09-13, with
 #   gh api repos/<owner>/<repo>/git/ref/tags/<tag> --jq '.object | "\(.type) \(.sha)"'
-# and both are lightweight tags, so no dereferencing step was needed:
+# and all three are lightweight tags, so no dereferencing step was needed:
 #   actions/checkout v7.0.1     3d3c42e5aac5ba805825da76410c181273ba90b1
+#   actions/setup-node v7.0.0   820762786026740c76f36085b0efc47a31fe5020
 #   oven-sh/setup-bun v2.2.0    0c5077e51419868618aeaa5fe8019c62421857d6
 
 name: bun-scanner
