@@ -175,3 +175,13 @@ written, and a decision that is later reversed gets a new line rather than an ed
   request of its own. The changelog already kept them apart; the announcement and
   item 9 had put the larger number on the wrong cause. The Show HN title lost its
   dash and "they land" to fit Hacker News's 80 character limit.
+- Scanner stage `79904f8b-6c41-4b5d-8c80-06cc38eed826` is approved rather than rejected
+  and replaced with 0.5.1. Checked on 2026-09-13 before approving: its tarball's sha1
+  is the `0ac5c2fc78ec0b45cd6825c83d4f5064dde863b0` npm lists for the stage; it holds
+  four files, `LICENSE`, `README.md`, `package.json` and `src/index.ts`, and all
+  four are byte for byte the files at tag `v0.5.0` (`f914f06`); `package.json`
+  declares no dependency of any kind; and `src/index.ts` carries the F19 change,
+  `unscannedAdvisory`, which reports an install nothing could scan instead of
+  returning the empty list Bun reads as clean. The approval itself is typed by the
+  owner in their own terminal, because npm asks for the security key again and that
+  is not something this session touches.
