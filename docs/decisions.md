@@ -131,3 +131,19 @@ written, and a decision that is later reversed gets a new line rather than an ed
   next to it is to move it when the release changes what the hook does, and this one
   does: a repository on Yarn 1 gets a hook that reads its lockfile instead of one
   that matches it, runs, and reports that it could not be read.
+
+## 2026-09-13
+
+- An untracked directory holding this run's prompt file appeared in the repository
+  root. It was moved to the session's scratchpad rather than committed or deleted,
+  as the first one was on 2026-09-12: it is not repository content, and its name is
+  one this repository keeps out of every file name and commit.
+- Secret scanning and push protection were already enabled when this run read the
+  repository's settings back, so the PATCH that enables them was not sent: it would
+  have changed nothing and recorded a change that did not happen. Dependabot alerts
+  and Dependabot security updates were off, and were turned on with the two PUT
+  calls, then read back as enabled.
+- `SECURITY.md` now states the tag ruleset and the release environment as facts
+  rather than telling a reader to go and check whether they exist. Both were read
+  back through the API on 2026-09-13, and the sentence carries that date, because a
+  setting can be changed without a commit and a document cannot notice.
