@@ -762,19 +762,17 @@ rerunning an old tag run uses its original commit and workflow, so it does not
 pick up the fix or retroactively turn the old red checks green. Do not rewrite the
 tags to repair them.
 
-What that left, read on 2026-09-13. Scanner 0.5.0 was staged by the `v0.5.0` tag's
-run on 2026-09-11 ([run 34653805723](https://github.com/vahapogut/trustdiff/actions/runs/34653805723),
-stage id `79904f8b-6c41-4b5d-8c80-06cc38eed826`) and has not been made public:
-public metadata lists 0.4.0 and 0.4.1 only. Whether that stage is still waiting, or
-was rejected or expired, is state only `npm stage list` run by a maintainer can
-read; nothing in this repository can. The `v0.5.1` and `v0.5.2` runs each tried to
-stage that same 0.5.0 again and stopped at `E409`, which is why both tags carry a red
-`npm-publish` check; neither run says anything else about the stage. The way forward
-for 0.5.0 starts with that list: if the stage is still there, download it, read it,
-then approve or reject it. A dispatch from `main` would not help, because
-`package.json` there still says 0.5.0, so it would try to stage the same version a
-fourth time, and the scanner README on `main` is three lines newer than the one
-inside the stage.
+How 0.5.0 got out. The `v0.5.0` tag's run staged it on 2026-09-11
+([run 34653805723](https://github.com/vahapogut/trustdiff/actions/runs/34653805723),
+stage id `79904f8b-6c41-4b5d-8c80-06cc38eed826`) and nobody approved it for two
+days. The `v0.5.1` and `v0.5.2` runs each tried to stage that same 0.5.0 again and
+stopped at `E409`, which is why both tags carry a red `npm-publish` check. On
+2026-09-13 the stage was downloaded with `npm stage download` and checked before it
+was approved: its sha1 was the one npm listed for it, it held the four files the
+workflow allows, each byte for byte the file at `v0.5.0`, and `package.json`
+declared no dependency. It was then approved, and 0.5.0 is public with its
+provenance attestation. That check is the one to repeat for any stage: download
+it, compare it with the tag it claims to come from, then approve or reject.
 
 The offline regression suite runs the same decision and summary helper used by
 the workflow, substituting an npm executable with fixture responses. Run
