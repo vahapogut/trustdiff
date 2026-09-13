@@ -253,7 +253,7 @@ classifications and the reports are in [docs/precision.md](precision.md) and
   it went unevaluated. React's lockfile, 2,394 entries, is one of those.
 - The npm download counts API is asked once per 128 packages instead of once per
   package, and at one request per second. Evaluating one 1,201 entry lockfile drew
-  2,406 answers of `429 Too Many Requests` before that.
+  1,684 answers of `429 Too Many Requests` before that.
 - Four checks changed level in cases the pass showed were not worth a block: a
   package adopting trusted publishing, a release cut by an account the previous
   release already listed as a maintainer, a name that existed before the one it
