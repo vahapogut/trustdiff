@@ -42,7 +42,7 @@
 #     # the release before it, because the table below is filled in afterwards,
 #     # and DR110 reports a tagged uses: at warn. The trailing comment names the
 #     # release this commit runs.
-#     - uses: vahapogut/trustdiff@c3a0824e2c99f01ecdc0f8b084bad484fee1e37f # v0.5.1
+#     - uses: vahapogut/trustdiff@95f6e9eff34722dd087051fd33a8e62b92773c1f # v0.5.2
 #       with:
 #         base: ${{ github.event.pull_request.base.sha }}
 
