@@ -732,8 +732,10 @@ step back to `npm publish` is a real trade and belongs in a commit message.
 The scanner is staged only when the git tag is exactly `v` plus its
 `package.json` version. A CLI-only tag such as `v0.5.2` with scanner `0.5.0`, or a
 prerelease tag with a stable scanner version, skips with `reason=tag-mismatch`
-before querying npm. Its summary says why nothing was staged. Bump the scanner
-version only when releasing scanner changes, in the release it belongs to.
+before the registry is asked about versions. It has still installed npm and run the
+scanner's tests by then, which every tag does. Its summary says why nothing was
+staged. Bump the scanner version only when releasing scanner changes, in the release
+it belongs to, and to that release's own version, or its tag skips the scanner.
 
 For a matching tag, the workflow reads npm's public version list and skips a
 version that is already public. Only a structured npm `E404` response permits the
@@ -757,8 +759,22 @@ checkout's scanner version, with the same public-version and registry-error
 checks. Dispatching on a tag still requires the exact version match. After a
 workflow fix reaches `main`, use that updated branch for recovery if needed:
 rerunning an old tag run uses its original commit and workflow, so it does not
-pick up the fix or retroactively turn the old red check green. Do not rewrite the
-tag to repair that check.
+pick up the fix or retroactively turn the old red checks green. Do not rewrite the
+tags to repair them.
+
+What that left, read on 2026-09-13. Scanner 0.5.0 was staged by the `v0.5.0` tag's
+run on 2026-09-11 ([run 34653805723](https://github.com/vahapogut/trustdiff/actions/runs/34653805723),
+stage id `79904f8b-6c41-4b5d-8c80-06cc38eed826`) and has not been made public:
+public metadata lists 0.4.0 and 0.4.1 only. Whether that stage is still waiting, or
+was rejected or expired, is state only `npm stage list` run by a maintainer can
+read; nothing in this repository can. The `v0.5.1` and `v0.5.2` runs each tried to
+stage that same 0.5.0 again and stopped at `E409`, which is why both tags carry a red
+`npm-publish` check; neither run says anything else about the stage. The way forward
+for 0.5.0 starts with that list: if the stage is still there, download it, read it,
+then approve or reject it. A dispatch from `main` would not help, because
+`package.json` there still says 0.5.0, so it would try to stage the same version a
+fourth time, and the scanner README on `main` is three lines newer than the one
+inside the stage.
 
 The offline regression suite runs the same decision and summary helper used by
 the workflow, substituting an npm executable with fixture responses. Run
