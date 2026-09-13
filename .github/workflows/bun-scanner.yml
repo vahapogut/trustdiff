@@ -24,10 +24,14 @@ on:
     paths:
       - "integrations/bun-scanner/**"
       - ".github/workflows/bun-scanner.yml"
+      - ".github/workflows/npm-publish.yml"
+      - "scripts/npm-publish*.mjs"
   pull_request:
     paths:
       - "integrations/bun-scanner/**"
       - ".github/workflows/bun-scanner.yml"
+      - ".github/workflows/npm-publish.yml"
+      - "scripts/npm-publish*.mjs"
   workflow_dispatch:
 
 permissions:
@@ -43,6 +47,25 @@ defaults:
     shell: bash
 
 jobs:
+  publish-decision:
+    name: npm staging regression tests
+    # The npm stub is a POSIX executable; run these on Linux, not Windows CMD.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - name: Test the production staging decision and summary with a stub registry
+        env:
+          HTTP_PROXY: http://127.0.0.1:9
+          HTTPS_PROXY: http://127.0.0.1:9
+          NO_PROXY: ""
+        run: node --test scripts/npm-publish.test.mjs
+
   test:
     name: bun test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
