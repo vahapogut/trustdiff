@@ -13,7 +13,8 @@
 #   gh api repos/<owner>/<repo>/git/tags/<sha> --jq .object.sha
 # so the workflow pins the commit and not the tag object.
 #
-# Jobs: lint, test (Go 1.26 and 1.27 on Linux, macOS and Windows), vulncheck, gosec, budgets
+# Jobs: lint, test (Go 1.26 and 1.27 on Linux, macOS and Windows, and one more leg on Linux
+# with Go 1.27 that runs the suite under the race detector), vulncheck, gosec, budgets
 # (the binary size and direct dependency limits from docs/PLAN.md task 0.10) and integration.
 # The integration job talks to live registries, so it runs only on the weekly schedule and on
 # manual dispatch, never for a push or a pull request, and it is not required for merge.
@@ -71,9 +72,11 @@ jobs:
           version: v2.13.2
 
   test:
-    name: test (go ${{ matrix.go }} on ${{ matrix.os }})
+    name: test (go ${{ matrix.go }} on ${{ matrix.os }}${{ matrix.race && ', race detector' || '' }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    # The race detector slows a test binary down several times over, so its leg gets
+    # twice the budget of the others.
+    timeout-minutes: ${{ matrix.race && 40 || 20 }}
     strategy:
       fail-fast: false
       matrix:
@@ -81,6 +84,18 @@ jobs:
         # newest 1.26 patch release that setup-go knows about.
         go: ["1.26.x", "1.27.x"]
         os: [ubuntu-latest, macos-latest, windows-latest]
+        race: [false]
+        # One more leg runs the suite under the race detector. The runner, the loader and
+        # the HTTP cache all share state across goroutines, and nothing else in this
+        # workflow would notice a data race until it corrupted a report. It is a new leg
+        # rather than a flag on an existing one because include adds a combination only
+        # when it overwrites a value of the matrix above, which race: true does. Linux
+        # only, because the detector needs cgo and a C compiler, and the ubuntu runner
+        # has one.
+        include:
+          - go: "1.27.x"
+            os: ubuntu-latest
+            race: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -109,7 +124,19 @@ jobs:
           HTTP_PROXY: http://127.0.0.1:9
           HTTPS_PROXY: http://127.0.0.1:9
           NO_PROXY: 127.0.0.1,localhost
+        if: ${{ !matrix.race }}
         run: go test ./...
+      - name: go test -race
+        if: ${{ matrix.race }}
+        env:
+          # The race detector is built on cgo, and the workflow turns cgo off for every
+          # job above, so this step turns it back on. The proxy variables are the same
+          # as the plain run's, for the same reason.
+          CGO_ENABLED: "1"
+          HTTP_PROXY: http://127.0.0.1:9
+          HTTPS_PROXY: http://127.0.0.1:9
+          NO_PROXY: 127.0.0.1,localhost
+        run: go test -race ./...
 
   vulncheck:
     name: govulncheck
