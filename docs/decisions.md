@@ -159,3 +159,11 @@ written, and a decision that is later reversed gets a new line rather than an ed
   cannot drift from the run it is a stricter copy of, and matrix include makes it a
   new combination because race: true overwrites the race: false every other leg
   carries.
+- The Show HN form gets the title and the repository URL and nothing else, and the
+  r/golang form gets the title and an empty body. Hacker News's guidelines say not
+  to post generated or AI-edited text, and r/golang's rule 12 allows no AI-generated
+  content as posts; both read on 2026-09-13. The drafts in `docs/announcement.md`
+  were written by a model, so pasting them into a body field would have prepared a
+  post those two communities forbid, for somebody else to press the button on. The
+  drafts stay as notes for the author to rewrite in their own words, and the file
+  says so at the top.
