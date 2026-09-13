@@ -183,7 +183,7 @@ jobs:
 
       - name: Run the action the way a caller writes it
         id: trustdiff
-        uses: vahapogut/trustdiff@3c64f7eca6d27091f3fd5f3b1c6474235ab25357 # v0.5.1
+        uses: vahapogut/trustdiff@c73ac6e2b02d219e44e45ed6ba393811163cdc95 # v0.5.2
         with:
           base: ${{ steps.fixture.outputs.base }}
           fail-on: never
