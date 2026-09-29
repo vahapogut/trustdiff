@@ -281,3 +281,17 @@ are easiest to build. Not approved; this is the proposal.
 | 5.4 | GuardDog handoff | Everything here is registry metadata. `--guarddog` would hand the packages that already look wrong to a tool that reads the code, and report what it said, which is the natural next question after a finding rather than a wider net | 10 h |
 | 5.5 | crates.io ownership at the time of a release | `publisher-changed` demotes a release cut by an account npm listed as a maintainer of the previous version. crates.io publishes owners as current state only, so the same demotion cannot be made there and fifteen findings of the pass stayed at block. `db-dump` carries owner history; section 13 defers ingesting it | 10 h |
 | 5.6 | A policy preset for a project that vendors from git | The pass produced seven block findings for git dependencies pinned at a commit sha, in repositories that clearly meant it. The answer is an allow entry, and writing one per dependency by hand is the kind of work people skip. `trustdiff policy allow <finding>` writing the entry, with a reason and an expiry, is small and removes the reason to turn a check off | 6 h |
+
+## 17. Status audit (2026-09-29)
+
+The README's versioned milestones have shipped; the four starter issues from
+task 4.7 remained follow-up work. Their implementation and the released
+milestones are tracked separately in [roadmap.md](roadmap.md). Source changes
+after the latest tag remain Unreleased until a release includes them. Section
+16 remains a proposal, not a list of shipped commands.
+
+Correction to the premise of 5.5: the public crates.io database dump contains
+current owners but no complete ownership-event history. Current rows do not
+prove ownership at the time of an earlier release. The bulk metadata index
+must not invent that history; see [ADR 0005](adr/0005-crates-database-dump.md)
+and [the supported dump fields](crates-dump.md).

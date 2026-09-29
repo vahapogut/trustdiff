@@ -1,5 +1,7 @@
 # trustdiff
 
+[Türkçe kullanım kılavuzu](docs/readme/tr.md) (Turkish, partial translation)
+
 trustdiff is a single-binary command line tool that finds trust regressions in a project's dependency tree before they land. A trust regression is not a change in a package's code but a change in the signals that made the package trustworthy: a version published by an account that never published one before, a release that lost the provenance every earlier release had, a version that adds an install script or a dependency the previous one did not have, a name one keystroke away from a popular package, a version with a known malicious or vulnerable advisory. Each of these preceded a real incident (event-stream in 2018, ua-parser-js in 2021, Shai-Hulud in 2025, axios in 2026), and each is visible in registry metadata before anyone has looked at the code. Cooldowns buy time and malware feeds catch what is already known; trustdiff tells you, across npm (npm, pnpm, yarn, bun), PyPI (pip, uv, poetry) and crates.io, in one binary with no account and no telemetry, that a dependency's trust signals regressed relative to its own history.
 
 Version 0.5.2 ships `check` for single packages and for a manifest read at the versions its ranges resolve to, `diff` for pull requests with the GitHub Action, the pre-commit hook and SARIF output, `doctor` for the hardening settings your package managers already support, `baseline` for the registries that only answer about now, an offline advisory mirror, and a Bun scanner that stops an install before anything reaches the disk. It reads nine lockfile formats and evaluates npm, PyPI, crates.io and JSR; see the [roadmap](#roadmap).
@@ -463,13 +465,31 @@ Native cooldowns: npm [`min-release-age`](https://docs.npmjs.com/cli/v11/using-n
 
 ## Roadmap
 
+The milestones below have been released. They describe shipped functionality,
+not an outstanding task list. The latest CLI release is [0.5.2](https://github.com/vahapogut/trustdiff/releases/tag/v0.5.2);
+the separately versioned Bun scanner is 0.5.0.
+
 - 0.2.0: `diff --base <git-ref>` and `scan` over `package-lock.json`, `pnpm-lock.yaml`, `uv.lock` and `Cargo.lock`, findings on lockfile lines, TD013 and TD014, SARIF and markdown output, a composite GitHub Action, a pre-commit hook and `hook install`.
 - 0.3.0: `doctor` with a scorecard of every package manager's native hardening settings, version-aware keys and units, `--fix` with a diff preview and backups, `--ci`, and a lint for unpinned GitHub Actions.
 - 0.4.0: `yarn.lock`, `bun.lock`, `deno.lock`, `poetry.lock` and hash-pinned `requirements` files, the JSR registry, `trustdiff baseline` for the PyPI and crates.io maintainer checks, offline advisories from a local OSV mirror, a Bun security scanner, and a Homebrew cask and Scoop manifest built on every release.
 - 0.4.1: the five silent passes an independent review of 0.4.0 found, TD016 `lockfile-entry-changed` among them, and plain `requirements` files read whether or not they are hash pinned.
 - 0.5.0: the rest of that review's three remaining sections. `doctor` tells a mistake apart from a choice, `--fix` writes only what is absent, and every wait setting is read in every spelling its package manager accepts. TD017 `version-downgraded`. The repository's own code is no longer reported as one of its dependencies. The parts that run in somebody else's pipeline are closed too: a Bun scanner that fails closed, a pre-commit hook that covers every lockfile format, `action.yml` exercised on all three runners, third-party notices in every archive, and DR110 reading composite actions.
 
-The detailed plan with estimates is [docs/PLAN.md](docs/PLAN.md).
+### Current development (Unreleased)
+
+Changes on `main` become available through a source build before the next tagged
+release. Installing the latest release still installs the versions above.
+
+| Work | Implementation and usage |
+|---|---|
+| Unicode look-alike names (issue #1) | TD008 compares Unicode confusable skeletons against popular names; see [check details](docs/checks.md#td008-typosquat-suspect). |
+| Bulk Cargo metadata (issue #2) | An explicit crates.io dump refresh builds a bounded local index for `scan`; see [dump usage and data limits](docs/crates-dump.md). |
+| pnpm install gate (issue #3) | A copyable `.pnpmfile.cjs` checks resolved packages and frozen-lockfile installs; see [setup and supported pnpm versions](integrations/pnpm-hook/README.md). |
+| Translated introduction (issue #4) | [Turkish](docs/readme/tr.md) covers installation and the three main workflows, with its English source revision and a freshness check. |
+
+[docs/roadmap.md](docs/roadmap.md) maps these milestones to code and verification.
+[docs/PLAN.md](docs/PLAN.md) preserves the original estimates and later proposals;
+its proposed 0.6 work is not a claim that those features have shipped.
 
 ## Principles
 
