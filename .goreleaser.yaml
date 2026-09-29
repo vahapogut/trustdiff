@@ -166,6 +166,9 @@ release:
 
 homebrew_casks:
   - name: trustdiff
+    commit_author:
+      name: Abdulvahap Öğüt
+      email: 110431024+vahapogut@users.noreply.github.com
     ids:
       - trustdiff
     # The archives carry a single executable and nothing else needs linking.
@@ -194,6 +197,9 @@ homebrew_casks:
 
 scoops:
   - name: trustdiff
+    commit_author:
+      name: Abdulvahap Öğüt
+      email: 110431024+vahapogut@users.noreply.github.com
     ids:
       - trustdiff
     description: Finds trust regressions in a project's dependency tree before they land
