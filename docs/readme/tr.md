@@ -162,10 +162,10 @@ Bu, giriş, kurulum ve üç temel kullanım yolunun kısmi çevirisidir. Bütün
 kontrol tabloları, karşılaştırmalar, ayrıntılı kurulum doğrulaması ve tüm politika
 seçenekleri henüz çevrilmemiştir; bu konularda İngilizce README'yi okuyun.
 
-<!-- trustdiff-readme-source: bb5ac559dafb0b91b3455cac3c6aead3e22ef009 -->
-<!-- trustdiff-readme-blob: f38708c6cabd02ce55cdf40f55136f7e9170c69e -->
+<!-- trustdiff-readme-source: 12ea94abdd125516a9d61d15d75584c51b78b1b9 -->
+<!-- trustdiff-readme-blob: 4f5ca88ca10e2032031d616ea574d5ea88642a68 -->
 
-Kaynak: [İngilizce README, bb5ac559dafb0b91b3455cac3c6aead3e22ef009](https://github.com/vahapogut/trustdiff/blob/bb5ac559dafb0b91b3455cac3c6aead3e22ef009/README.md).
+Kaynak: [İngilizce README, 12ea94abdd125516a9d61d15d75584c51b78b1b9](https://github.com/vahapogut/trustdiff/blob/12ea94abdd125516a9d61d15d75584c51b78b1b9/README.md).
 Çeviri yalnızca bu kaynak sürümüne göre günceldir. Yukarıdaki güncellik kontrolü
 başarısızsa İngilizce README çeviriden sonra değişmiş olabilir; geçerli davranışı
 İngilizce dosyadan kontrol edin. CI, kaydedilen kaynak README içerik özeti güncel
