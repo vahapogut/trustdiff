@@ -68,6 +68,7 @@ func (h Human) Write(w io.Writer, r *Report) error {
 	b.WriteString(" ")
 	b.WriteString(h.paint(exitColor(r.Summary.ExitCode), summaryExit(r.Summary)))
 	b.WriteString("\n")
+	writeAnalysis(&b, r, false)
 	if _, err := io.WriteString(w, b.String()); err != nil {
 		return fmt.Errorf("write human report: %w", err)
 	}

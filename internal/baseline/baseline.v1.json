@@ -88,8 +88,13 @@
           "enum": ["none", "signature", "attestation", "trusted-publisher"]
         },
         "verified": {
-          "description": "True when the registry or deps.dev verified the evidence rather than only carrying it.",
+          "description": "True when the registry, deps.dev or an explicitly selected local verifier verified the evidence rather than only carrying it.",
           "type": "boolean"
+        },
+        "verified_by": {
+          "description": "The explicitly selected verifier, such as cosign. Absent in older observations and where only the registry/deps.dev signal was used.",
+          "type": "string",
+          "minLength": 1
         },
         "identity": {
           "description": "The workflow or repository the evidence names, for example github:pypa/sampleproject/release.yml. Absent when the evidence names none.",

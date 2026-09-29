@@ -629,9 +629,9 @@ func (b *bulkSourceR) BulkDownloads(_ context.Context, names []string) (map[stri
 // 1201 entry package-lock.json, evaluated live on 2026-09-12, api.npmjs.org
 // answered 1684 of those requests with 429 and the client spent the run backing
 // off and retrying. The counts API takes up to 128 names in one request, which is
-// what Prefetch now uses, so the per name path is left with the names a batch
+// what PrefetchDownloads uses, so the per name path is left with the names a batch
 // cannot carry and the ones it did not know.
-func TestPrefetchAsksTheCountsApiOnceForTheWholeRun(t *testing.T) {
+func TestPrefetchDownloadsAsksTheCountsAPIOnceForSelectedNames(t *testing.T) {
 	src := newFakeSourceR(model.NPM)
 	src.add(stableListR(model.NPM, "lib", "1.0.0"))
 	src.add(stableListR(model.NPM, "other", "2.0.0"))
@@ -646,7 +646,7 @@ func TestPrefetchAsksTheCountsApiOnceForTheWholeRun(t *testing.T) {
 		model.MustParseRef("npm:lib@1.0.0"),
 		model.MustParseRef("npm:unknown@3.0.0"),
 	}
-	l.Prefetch(t.Context(), refs)
+	l.PrefetchDownloads(t.Context(), refs)
 
 	if bulk.bulkCalls != 1 {
 		t.Fatalf("the counts API was asked %d times, want once for the whole run", bulk.bulkCalls)
@@ -687,14 +687,14 @@ func TestPrefetchAsksTheCountsApiOnceForTheWholeRun(t *testing.T) {
 // the batch form itself were refused. So a failed batch is an answer about every
 // name it carried: the checks that read counts report themselves as skipped, which
 // a policy can fail the run on, and nothing asks again.
-func TestPrefetchDoesNotFallBackToOneRequestPerPackage(t *testing.T) {
+func TestPrefetchDownloadsDoesNotFallBackToOneRequestPerPackage(t *testing.T) {
 	src := newFakeSourceR(model.NPM)
 	src.add(stableListR(model.NPM, "lib", "1.0.0"))
 	src.downloads["lib"] = 42
 	bulk := &bulkSourceR{fakeSourceR: src, bulkErr: errors.New("429 Too Many Requests")}
 	l := newDataLoader(registry.Registry{model.NPM: bulk}, nil, nil, nil)
 
-	l.Prefetch(t.Context(), []model.PackageRef{model.MustParseRef("npm:lib@1.0.0")})
+	l.PrefetchDownloads(t.Context(), []model.PackageRef{model.MustParseRef("npm:lib@1.0.0")})
 	if bulk.bulkCalls != 1 {
 		t.Fatalf("the batch was asked %d times, want once", bulk.bulkCalls)
 	}
@@ -715,7 +715,7 @@ func TestPrefetchDoesNotFallBackToOneRequestPerPackage(t *testing.T) {
 // lockfile lost the counts of 1,583 packages because api.npmjs.org refused the
 // request for @babel/plugin-syntax-flow, and every check that reads counts
 // reported itself skipped for the whole run.
-func TestPrefetchKeepsTheCountsABatchDidRead(t *testing.T) {
+func TestPrefetchDownloadsKeepsTheCountsABatchDidRead(t *testing.T) {
 	src := newFakeSourceR(model.NPM)
 	src.add(stableListR(model.NPM, "lib", "1.0.0"))
 	src.add(stableListR(model.NPM, "@scope/other", "2.0.0"))
@@ -723,7 +723,7 @@ func TestPrefetchKeepsTheCountsABatchDidRead(t *testing.T) {
 	bulk := &bulkSourceR{fakeSourceR: src, bulkErr: errors.New("429 Too Many Requests"), partial: true}
 	l := newDataLoader(registry.Registry{model.NPM: bulk}, nil, nil, nil)
 
-	l.Prefetch(t.Context(), []model.PackageRef{
+	l.PrefetchDownloads(t.Context(), []model.PackageRef{
 		model.MustParseRef("npm:lib@1.0.0"),
 		model.MustParseRef("npm:@scope/other@2.0.0"),
 	})

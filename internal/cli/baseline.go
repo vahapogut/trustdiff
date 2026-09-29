@@ -190,6 +190,7 @@ func (a *App) evaluateWithBaseline(ctx context.Context, cmd *cobra.Command, st *
 	if rep.Summary.ExitCode == ExitOK && (dataUnavailableFails(st.pol, outcomes) || unreadFails(st.pol, incomplete)) {
 		rep.SetExitCode(ExitUnavailable)
 	}
+	a.addGuardDog(ctx, rep, inputs)
 	if err := st.writer.Write(a.Stdout, rep); err != nil {
 		return fmt.Errorf("write report: %w", err)
 	}
@@ -420,6 +421,15 @@ func (l baselineLoader) PrefetchVersions(ctx context.Context, refs []model.Packa
 		PrefetchVersions(context.Context, []model.PackageRef)
 	}); ok {
 		bulk.PrefetchVersions(ctx, refs)
+	}
+}
+
+// PrefetchDownloads preserves policy-selected batching through the wrapper.
+func (l baselineLoader) PrefetchDownloads(ctx context.Context, refs []model.PackageRef) {
+	if bulk, ok := l.Loader.(interface {
+		PrefetchDownloads(context.Context, []model.PackageRef)
+	}); ok {
+		bulk.PrefetchDownloads(ctx, refs)
 	}
 }
 

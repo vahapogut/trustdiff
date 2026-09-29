@@ -17,14 +17,15 @@ import (
 // trusted-publisher and ranks a verified record above an unverified one of the same
 // kind.
 //
-// Who verifies. The npm and PyPI clients store the attestation bundle a version
-// carries but never verify it, so an attestation counts as verified only when
-// deps.dev verified it (attestations[].verified or slsaProvenances[].verified).
+// Who verifies. Ordinary npm and PyPI metadata carries attestation presence;
+// deps.dev can supply verification (attestations[].verified or
+// slsaProvenances[].verified). Explicit local npm verification supplies its own
+// VerifiedBy attribution, which takes precedence over deps.dev. A failed local
+// verification marks provenance unknown and cannot be rescued by deps.dev.
 // The check consults the deps.dev facts of both versions: the evaluated version's
 // from the Subject, the previous version's through the Loader when its
-// attestation is not verified by the registry. verified_by names the verifier
-// for each side, deps.dev whenever deps.dev verified an attestation, whatever the
-// runner wrote into the Provenance beforehand. The previous version's deps.dev
+// attestation has no verified result. verified_by names the actual verifier
+// for each side. The previous version's deps.dev
 // verification is applied only when deps.dev has indexed the evaluated version
 // too, and only when it has read that version's attestations: a fresh release
 // deps.dev has not seen, and one it has seen and not yet opened, both compare by
@@ -40,8 +41,8 @@ import (
 // evidence the project is losing. The version compared with is whichever of the two
 // carried the most, because the finding is about how much of it this release gives
 // up, and it degenerates to the previous release when the two are equally strong.
-// The base version is ignored when the registry client could not gather its
-// provenance.
+// Unavailable base-version provenance is reported as skipped when it could hide
+// a downgrade and no readable predecessor already proves one.
 //
 // A base version nobody could reach is not ignored quietly: where it would have
 // decided the answer the check reports itself as skipped naming it. A base version
@@ -54,19 +55,19 @@ import (
 //	                      the finding names
 //	previous_kind         its provenance kind: none, signature, attestation or trusted-publisher
 //	previous_verified     whether that evidence was verified
-//	previous_verified_by  registry or deps.dev, when verified
+//	previous_verified_by  registry, deps.dev or cosign, when verified
 //	previous_identity     the workflow or repository it names, when known
 //	compared_version      the version the finding names: the stronger of the two
 //	base_version          the version the base lockfile locked, when diff knows one
 //	                      and it is not the previous release (diff only)
 //	base_kind             its provenance kind (diff only)
 //	base_verified         whether that evidence was verified (diff only)
-//	base_verified_by      registry or deps.dev, when verified (diff only)
+//	base_verified_by      registry, deps.dev or cosign, when verified (diff only)
 //	downgraded_since_base whether that version's evidence was stronger than this
 //	                      one's (diff only)
 //	kind                  the evaluated version's provenance kind
 //	verified              whether its evidence was verified
-//	verified_by           registry or deps.dev, when verified
+//	verified_by           registry, deps.dev or cosign, when verified
 //	identity              the workflow or repository it names, when known
 type td004 struct{}
 
@@ -132,6 +133,9 @@ func (c td004) Run(ctx context.Context, s *Subject) Result {
 		compared, comparedBy, with = baseProvenance, baseBy, base
 	}
 	if compared.Strength() <= current.Strength() {
+		if res := c.unknownBaseProvenance(s, current); res.Skipped != nil {
+			return res
+		}
 		// No predecessor that was read carried more. Two things could still have
 		// been true and were not read: a base version nobody could reach, and a
 		// predecessor's attestation only deps.dev could have verified.
@@ -215,6 +219,26 @@ func (c td004) Run(ctx context.Context, s *Subject) Result {
 	return Result{Findings: []model.Finding{finding}}
 }
 
+// unknownBaseProvenance covers a distinct base release whose version metadata
+// was fetched but whose provenance could not be read or locally verified. That
+// gap is not SourceBase (the fetch succeeded), and comparableBase excludes it.
+// It cannot hide a downgrade only when the current evidence is already strongest.
+func (c td004) unknownBaseProvenance(s *Subject, current model.Provenance) Result {
+	base := s.PreviousInBase
+	if base == nil || base.Ref.Version == s.Ref.Version ||
+		(s.Previous != nil && base.Ref.Version == s.Previous.Ref.Version) {
+		return Result{}
+	}
+	strongest := model.Provenance{Kind: model.ProvenanceTrustedPublisher, Verified: true}
+	if current.Strength() >= strongest.Strength() {
+		return Result{}
+	}
+	if reason, unknown := unknownFacet(base, model.FacetProvenance); unknown {
+		return skipOutage(c, fmt.Sprintf("provenance of the base version %s unavailable: %s", base.Ref.Version, reason))
+	}
+	return Result{}
+}
+
 // predecessorProvenance reads what an earlier version was published with, and who
 // vouched for it. It reads deliberately differently from verification, which judges
 // the evaluated version: here a registry that verified the record settles it, and
@@ -225,6 +249,9 @@ func (c td004) Run(ctx context.Context, s *Subject) Result {
 func predecessorProvenance(ctx context.Context, s *Subject, v *model.VersionInfo) (model.Provenance, string) {
 	p := v.Provenance
 	if p.Verified {
+		if p.VerifiedBy != "" {
+			return p, p.VerifiedBy
+		}
 		return p, SourceRegistry
 	}
 	if p.Kind == model.ProvenanceAttestation && s.Loader != nil && depsDevMaySpeakForAPredecessor(s) {
@@ -289,11 +316,13 @@ func (c td004) unverifiedByOutage(s *Subject, current model.Provenance, predeces
 }
 
 // verification decides whether provenance counts as verified and by whom. An
-// attestation that deps.dev verified is credited to deps.dev even when the
-// Provenance already says verified: no registry client verifies attestations,
-// so that flag came from deps.dev through the runner. Anything else verified is
-// the registry's own word (a trusted publishing record, a registry signature).
+// explicit local verifier keeps its attribution even when deps.dev also verified
+// that release. Without local attribution, a verified attestation is credited to
+// deps.dev when its facts say so; other verified evidence is the registry's word.
 func verification(p model.Provenance, facts *depsdev.VersionFacts) (verified bool, by string) {
+	if p.Verified && p.VerifiedBy != "" {
+		return true, p.VerifiedBy
+	}
 	if p.Kind == model.ProvenanceAttestation && depsDevVerified(facts) {
 		return true, SourceDepsDev
 	}

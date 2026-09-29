@@ -26,9 +26,33 @@
     },
     "summary": {
       "$ref": "#/definitions/summary"
+    },
+    "guarddog_requested": {
+      "type": "boolean",
+      "description": "An external code-analysis supplement was explicitly requested. TD findings and verdicts remain unchanged."
+    },
+    "guarddog": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/analysis" }
     }
   },
   "definitions": {
+    "analysis": {
+      "type": "object",
+      "required": ["ref", "source", "status", "issues"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": { "$ref": "#/definitions/ref" },
+        "source": { "type": "string" },
+        "tool_version": { "type": "string" },
+        "status": { "enum": ["completed", "partial", "unavailable"] },
+        "issues": { "type": "integer", "minimum": 0 },
+        "results": { "type": "object" },
+        "risks": { "type": "array", "items": { "type": "object" } },
+        "errors": { "type": "object", "additionalProperties": { "type": "string" } },
+        "message": { "type": "string" }
+      }
+    },
     "tool": {
       "description": "Build identity of the trustdiff binary that wrote the document.",
       "type": "object",

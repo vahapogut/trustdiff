@@ -295,3 +295,16 @@ current owners but no complete ownership-event history. Current rows do not
 prove ownership at the time of an earlier release. The bulk metadata index
 must not invent that history; see [ADR 0005](adr/0005-crates-database-dump.md)
 and [the supported dump fields](crates-dump.md).
+
+## 18. M5 implementation follow-up (2026-09-29)
+
+The remaining work was subsequently approved. Items 5.1, 5.2, 5.3, 5.4 and 5.6
+are implemented: baseline watch, opt-in local Cosign verification, lazy counts,
+opt-in GuardDog handoff and reviewed policy exceptions. Their exact contracts,
+platform requirements and tests are linked from [roadmap.md](roadmap.md).
+
+Item 5.5 cannot reconstruct historical ownership from the public dump. The
+implementation deliberately keeps current-owner rows out of per-release
+maintainer sets, with an end-to-end regression proving that boundary. Baseline
+observations and watch compare evidence collected from observation time onward;
+they do not claim ownership at an unobserved publication time.

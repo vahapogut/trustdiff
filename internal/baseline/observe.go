@@ -138,7 +138,10 @@ func observe(ctx context.Context, src Signals, ref model.PackageRef, now time.Ti
 			e.outage |= signalProvenance
 			problems = append(problems, fmt.Sprintf("%s: provenance was not read (%s), so what the baseline already holds was kept", ref, reason))
 		} else if info.Provenance.Kind != "" {
-			e.Provenance = &Provenance{Kind: info.Provenance.Kind, Verified: info.Provenance.Verified, Identity: info.Provenance.Identity}
+			e.Provenance = &Provenance{
+				Kind: info.Provenance.Kind, Verified: info.Provenance.Verified,
+				VerifiedBy: info.Provenance.VerifiedBy, Identity: info.Provenance.Identity,
+			}
 		}
 		e.Publisher, e.PublisherSource = PublisherOf(info)
 	}

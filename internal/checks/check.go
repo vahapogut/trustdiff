@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"sync"
@@ -124,12 +125,36 @@ type Subject struct {
 	DepsDev *depsdev.VersionFacts
 	// DepsDevFindings are the deps.dev findings for the version (MALICIOUS, LOW_USAGE and so on).
 	DepsDevFindings []depsdev.Finding
-	// Downloads is the weekly download count, -1 when unknown.
+	// Downloads is the weekly download count, -1 when unknown or not yet requested.
+	// Checks that need it use withDownloads; the runner does not load it eagerly.
 	Downloads int64
 	// Unavailable records, per data source name, why it could not be fetched.
 	Unavailable map[string]error
-	// Loader lets a check look up other packages (TD007 inspects introduced dependencies).
+	// Loader lets a check request counts or look up other packages (TD007 inspects
+	// introduced dependencies). Those requests are memoized for the run.
 	Loader Loader
+}
+
+// withDownloads obtains the subject's count only when a check needs it. A private
+// copy holds the answer: a timed-out check may still be finishing while the next
+// check reads the original subject. Loader memoization shares the actual request
+// without mutating that subject or its Unavailable map.
+func withDownloads(ctx context.Context, s *Subject) *Subject {
+	if s.Downloads >= 0 || s.Unavailable[SourceDownloads] != nil || s.Loader == nil {
+		return s
+	}
+	copied := *s
+	count, err := s.Loader.Downloads(ctx, s.Ref.Ecosystem, s.Ref.Name)
+	if err == nil {
+		copied.Downloads = count
+	} else {
+		copied.Unavailable = maps.Clone(s.Unavailable)
+		if copied.Unavailable == nil {
+			copied.Unavailable = map[string]error{}
+		}
+		copied.Unavailable[SourceDownloads] = err
+	}
+	return &copied
 }
 
 // Setting returns the effective policy setting of a check for this subject.

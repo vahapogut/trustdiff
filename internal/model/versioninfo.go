@@ -27,8 +27,10 @@ const (
 // Provenance describes how a version was published and whether that evidence was verified.
 type Provenance struct {
 	Kind ProvenanceKind `json:"kind"`
-	// Verified is true when the registry or deps.dev verified the evidence.
+	// Verified is true when the registry, deps.dev or the selected local verifier verified the evidence.
 	Verified bool `json:"verified"`
+	// VerifiedBy names a local verifier; empty retains the registry/deps.dev behavior.
+	VerifiedBy string `json:"verified_by,omitempty"`
 	// Identity is the workflow or repository the attestation names, when known.
 	Identity string `json:"identity,omitempty"`
 }

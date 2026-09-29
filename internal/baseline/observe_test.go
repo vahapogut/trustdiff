@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vahapogut/trustdiff/internal/jsonschema"
 	"github.com/vahapogut/trustdiff/internal/model"
 )
 
@@ -18,6 +19,56 @@ type signals struct {
 	releases map[string]*model.VersionInfo
 	owners   map[string][]model.Publisher
 	fail     map[string]error
+}
+
+func TestObservePersistsLocalVerifierAndRetainsItAcrossOutage(t *testing.T) {
+	ref := model.MustParseRef("npm:example-lib@1.0.0")
+	info := &model.VersionInfo{Ref: ref, Provenance: model.Provenance{
+		Kind: model.ProvenanceAttestation, Verified: true, VerifiedBy: "cosign",
+		Identity: "https://github.com/example/lib/.github/workflows/release.yml@refs/heads/main",
+	}}
+	src := &signals{releases: map[string]*model.VersionInfo{ref.String(): info},
+		owners: map[string][]model.Publisher{ref.Package().String(): publishers("alice")}}
+	observed, problems, unavailable := Observe(context.Background(), src, []model.PackageRef{ref}, now, 1)
+	if len(problems) != 0 || len(unavailable) != 0 || len(observed) != 1 {
+		t.Fatalf("observed=%+v problems=%v unavailable=%v", observed, problems, unavailable)
+	}
+	path := Path(t.TempDir())
+	if _, err := Update(path, observed, nil, now); err != nil {
+		t.Fatal(err)
+	}
+	assertAttribution := func() {
+		t.Helper()
+		loaded, err := Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entry, ok := loaded.Lookup(ref)
+		if !ok || entry.Provenance == nil || !entry.Provenance.Verified || entry.Provenance.VerifiedBy != "cosign" {
+			t.Fatalf("local verifier lost in baseline round trip: %+v", entry)
+		}
+		data, err := Bytes(loaded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		schema, err := jsonschema.Compile(SchemaJSON)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := schema.Validate(data); err != nil {
+			t.Fatalf("local attribution violates baseline schema: %v", err)
+		}
+	}
+	assertAttribution()
+	info.SetUnknown(model.FacetProvenance, "local Sigstore verification unavailable")
+	observed, _, unavailable = Observe(context.Background(), src, []model.PackageRef{ref}, now.Add(day), 1)
+	if len(unavailable) != 1 || observed[0].Provenance != nil {
+		t.Fatal("failed local verification was recorded as fresh evidence")
+	}
+	if _, err := Update(path, observed, nil, now.Add(day)); err != nil {
+		t.Fatal(err)
+	}
+	assertAttribution()
 }
 
 var errUnknown = errors.New("not found")

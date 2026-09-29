@@ -190,6 +190,9 @@ func TestLowUsage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := subjectB(t, tt.ref, tt.opts...)
+			// These cases exercise preloaded counts and fallback facts. Lazy loader
+			// requests and outage propagation are covered in lazy_downloads_test.go.
+			s.Loader = nil
 			res := resultB(t, c, s)
 			if tt.skipped != "" {
 				assertSkippedB(t, c, res, tt.skipped)

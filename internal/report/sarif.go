@@ -86,6 +86,9 @@ func (SARIF) Write(w io.Writer, r *Report) error {
 		}},
 	}
 
+	if r.GuardDogRequested {
+		log.Runs[0].Properties = map[string]any{"guarddog_requested": true, "guarddog": r.GuardDog}
+	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	enc.SetEscapeHTML(false)
@@ -103,7 +106,8 @@ type sarifLog struct {
 }
 
 type sarifRun struct {
-	Tool sarifTool `json:"tool"`
+	Properties map[string]any `json:"properties,omitempty"`
+	Tool       sarifTool      `json:"tool"`
 	// Results is present even when empty: an empty array says the run scanned and
 	// found nothing, while a missing one says the log only exports rule metadata.
 	Results []sarifResult `json:"results"`

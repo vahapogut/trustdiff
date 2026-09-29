@@ -15,6 +15,7 @@ import (
 	"github.com/vahapogut/trustdiff/internal/advisory/depsdev"
 	"github.com/vahapogut/trustdiff/internal/advisory/osv"
 	"github.com/vahapogut/trustdiff/internal/advisory/osvindex"
+	"github.com/vahapogut/trustdiff/internal/attestation"
 	"github.com/vahapogut/trustdiff/internal/checks"
 	"github.com/vahapogut/trustdiff/internal/httpcache"
 	"github.com/vahapogut/trustdiff/internal/manifest"
@@ -133,6 +134,7 @@ func (a *App) runCheck(cmd *cobra.Command, args []string) error {
 		rep.SetExitCode(ExitUnavailable)
 	}
 
+	a.addGuardDog(cmd.Context(), rep, inputs)
 	if err := writer.Write(a.Stdout, rep); err != nil {
 		return fmt.Errorf("write report: %w", err)
 	}
@@ -467,6 +469,17 @@ func (a *App) defaultLoader(now time.Time) (checks.Loader, error) {
 		model.PyPI:  pypi.New(hc, pypi.WithLogger(log)),
 		model.Cargo: crates.New(hc, crates.WithLogger(log)),
 		model.JSR:   jsr.New(hc, jsrOptions(log, now)...),
+	}
+	if a.Opts.VerifyNPM {
+		ctx := a.ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		verifier, err := attestation.New(ctx, attestation.Options{Binary: a.Opts.CosignBinary, TrustedRoot: a.Opts.SigstoreRoot, Offline: a.Opts.Offline})
+		if err != nil {
+			return nil, err
+		}
+		reg[model.NPM] = &attestation.NPM{Client: npm.New(hc, npm.WithLogger(log)), HTTP: hc, Verifier: verifier}
 	}
 	if a.bulkScan && !a.Opts.NoCache {
 		reg[model.Cargo] = a.bulkCratesSource(hc.Dir(), reg[model.Cargo], now)

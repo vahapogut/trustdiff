@@ -234,12 +234,41 @@ func (r *Runner) Evaluate(ctx context.Context, inputs []Input) []Outcome {
 		}
 	}
 	rn.loader.Prefetch(ctx, refs)
+	rn.prefetchDownloads(ctx, refs)
 
 	out := make([]Outcome, len(inputs))
 	rn.forEach(len(inputs), func(i int) {
 		out[i] = rn.evaluate(ctx, &inputs[i], &resolved[i])
 	})
 	return out
+}
+
+// prefetchDownloads preserves efficient bulk requests for low-usage, the only
+// check that needs every candidate's count. Typosquat and introduced-dependency
+// counts stay on demand, after those checks find something to compare.
+func (rn *run) prefetchDownloads(ctx context.Context, refs []model.PackageRef) {
+	bulk, ok := rn.loader.(interface {
+		PrefetchDownloads(context.Context, []model.PackageRef)
+	})
+	if !ok {
+		return
+	}
+	var selected []model.PackageRef
+	for _, ref := range refs {
+		s := &Subject{Ref: ref, Settings: rn.policy.Effective(ref.Ecosystem)}
+		for _, c := range rn.checks {
+			if c.ID() != "TD012" || !AppliesTo(c, ref.Ecosystem) || s.Setting(c.Name()).Level == model.LevelOff {
+				continue
+			}
+			if _, allowed := rn.policy.Allowed(c.Name(), ref, rn.now); !allowed {
+				selected = append(selected, ref)
+			}
+			break
+		}
+	}
+	if len(selected) > 0 {
+		bulk.PrefetchDownloads(ctx, selected)
+	}
 }
 
 // Run is Evaluate for a caller that wants the report subjects only.
@@ -409,6 +438,15 @@ func (rn *run) evaluate(ctx context.Context, in *Input, res *resolution) Outcome
 // body of that loop because the skip path runs the lockfile checks through it too,
 // and a check has to be filed the same way wherever it ran.
 func (rn *run) runOne(ctx context.Context, out *Outcome, s *Subject, c Check, outages []string) {
+	// These checks may request counts while running. An active allow already
+	// settles their findings, so report a policy skip without requesting evidence
+	// the report cannot use. Expired entries still run and fetch normally.
+	if c.ID() == "TD008" || c.ID() == "TD012" {
+		if entry, allowed := rn.policy.Allowed(c.Name(), s.Ref, rn.now); allowed {
+			out.Subject.Skipped = append(out.Subject.Skipped, model.Skipped{Check: c.ID(), Reason: "excluded by allow entry: " + entry.Reason})
+			return
+		}
+	}
 	result, unfinished := rn.runCheck(ctx, c, s)
 	if result.Skipped != nil {
 		skipped := *result.Skipped
@@ -563,11 +601,6 @@ func (rn *run) load(ctx context.Context, s *Subject, list *registry.VersionList)
 		}
 	} else {
 		rn.log.Debug("loader has no deps.dev findings; leaving them empty", "ref", ref.String())
-	}
-	if count, err := rn.loader.Downloads(ctx, ref.Ecosystem, ref.Name); err != nil {
-		s.Unavailable[SourceDownloads] = err
-	} else {
-		s.Downloads = count
 	}
 	for source, err := range s.Unavailable {
 		rn.log.Debug("source unavailable", "source", source, "ref", ref.String(), "error", err)

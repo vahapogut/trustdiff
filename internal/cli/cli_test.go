@@ -100,10 +100,12 @@ func TestCommandTreeMatchesTheBrief(t *testing.T) {
 		"doctor",
 		"hook install",
 		"hook uninstall",
+		"policy allow",
 		"policy init",
 		"policy validate",
 		"scan",
 		"version",
+		"watch",
 	}
 	app := &App{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
 	var got []string

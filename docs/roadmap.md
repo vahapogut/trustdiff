@@ -42,19 +42,30 @@ not evidence that every later idea had been implemented:
 
 These changes remain **Unreleased** until included in a published version.
 
-## Proposals still in the detailed plan
+## M5 implementation
 
-[PLAN section 16](PLAN.md#16-proposed-m5-v060) proposes `watch`, local Sigstore
-verification, lazy download-count fetching, a GuardDog handoff, historical Cargo
-owner comparison and a `policy allow` helper. That section calls itself a
-proposal; the released milestones above do not imply those commands exist.
+[PLAN section 16](PLAN.md#16-proposed-m5-v060) is the historical proposal.
+The subsequently approved implementation is included in the next release:
 
-One premise needs correcting: the public crates.io dump does not provide a
+| Item | Implementation and verification |
+|---|---|
+| 5.1 watch | [Contract](watch.md), `internal/watch`, CLI offline/current-owner/cancellation/coverage tests, versioned event schema |
+| 5.2 local Sigstore verification | [Contract](local-attestations.md), optional Cosign3.1.3 adapter, exact npm subject/checksum binding, real valid/tampered-signature integration test |
+| 5.3 lazy counts | Policy-selected TD012 batching and on-demand TD008 counts; synthetic8-version test:3 requests by default,0 with low-usage off and no typo candidate,1 with scoped exceptions |
+| 5.4 GuardDog | [Contract](guarddog.md), optional GuardDog3.2.0 sandbox on Linux/macOS, strict source identity, subprocess cancellation/output/partial-result tests |
+| 5.6 policy allow | [Contract](policy-allow.md), exact exceptions, reason/expiry, preview/backup/atomic write, comment and expiry regressions |
+
+These features remain **Unreleased** until a tag is published. Optional external
+verifiers do not add a runtime requirement to the normal metadata-only command.
+
+Item5.5 remains unavailable from the source: the public crates.io dump does not provide a
 complete ownership-event history. Current owner rows and their creation times
 cannot establish who owned a crate at every past release. The dump implementation
 therefore reports unavailable historical facts instead of reconstructing them
 from current owners. Baselines can record observations from the time they are
 created, but cannot recover observations never made. See [the dump ADR](adr/0005-crates-database-dump.md).
+`internal/registry/crates/dumpindex/historical_owners_test.go` verifies that a
+current-owner row never turns into a per-release maintainer or a TD002 demotion.
 
 ## Verification
 

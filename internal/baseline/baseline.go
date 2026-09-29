@@ -81,8 +81,11 @@ const (
 type Provenance struct {
 	// Kind is the strongest kind of evidence, in the spelling of model.ProvenanceKind.
 	Kind model.ProvenanceKind `json:"kind"`
-	// Verified is true when the registry or deps.dev verified the evidence.
+	// Verified is true when the registry, deps.dev or a local verifier verified the evidence.
 	Verified bool `json:"verified"`
+	// VerifiedBy retains an explicitly selected verifier, such as cosign. Absent
+	// in older observations and where only the registry/deps.dev signal was used.
+	VerifiedBy string `json:"verified_by,omitempty"`
 	// Identity is the workflow or repository the evidence names, when it names one.
 	Identity string `json:"identity,omitempty"`
 }

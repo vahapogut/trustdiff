@@ -58,7 +58,16 @@ func (lowUsage) Name() string { return "low-usage" }
 func (lowUsage) Ecosystems() []model.Ecosystem { return nil }
 
 // Run implements Check.
-func (c lowUsage) Run(_ context.Context, s *Subject) Result {
+func (c lowUsage) Run(ctx context.Context, s *Subject) Result {
+	s = withDownloads(ctx, s)
+	result := c.evaluate(s)
+	if result.Skipped != nil && namesOutage(result.Skipped.Reason, s.outageReasons()) {
+		return skipOutage(c, result.Skipped.Reason)
+	}
+	return result
+}
+
+func (c lowUsage) evaluate(s *Subject) Result {
 	if s.Downloads >= 0 {
 		return c.fromRegistry(s)
 	}

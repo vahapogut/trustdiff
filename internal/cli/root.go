@@ -11,6 +11,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -28,15 +29,21 @@ var failOnLevels = []string{"block", "warn", "never"}
 // also exist in the policy file: command line flag, then the ecosystem override in
 // the policy, then the policy value, then the built-in default.
 type Options struct {
-	Format   string
-	Policy   string
-	Offline  bool
-	NoCache  bool
-	Cooldown string
-	FailOn   string
-	Jobs     int
-	NoColor  bool
-	Verbose  bool
+	Format          string
+	Policy          string
+	Offline         bool
+	NoCache         bool
+	Cooldown        string
+	FailOn          string
+	Jobs            int
+	NoColor         bool
+	Verbose         bool
+	VerifyNPM       bool
+	CosignBinary    string
+	SigstoreRoot    string
+	GuardDog        bool
+	GuardDogBinary  string
+	GuardDogTimeout time.Duration
 
 	// Derived at startup.
 	Color bool
@@ -51,6 +58,7 @@ type App struct {
 	Opts   Options
 	// bulkScan prefers an explicitly refreshed crates.io dump for this scan.
 	bulkScan bool
+	ctx      context.Context
 }
 
 // Main runs the CLI with the given arguments and returns the process exit code.
@@ -124,6 +132,12 @@ or the run was canceled.`,
 	f.IntVar(&a.Opts.Jobs, "jobs", 8, "maximum packages worked on at once; the request rate is bounded per registry host, not by this")
 	f.BoolVar(&a.Opts.NoColor, "no-color", false, "disable colored output (NO_COLOR and non-terminal output also disable it)")
 	f.BoolVarP(&a.Opts.Verbose, "verbose", "v", false, "log progress and diagnostics to stderr")
+	f.BoolVar(&a.Opts.VerifyNPM, "verify-npm-attestations", false, "verify npm build bundles locally with cosign v3.1.3")
+	f.StringVar(&a.Opts.CosignBinary, "cosign-bin", "cosign", "local Cosign executable for --verify-npm-attestations")
+	f.StringVar(&a.Opts.SigstoreRoot, "sigstore-root", "", "local Sigstore trusted-root JSON (required for offline local verification)")
+	f.BoolVar(&a.Opts.GuardDog, "guarddog", false, "run GuardDog 3.2.0 source analysis for up to 20 suspicious registry releases")
+	f.StringVar(&a.Opts.GuardDogBinary, "guarddog-bin", "guarddog", "installed GuardDog executable")
+	f.DurationVar(&a.Opts.GuardDogTimeout, "guarddog-timeout", 2*time.Minute, "timeout per external source scan (1s to 10m)")
 
 	root.AddCommand(
 		a.newCheckCommand(),
@@ -131,6 +145,7 @@ or the run was canceled.`,
 		a.newScanCommand(),
 		a.newDoctorCommand(),
 		a.newBaselineCommand(),
+		a.newWatchCommand(),
 		a.newHookCommand(),
 		a.newCacheCommand(),
 		a.newPolicyCommand(),
@@ -141,7 +156,22 @@ or the run was canceled.`,
 
 // prepare validates the global flags and derives the runtime settings.
 func (a *App) prepare(cmd *cobra.Command) error {
+	a.ctx = cmd.Context()
 	o := &a.Opts
+	if o.GuardDog {
+		if !slices.Contains([]string{"check", "scan", "diff", "watch"}, cmd.Name()) {
+			return Usagef("--guarddog applies to check, scan, diff or watch")
+		}
+		if o.Offline {
+			return Usagef("--guarddog needs network access and cannot be combined with --offline")
+		}
+		if o.GuardDogTimeout < time.Second || o.GuardDogTimeout > 10*time.Minute {
+			return Usagef("--guarddog-timeout must be between 1s and 10m")
+		}
+	}
+	if o.VerifyNPM && o.Offline && o.SigstoreRoot == "" {
+		return Usagef("offline local verification requires --sigstore-root")
+	}
 	if !slices.Contains(formats, o.Format) {
 		return Usagef("--format must be one of %s, got %q", strings.Join(formats, ", "), o.Format)
 	}

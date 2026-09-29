@@ -81,7 +81,7 @@ when the file is invalid or none is found.`,
 		},
 	}
 
-	cmd.AddCommand(initCmd, validateCmd)
+	cmd.AddCommand(initCmd, validateCmd, a.newPolicyAllowCommand())
 	return cmd
 }
 

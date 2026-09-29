@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/vahapogut/trustdiff/main/schema/watch.v1.json",
+  "title": "trustdiff watch event, schema version 1",
+  "description": "One newline-delimited observation event. The embedded report uses the existing report schema. Watch never writes or approves a baseline.",
+  "type": "object",
+  "required": ["schema", "kind", "observed_at", "changes", "report"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "trustdiff.watch/1" },
+    "kind": { "enum": ["initial", "changed"] },
+    "observed_at": {
+      "description": "UTC evaluation completion time, not the upstream incident time.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "changes": { "type": "array", "items": { "$ref": "#/definitions/change" } },
+    "report": { "$ref": "report.v1.json" }
+  },
+  "oneOf": [
+    { "properties": { "kind": { "const": "initial" }, "changes": { "maxItems": 0 } } },
+    { "properties": { "kind": { "const": "changed" }, "changes": { "minItems": 1 } } }
+  ],
+  "definitions": {
+    "ref": {
+      "type": "object",
+      "required": ["ecosystem", "name", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "ecosystem": { "enum": ["npm", "pypi", "cargo", "deno", "jsr"] },
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "change": {
+      "type": "object",
+      "required": ["ref", "check", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": { "$ref": "#/definitions/ref" },
+        "check": { "type": "string", "pattern": "^(TD[0-9]{3}|guarddog)$" },
+        "kind": {
+          "enum": ["findings_added", "findings_changed", "findings_cleared", "coverage_lost", "coverage_restored", "skip_changed", "analysis_added", "analysis_changed", "analysis_not_requested"]
+        }
+      }
+    }
+  }
+}

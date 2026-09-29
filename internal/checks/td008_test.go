@@ -210,7 +210,7 @@ func TestTyposquatSuspect(t *testing.T) {
 			calls: []string{"similar npm:leftpad-fork", "downloads npm:leftpad"},
 		},
 		{
-			name: "unknown own downloads skip the download comparison",
+			name: "missing own count is requested before the download comparison",
 			ref:  "npm:leftpad-fork@1.0.0",
 			loader: &fakeLoaderT{
 				similar:   []depsdev.Similar{{Name: "left-pad"}},
@@ -218,7 +218,7 @@ func TestTyposquatSuspect(t *testing.T) {
 			},
 			down:  -1,
 			want:  0,
-			calls: []string{"similar npm:leftpad-fork"},
+			calls: []string{"similar npm:leftpad-fork", "downloads npm:leftpad-fork"},
 		},
 		{
 			name: "deps.dev error is no cross-check",

@@ -291,8 +291,15 @@ func TestRunAllowEntrySuppressesFindings(t *testing.T) {
 			if got := findingIDsR(&out[0]); !slices.Equal(got, tt.want) {
 				t.Errorf("findings = %v, want %v", got, tt.want)
 			}
-			if !slices.Equal(out[0].Evaluated, []string{"TD006", "TD010", "TD012"}) {
-				t.Errorf("evaluated = %v, want every check (a suppressed check still ran)", out[0].Evaluated)
+			wantEvaluated := []string{"TD006", "TD010", "TD012"}
+			if tt.ref == "npm:lib@1.0.0" {
+				wantEvaluated = []string{"TD006", "TD010"}
+				if !strings.Contains(skippedReasonsR(&out[0])["TD012"], "allow entry") {
+					t.Error("allowed low-usage must skip before requesting counts")
+				}
+			}
+			if !slices.Equal(out[0].Evaluated, wantEvaluated) {
+				t.Errorf("evaluated = %v, want %v", out[0].Evaluated, wantEvaluated)
 			}
 		})
 	}
@@ -437,7 +444,10 @@ func TestRunUnavailableSourceIsSkippedNotPass(t *testing.T) {
 			loader := libLoaderR()
 			loader.fail[tt.source] = boom
 			var downloads int64
-			needs := fakeCheckR{id: "TD001", name: "young-version", run: func(_ context.Context, s *Subject) Result {
+			needs := fakeCheckR{id: "TD001", name: "young-version", run: func(ctx context.Context, s *Subject) Result {
+				if tt.source == SourceDownloads {
+					s = withDownloads(ctx, s)
+				}
 				downloads = s.Downloads
 				if reason, skip := s.Skipped(tt.source); skip {
 					return Skip("TD001", reason)
@@ -467,7 +477,8 @@ func TestRunUnsupportedDownloadsIsRecorded(t *testing.T) {
 	loader := libLoaderR()
 	var reason string
 	var ok bool
-	check := fakeCheckR{id: "TD012", name: "low-usage", run: func(_ context.Context, s *Subject) Result {
+	check := fakeCheckR{id: "TD012", name: "low-usage", run: func(ctx context.Context, s *Subject) Result {
+		s = withDownloads(ctx, s)
 		reason, ok = s.Skipped(SourceDownloads)
 		return Result{}
 	}}
@@ -759,8 +770,8 @@ func TestRunAssemblesSubject(t *testing.T) {
 	if len(got.DepsDevFindings) != 1 || got.DepsDevFindings[0].Type != "LOW_USAGE" {
 		t.Errorf("DepsDevFindings = %v, want LOW_USAGE", got.DepsDevFindings)
 	}
-	if got.Downloads != 1234 {
-		t.Errorf("Downloads = %d, want 1234", got.Downloads)
+	if got.Downloads != -1 || base.count("downloads") != 0 {
+		t.Errorf("Downloads = %d with %d calls, want unrequested", got.Downloads, base.count("downloads"))
 	}
 	if len(got.Unavailable) != 0 {
 		t.Errorf("Unavailable = %v, want empty", got.Unavailable)
@@ -839,7 +850,10 @@ func TestRunLeavesProvenanceVerificationToTD004(t *testing.T) {
 // skipsOn returns a check that skips with the joined reasons of the sources that
 // failed, the way the checks in this package do.
 func skipsOn(sources ...string) fakeCheckR {
-	return fakeCheckR{id: "TD001", name: "young-version", run: func(_ context.Context, s *Subject) Result {
+	return fakeCheckR{id: "TD001", name: "young-version", run: func(ctx context.Context, s *Subject) Result {
+		if slices.Contains(sources, SourceDownloads) {
+			s = withDownloads(ctx, s)
+		}
 		var reasons []string
 		for _, source := range sources {
 			if reason, down := s.Skipped(source); down {

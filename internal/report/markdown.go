@@ -49,6 +49,7 @@ func (Markdown) Write(w io.Writer, r *Report) error {
 	writeMarkdownSkipped(&b, r)
 	b.WriteString(summaryExit(r.Summary))
 	b.WriteString("\n")
+	writeAnalysis(&b, r, true)
 	if _, err := io.WriteString(w, b.String()); err != nil {
 		return fmt.Errorf("write markdown report: %w", err)
 	}

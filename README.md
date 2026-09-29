@@ -486,10 +486,18 @@ release. Installing the latest release still installs the versions above.
 | Bulk Cargo metadata (issue #2) | An explicit crates.io dump refresh builds a bounded local index for `scan`; see [dump usage and data limits](docs/crates-dump.md). |
 | pnpm install gate (issue #3) | A copyable `.pnpmfile.cjs` checks resolved packages and frozen-lockfile installs; see [setup and supported pnpm versions](integrations/pnpm-hook/README.md). |
 | Translated introduction (issue #4) | [Turkish](docs/readme/tr.md) covers installation and the three main workflows, with its English source revision and a freshness check. |
+| Monitor existing dependencies | [`watch`](docs/watch.md) compares pinned baseline packages on a schedule; `--once` supports an external scheduler. Current-owner changes, new advisories and lost coverage are reported without approving a new baseline. |
+| Verify npm bundles locally | [`--verify-npm-attestations`](docs/local-attestations.md) uses separately installed Cosign 3.1.3, binds the exact npm subject and SHA512 checksum, and reports failed verification as unavailable. |
+| Avoid irrelevant count requests | Download counts are lazy for TD008 and batched only where enabled TD012 needs them. Active exceptions avoid requests; default TD012 still requires counts for scoped npm packages. |
+| Inspect suspicious package code | [`--guarddog`](docs/guarddog.md) invokes separately installed GuardDog 3.2.0 in its sandbox on Linux/macOS and reports bounded, attributed supplemental results. |
+| Review narrow exceptions | [`policy allow`](docs/policy-allow.md) previews a per-package/check exception with a reason and expiry; `--write` saves it atomically with a backup. |
 
 [docs/roadmap.md](docs/roadmap.md) maps these milestones to code and verification.
 [docs/PLAN.md](docs/PLAN.md) preserves the original estimates and later proposals;
-its proposed 0.6 work is not a claim that those features have shipped.
+its historical estimates are preserved. Five M5 items are implemented above.
+The remaining historical Cargo ownership premise is unavailable from public
+registry data: current owners cannot prove who owned a crate at an earlier
+release. Baselines and `watch` record observed changes without inventing that past.
 
 ## Principles
 

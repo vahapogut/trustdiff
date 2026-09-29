@@ -99,12 +99,12 @@ func newDataLoader(reg registry.Registry, adv advisory.Source, dd depsDevSource,
 	return &DataLoader{reg: reg, adv: adv, dd: dd, log: log}
 }
 
-// Prefetch warms the OSV, deps.dev and download count batches for every ref that
+// Prefetch warms the OSV and deps.dev batches for every ref that
 // carries a version. Refs without a version are skipped: the advisory endpoints
 // answer per version, and the runner resolves bare refs before it calls Prefetch.
 // Refs of an ecosystem a source does not index are left out of its batch, as the
 // source itself would leave them out of its answer; the per-ref methods report them
-// as unsupported without a request. The four batches run concurrently. A batch that
+// as unsupported without a request. The three batches run concurrently. A batch that
 // fails stores its error for every ref it covered, so the source is not asked again
 // for them; a batch that lost only some of its refs stores the error for those and
 // the answers for the rest; a batch that failed because ctx ended stores nothing.
@@ -114,7 +114,7 @@ func (l *DataLoader) Prefetch(ctx context.Context, refs []model.PackageRef) {
 		return
 	}
 	var wg sync.WaitGroup
-	wg.Add(4)
+	wg.Add(3)
 	go func() {
 		defer wg.Done()
 		l.prefetchAdvisories(ctx, versioned)
@@ -126,10 +126,6 @@ func (l *DataLoader) Prefetch(ctx context.Context, refs []model.PackageRef) {
 	go func() {
 		defer wg.Done()
 		l.prefetchFindings(ctx, versioned)
-	}()
-	go func() {
-		defer wg.Done()
-		l.prefetchDownloads(ctx, versioned)
 	}()
 	wg.Wait()
 }
@@ -268,9 +264,11 @@ type bulkDownloader interface {
 	BulkDownloads(ctx context.Context, names []string) (map[string]int64, error)
 }
 
-// prefetchDownloads warms the download counts of every name of the run through the
-// sources that can answer many at once. A name the batch could not carry, such as a
-// scoped npm name, or did not know is not stored, so the per name path asks for it
+// PrefetchDownloads warms the counts of names selected by the runner's effective
+// policy through sources that answer many at once. It is deliberately separate
+// from Prefetch: most checks need no count. The npm source batches unscoped names
+// and requests scoped names individually. A name the source did not know is not
+// stored, so the per name path asks for it
 // and reports what it gets. Storing a zero for an unknown name would read as a
 // package nobody installs, which is the thing the low usage check is about.
 //
@@ -280,7 +278,7 @@ type bulkDownloader interface {
 // large lockfile drew 2,406 answers of 429 and then a block of the address itself,
 // measured on 2026-09-12. The checks that read counts report themselves as skipped
 // instead, which is what a policy with on_data_unavailable can act on.
-func (l *DataLoader) prefetchDownloads(ctx context.Context, refs []model.PackageRef) {
+func (l *DataLoader) PrefetchDownloads(ctx context.Context, refs []model.PackageRef) {
 	byEco := map[model.Ecosystem][]string{}
 	seen := map[model.PackageRef]bool{}
 	for _, ref := range refs {

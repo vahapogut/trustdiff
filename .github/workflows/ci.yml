@@ -240,5 +240,18 @@ jobs:
           # directive version (observed 2026-09-09) because GOTOOLCHAIN is local here.
           go-version: "1.26.x"
           check-latest: true
+      - name: Install local attestation verifier
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: Install pinned source analyzer in an isolated environment
+        run: |
+          python3 -m venv "$RUNNER_TEMP/guarddog-venv"
+          "$RUNNER_TEMP/guarddog-venv/bin/python" -m pip install 'guarddog==3.2.0'
       - name: go test -tags integration
+        # The attestation integration test runs real Cosign on a recorded npm
+        # bundle and a tampered signature; the installer verifies its release.
+        env:
+          TRUSTDIFF_GUARDDOG_INTEGRATION: "1"
+          TRUSTDIFF_GUARDDOG_BIN: ${{ runner.temp }}/guarddog-venv/bin/guarddog
         run: go test -tags integration ./...

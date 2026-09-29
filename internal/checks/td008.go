@@ -283,6 +283,7 @@ func (c *typosquatSuspect) standing(ctx context.Context, s *Subject, resembles [
 			first.UTC().Format(time.RFC3339), durationText(age))
 	}
 
+	s = withDownloads(ctx, s)
 	threshold := s.Setting("low-usage").MinWeeklyDownloads
 	if s.Downloads >= 0 {
 		if s.Downloads < threshold {
@@ -449,6 +450,10 @@ func (c *typosquatSuspect) crossCheck(ctx context.Context, s *Subject, candidate
 		}
 		neighbors = append(neighbors, n)
 	}
+	if len(neighbors) == 0 {
+		return "", ""
+	}
+	s = withDownloads(ctx, s)
 	if s.Downloads < 0 {
 		return "", ""
 	}

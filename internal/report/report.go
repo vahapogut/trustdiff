@@ -44,6 +44,9 @@ type Report struct {
 	Policy   Policy    `json:"policy"`
 	Subjects []Subject `json:"subjects"`
 	Summary  Summary   `json:"summary"`
+	// GuardDog is an optional external analysis supplement, never a TD verdict.
+	GuardDogRequested bool             `json:"guarddog_requested,omitempty"`
+	GuardDog          []model.Analysis `json:"guarddog,omitempty"`
 }
 
 // Tool is the build identity of the binary that wrote the report.

@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `watch` evaluates the exact versions in an existing baseline once or at a bounded interval, reports changes in findings and coverage, and compares current owners even when a locked release is unchanged. Online cycles bypass stale HTTP caches; offline cycles explicitly use recorded data. JSON events use the published `trustdiff.watch/1` schema and never approve or rewrite the baseline.
+- Optional local npm SLSA verification with `--verify-npm-attestations` and Cosign 3.1.3. Exact package/version/SHA512 binding, certificate identity and normal Sigstore transparency verification are required; verification errors remain unavailable rather than falling back to deps.dev. Default builds keep six direct Go dependencies.
+- Optional `--guarddog` source-analysis supplements for suspicious, identified public registry releases. The reviewed GuardDog 3.2.0 runs with its sandbox on Linux/macOS, bounded time/output/package count, exact versions, and no shell. Partial and failed analyses are explicit and prevent exit0; metadata findings remain unchanged. Native Windows, private mirrors and ambiguous locked sources are reported unsupported rather than scanning a substitute package.
+- `policy allow <check> <package-ref>` previews one reviewed exception with required reason and expiry. `--write` preserves unrelated policy text, creates a timestamped backup and replaces the file atomically. Broad patterns, expired dates and ambiguous edits are refused.
+
+
+
 - `cache refresh --crates-dump` builds a bounded, hash-checked plain-file index of the public crates.io database for bulk `scan` runs. Scans preload only requested crates, grouped by shard, and retain the normal API path for single-package `check`. `cache status` reports snapshot age; stale metadata falls back with a diagnostic, while a damaged selected shard or a package newer than the snapshot stays unavailable. Publication times, available publishers, yank flags, checksums and current owners are indexed; scripts, dependency rows, downloads, trusted-publisher evidence and historical ownership are not invented from missing data. Refreshes preserve the previous index on failure, and clearing shares the refresh lock. Ctrl+C and supported termination signals cancel the command with exit 3 and let refresh cleanup run. (#2)
 
 - A dependency-free pnpm 10 install hook that invokes trustdiff for resolved registry packages, including repeat and frozen-lockfile installs. It preserves alias/scope/peer identities, refuses unchecked or malformed reports, and stops on blocking findings, missing binaries, timeouts and output-limit violations. Documentation identifies local exclusions and unsupported dependency sources; real pnpm lifecycle tests run against a synthetic local registry on Linux and Windows. (#3)
@@ -15,6 +22,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - TD008 recognizes exact Unicode confusable skeleton collisions with popular package names. The checked-in ASCII subset is generated from pinned Unicode data with its license and source hash; ordinary non-Latin names are not flagged just for their script. `check npm:<Unicode name>` can diagnose supported look-alike spellings without querying the registry or relaxing npm's name validation. Other checks explicitly skip this name-only input. (#1)
 
 - A partial Turkish README covering installation and the three main workflows, linked to its exact English source revision. A dedicated CI check compares the recorded README content hash with the current English document, so translation drift is visible even after a squash merge or a shallow checkout. (#4)
+
+### Changed
+
+- TD008 asks for popularity only when it can change a name-collision result. TD012 prefetches counts only for enabled, non-allowlisted subjects; active exceptions are explicit policy skips. The default low-usage check still needs scoped npm counts, preserving its findings and outage behavior. Introduced dependencies retain their on-demand TD007 count checks.
+- Current crates.io owners are explicitly kept separate from historical release maintainers. An end-to-end dump regression verifies that current ownership never demotes a historical publisher change. Public data cannot fulfill the original M5.5 ownership-at-release proposal.
 
 ### Fixed
 
