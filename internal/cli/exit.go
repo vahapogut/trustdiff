@@ -10,7 +10,7 @@ const (
 	ExitFindings = 1
 	// ExitUsage means a usage or configuration error.
 	ExitUsage = 2
-	// ExitUnavailable means a required data source was unavailable and the policy says to fail.
+	// ExitUnavailable means required data was unavailable under a fail policy, or the run was canceled.
 	ExitUnavailable = 3
 )
 

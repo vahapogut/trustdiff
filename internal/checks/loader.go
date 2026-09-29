@@ -134,6 +134,29 @@ func (l *DataLoader) Prefetch(ctx context.Context, refs []model.PackageRef) {
 	wg.Wait()
 }
 
+// PrefetchVersions prepares bulk registry data before the runner resolves
+// canonical package names. Ordinary API sources do not implement this optional
+// path; a dump source reads each required shard once and keeps errors per crate.
+func (l *DataLoader) PrefetchVersions(ctx context.Context, refs []model.PackageRef) {
+	source, ok := l.reg.For(model.Cargo)
+	if !ok {
+		return
+	}
+	bulk, ok := source.(interface {
+		PrefetchVersions(context.Context, []string)
+	})
+	if !ok {
+		return
+	}
+	names := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if ref.Ecosystem == model.Cargo {
+			names = append(names, ref.Name)
+		}
+	}
+	bulk.PrefetchVersions(ctx, names)
+}
+
 // uniqueVersioned returns the refs that carry a version, normalized and
 // deduplicated, in first-seen order.
 func uniqueVersioned(refs []model.PackageRef) []model.PackageRef {

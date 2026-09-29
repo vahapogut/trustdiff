@@ -23,8 +23,9 @@ by default. A path that names one lockfile evaluates that file alone. The walk
 skips .git, node_modules, vendor, target, dist and .venv, because the lockfiles
 inside those belong to a dependency or to a build rather than to the project.
 
-This asks a registry about every locked package, so it is slow by design and it
-says how much work it is about to do before it starts. Use it for a first look at
+This asks a registry about every locked package and says how much work it is about
+to do before it starts. A fresh crates.io index installed with "cache refresh
+--crates-dump" supplies Cargo metadata without per-crate requests. Use scan for a first look at
 a project or for an audit; a pull request wants diff, which evaluates only what
 the change added or modified.
 
@@ -39,6 +40,9 @@ location against, and from the path given here when it is not.`,
 }
 
 func (a *App) runScan(cmd *cobra.Command, args []string) error {
+	previousBulk := a.bulkScan
+	a.bulkScan = true
+	defer func() { a.bulkScan = previousBulk }()
 	root := "."
 	if len(args) == 1 {
 		root = args[0]

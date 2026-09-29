@@ -413,6 +413,16 @@ func (l baselineLoader) Baseline(ref model.PackageRef) (baseline.Record, bool) {
 	return l.set.Lookup(ref)
 }
 
+// PrefetchVersions preserves the optional bulk-registry path through the
+// baseline wrapper, before the runner resolves names from the version lists.
+func (l baselineLoader) PrefetchVersions(ctx context.Context, refs []model.PackageRef) {
+	if bulk, ok := l.Loader.(interface {
+		PrefetchVersions(context.Context, []model.PackageRef)
+	}); ok {
+		bulk.PrefetchVersions(ctx, refs)
+	}
+}
+
 // baselineFindingsLoader is a baselineLoader over a loader that serves the
 // deps.dev findings, forwarding them unchanged.
 type baselineFindingsLoader struct {

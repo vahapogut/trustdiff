@@ -10,7 +10,7 @@ untrusted tar.gz of CSV tables. The single-package API remains useful for `check
 
 ## Decision
 
-An explicit `cache refresh --crates-dump` downloads the dump and builds 256 plain
+An explicit `cache refresh --crates-dump` downloads the dump and builds up to 256 plain
 JSON shards. A metadata file names an immutable generation and each shard's hash.
 The metadata rename publishes a complete generation, so a failed refresh keeps
 the preceding index. The builder streams CSV rows and partitions versions before

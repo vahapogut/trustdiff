@@ -39,6 +39,9 @@ const ListsSubdir = "lists"
 // internal/cli, the one package that imports both.
 const AdvisorySubdir = "advisories"
 
+// CratesSubdir is cleared by the bulk crates.io index owner before Clear runs.
+const CratesSubdir = "crates-dump"
+
 // listFileName matches the files internal/typosquat writes into ListsSubdir: one
 // <ecosystem>.txt per list and the temporary files WriteLists renames into place
 // (the same os.CreateTemp suffix as above).
@@ -425,7 +428,7 @@ func Clear(dir string) error {
 			if listFiles, err = clearableListFiles(listsDir); err != nil {
 				return err
 			}
-		case e.IsDir() && e.Name() == AdvisorySubdir:
+		case e.IsDir() && (e.Name() == AdvisorySubdir || e.Name() == CratesSubdir):
 			// Somebody else's to clear, and by the time this runs they have
 			// either cleared it or kept it on purpose. See AdvisorySubdir.
 		case e.IsDir(), !entryFileName.MatchString(e.Name()):

@@ -468,6 +468,9 @@ func (a *App) defaultLoader(now time.Time) (checks.Loader, error) {
 		model.Cargo: crates.New(hc, crates.WithLogger(log)),
 		model.JSR:   jsr.New(hc, jsrOptions(log, now)...),
 	}
+	if a.bulkScan && !a.Opts.NoCache {
+		reg[model.Cargo] = a.bulkCratesSource(hc.Dir(), reg[model.Cargo], now)
+	}
 	var osvOpts []osv.Option
 	if a.Opts.Offline {
 		// Offline the API is unreachable by definition, so OSV answers from the

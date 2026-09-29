@@ -211,6 +211,17 @@ type resolution struct {
 func (r *Runner) Evaluate(ctx context.Context, inputs []Input) []Outcome {
 	rn := r.prepare()
 	markFirstInFile(inputs)
+	if bulk, ok := rn.loader.(interface {
+		PrefetchVersions(context.Context, []model.PackageRef)
+	}); ok {
+		refs := make([]model.PackageRef, 0, len(inputs))
+		for _, input := range inputs {
+			if input.Lock == nil || entrySource(input.Lock) != lockfile.SourcePath {
+				refs = append(refs, input.Ref)
+			}
+		}
+		bulk.PrefetchVersions(ctx, refs)
+	}
 	resolved := make([]resolution, len(inputs))
 	rn.forEach(len(inputs), func(i int) {
 		resolved[i] = rn.resolve(ctx, &inputs[i])

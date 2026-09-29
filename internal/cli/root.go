@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -48,18 +49,38 @@ type App struct {
 	Stdout io.Writer
 	Stderr io.Writer
 	Opts   Options
+	// bulkScan prefers an explicitly refreshed crates.io dump for this scan.
+	bulkScan bool
 }
 
 // Main runs the CLI with the given arguments and returns the process exit code.
 // Errors are printed to stderr; stdout is reserved for reports.
 func Main(args []string, stdout, stderr io.Writer) int {
+	return MainContext(context.Background(), args, stdout, stderr)
+}
+
+// MainContext runs the CLI until completion or cancellation. A canceled or
+// deadline-limited invocation returns ExitUnavailable and a diagnostic, even
+// when a command otherwise returned success after producing a partial report.
+func MainContext(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	if err := ctx.Err(); err != nil {
+		fmt.Fprintf(stderr, "trustdiff: %v\n", err)
+		return ExitUnavailable
+	}
 	app := &App{Stdout: stdout, Stderr: stderr}
 	root := app.newRootCommand()
 	root.SetArgs(args)
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 
-	err := root.Execute()
+	err := root.ExecuteContext(ctx)
+	if canceled := ctx.Err(); canceled != nil {
+		err = canceled
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		fmt.Fprintf(stderr, "trustdiff: %v\n", err)
+		return ExitUnavailable
+	}
 	if err == nil {
 		return ExitOK
 	}
@@ -84,7 +105,8 @@ dependency that was introduced, look-alike names, and known malicious or vulnera
 versions. It also audits package manager hardening settings with "doctor".
 
 Exit codes: 0 no blocking findings, 1 blocking findings, 2 usage or configuration
-error, 3 a required data source was unavailable and the policy says to fail.`,
+error, 3 a required data source was unavailable and the policy says to fail,
+or the run was canceled.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {

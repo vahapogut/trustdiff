@@ -16,6 +16,7 @@ import (
 	"github.com/vahapogut/trustdiff/internal/httpcache"
 	"github.com/vahapogut/trustdiff/internal/model"
 	"github.com/vahapogut/trustdiff/internal/policy"
+	"github.com/vahapogut/trustdiff/internal/registry/crates/dumpindex"
 	"github.com/vahapogut/trustdiff/internal/typosquat"
 	"github.com/vahapogut/trustdiff/internal/version"
 )
@@ -47,6 +48,7 @@ func (a *App) newCacheCommand() *cobra.Command {
 			" when set, otherwise the trustdiff directory under the user cache directory")
 
 	var ecosystems []string
+	var cratesDump bool
 	refresh := &cobra.Command{
 		Use:   "refresh",
 		Short: "Download the advisory databases for offline use",
@@ -59,14 +61,27 @@ that OSV publishes an archive for, otherwise every ecosystem OSV indexes (npm,
 pypi and cargo). --ecosystem overrides both.
 
 The download is conditional: an archive the server reports as unchanged since the
-last refresh is not transferred again and the index on disk is kept.`,
+last refresh is not transferred again and the index on disk is kept.
+
+--crates-dump selects a separate, full crates.io registry database download instead
+of OSV. This large tar.gz builds a local metadata index used automatically by scan
+for 48 hours; single-package check still uses the API. It does not fetch per-crate
+archives, dependencies or trusted-publishing evidence, and affected checks report
+those facts as unavailable. It cannot be combined with --ecosystem or --offline.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if cratesDump {
+				if len(ecosystems) > 0 {
+					return Usagef("--crates-dump cannot be combined with --ecosystem; it refreshes only Cargo registry metadata")
+				}
+				return a.cacheRefreshCrates(cmd, dir)
+			}
 			return a.cacheRefresh(cmd, dir, ecosystems)
 		},
 	}
 	refresh.Flags().StringSliceVar(&ecosystems, "ecosystem", nil,
 		"ecosystem to refresh, repeatable (default: the ecosystems the policy configures)")
+	refresh.Flags().BoolVar(&cratesDump, "crates-dump", false, "download the large crates.io database dump for bulk Cargo scans instead of OSV archives")
 
 	cmd.AddCommand(
 		&cobra.Command{
@@ -129,7 +144,8 @@ type cacheStatusReport struct {
 	// AdvisoryIndex describes the offline advisory index, which is what
 	// --offline reads. It is always present, with an empty ecosystem list when
 	// nothing has been downloaded.
-	AdvisoryIndex cacheIndexReport `json:"advisory_index"`
+	AdvisoryIndex cacheIndexReport  `json:"advisory_index"`
+	CratesDump    cratesIndexReport `json:"crates_dump"`
 }
 
 // cacheIndexReport is the advisory index half of "cache status".
@@ -162,10 +178,15 @@ func (a *App) cacheStatus(dirFlag string) error {
 	if err != nil {
 		return Exit(ExitUsage, fmt.Errorf("cache status: %w", err))
 	}
+	cratesStats, err := dumpindex.Stat(dir)
+	if err != nil {
+		return Exit(ExitUsage, fmt.Errorf("cache status: %w", err))
+	}
 	now := time.Now()
 
 	if a.Opts.Format == "json" {
 		report := cacheStatusReport{
+			CratesDump:      cratesStatus(cratesStats, now),
 			Dir:             dir,
 			Entries:         stats.Entries,
 			Bytes:           stats.Bytes,
@@ -198,7 +219,11 @@ func (a *App) cacheStatus(dirFlag string) error {
 		dir, stats.Entries, formatBytes(stats.Bytes), oldest, newest); err != nil {
 		return err
 	}
-	return a.writeIndexStatus(&index, now)
+	if err := a.writeIndexStatus(&index, now); err != nil {
+		return err
+	}
+	cratesReport := cratesStatus(cratesStats, now)
+	return a.writeCratesStatus(&cratesReport)
 }
 
 // writeIndexStatus prints the advisory index block of "cache status": which
@@ -249,7 +274,8 @@ type cacheClearReport struct {
 	RemovedEntries int    `json:"removed_entries"`
 	RemovedBytes   int64  `json:"removed_bytes"`
 	// RemovedIndexBytes is the part of RemovedBytes that was the advisory index.
-	RemovedIndexBytes int64 `json:"removed_index_bytes"`
+	RemovedIndexBytes  int64 `json:"removed_index_bytes"`
+	RemovedCratesBytes int64 `json:"removed_crates_bytes"`
 	// Refused names what was kept and why, empty when everything was removed.
 	Refused string `json:"refused,omitempty"`
 }
@@ -267,6 +293,10 @@ func (a *App) cacheClear(dirFlag string) error {
 	if err != nil {
 		return Exit(ExitUsage, fmt.Errorf("cache clear: %w", err))
 	}
+	cratesBefore, err := dumpindex.Stat(dir)
+	if err != nil {
+		return Exit(ExitUsage, fmt.Errorf("cache clear: %w", err))
+	}
 	// The advisory index goes first, because it is the one that may leave its
 	// directory behind: osvindex.Clear removes every file it owns and keeps
 	// anything else, naming what it kept, so a cache directory that is not one
@@ -276,21 +306,23 @@ func (a *App) cacheClear(dirFlag string) error {
 	// somebody who asked for the cache to be cleared wants to know everything
 	// that was kept and not only the first thing.
 	indexErr := osvindex.Clear(dir)
-	refused := errors.Join(indexErr, httpcache.Clear(dir))
+	refused := errors.Join(indexErr, dumpindex.Clear(dir), httpcache.Clear(dir))
 
 	// What was removed is measured rather than assumed, because a refusal is
 	// partial now: the index files of an ecosystem go even when a file beside
 	// them is kept, and the counts have to say what actually happened.
 	afterCache, cacheStatErr := httpcache.Stat(dir)
 	afterIndex, indexStatErr := osvindex.Stat(dir)
-	if statErr := errors.Join(cacheStatErr, indexStatErr); statErr != nil {
+	cratesAfter, cratesStatErr := dumpindex.Stat(dir)
+	if statErr := errors.Join(cacheStatErr, indexStatErr, cratesStatErr); statErr != nil {
 		return Exit(ExitUsage, fmt.Errorf("cache clear: %w", errors.Join(statErr, refused)))
 	}
 	removed := cacheClearReport{
-		Dir:               dir,
-		RemovedEntries:    before.Entries - afterCache.Entries,
-		RemovedBytes:      (before.Bytes - afterCache.Bytes) + (index.Bytes - afterIndex.Bytes),
-		RemovedIndexBytes: index.Bytes - afterIndex.Bytes,
+		Dir:                dir,
+		RemovedEntries:     before.Entries - afterCache.Entries,
+		RemovedBytes:       (before.Bytes - afterCache.Bytes) + (index.Bytes - afterIndex.Bytes) + (cratesBefore.Bytes - cratesAfter.Bytes),
+		RemovedIndexBytes:  index.Bytes - afterIndex.Bytes,
+		RemovedCratesBytes: cratesBefore.Bytes - cratesAfter.Bytes,
 	}
 	a.Opts.Log.Debug("cache cleared", "dir", dir, "entries", removed.RemovedEntries,
 		"bytes", removed.RemovedBytes, "index_bytes", removed.RemovedIndexBytes, "refused", refused)
