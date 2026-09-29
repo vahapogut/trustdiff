@@ -39,7 +39,7 @@ The hook runs `trustdiff check --format json -- npm:name@version ...` with fixed
 | `info` finding | Continue |
 | `warn` finding | Print the finding; continue if trustdiff's policy allows it |
 | `block` finding | Print the finding and stop |
-| Exit 1 | Stop; this includes warnings when the policy's `fail_on` is `warn` |
+| Exit 1 | Stop; trustdiff reported a finding at its failure threshold |
 | Exit 3 | Stop; the policy requires a data source that was unavailable |
 | Missing binary | Stop with installation instructions and `TRUSTDIFF_BIN` guidance |
 | Crash, timeout, excess output or malformed report | Stop |

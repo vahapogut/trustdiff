@@ -155,5 +155,5 @@ seçenekleri henüz çevrilmemiştir; bu konularda İngilizce README'yi okuyun.
 Kaynak: [İngilizce README, d3ff89fad7404e277cc4510d330066caa43d13b4](https://github.com/vahapogut/trustdiff/blob/d3ff89fad7404e277cc4510d330066caa43d13b4/README.md).
 Çeviri yalnızca bu kaynak sürümüne göre günceldir. Yukarıdaki güncellik kontrolü
 başarısızsa İngilizce README çeviriden sonra değişmiş olabilir; geçerli davranışı
-İngilizce dosyadan kontrol edin. CI, kaynak commit'teki README ile güncel README
-farklıysa çevirinin güncellenmesini ister.
+İngilizce dosyadan kontrol edin. CI, kaydedilen kaynak README içerik özeti güncel
+README'nin içerik özetiyle eşleşmiyorsa çevirinin güncellenmesini ister.
