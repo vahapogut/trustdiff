@@ -21,6 +21,7 @@ type Set struct {
 	byStripped map[string][]string
 	byFlat     map[string][]string
 	byFolded   map[string][]string
+	bySkeleton map[string][]string
 	// runes caches the rune form of every name for the edit distance scan.
 	runes [][]rune
 }
@@ -44,6 +45,7 @@ func NewSet(eco model.Ecosystem, names []string) *Set {
 		byStripped: map[string][]string{},
 		byFlat:     map[string][]string{},
 		byFolded:   map[string][]string{},
+		bySkeleton: map[string][]string{},
 		runes:      make([][]rune, len(canonical)),
 	}
 	for i, name := range canonical {
@@ -52,6 +54,10 @@ func NewSet(eco model.Ecosystem, names []string) *Set {
 		folded := foldConfusables(stripped)
 		s.byStripped[stripped] = append(s.byStripped[stripped], name)
 		s.byFolded[folded] = append(s.byFolded[folded], name)
+		if asciiName(name) {
+			skeleton, _ := HomoglyphSkeleton(name)
+			s.bySkeleton[skeleton] = append(s.bySkeleton[skeleton], name)
+		}
 		if scoped(name) {
 			flat := stripSeparators(flattenScope(name))
 			s.byFlat[flat] = append(s.byFlat[flat], name)

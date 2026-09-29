@@ -20,7 +20,7 @@ import (
 // than 30 days old at the run's clock) using the rules of that package: edit
 // distance with a length-based threshold, adjacent transpositions, separator
 // swaps, npm scope confusion, py, python, js and node affixes, digit and letter
-// confusables and common-word insertions. A name that is itself popular is never
+// confusables, exact Unicode skeleton collisions and common-word insertions. A name that is itself popular is never
 // a suspect, and the fuzzy rules leave popular names shorter than four
 // characters alone, counting the bare half of a scoped name: a scope is shared by
 // every package inside it, so it is not the part a squatter imitates and it buys
@@ -67,8 +67,10 @@ import (
 //	candidate        the evaluated name in canonical spelling
 //	neighbor         the popular name it resembles (when a rule matched)
 //	rule             the rule that matched: separator-swap, scope-confusion,
-//	                 language-affix, confusable-characters, common-word,
+//	                 language-affix, confusable-characters, unicode-homoglyph, common-word,
 //	                 transposition or edit-distance (when a rule matched)
+//	skeleton         the shared ASCII skeleton (unicode-homoglyph only)
+//	unicode_version  the Unicode confusables data version (unicode-homoglyph only)
 //	distance         the Damerau-Levenshtein distance to the neighbor (when a rule matched)
 //	list_fetched     the date of the popular list consulted, yyyy-mm-dd
 //	list_origin      where that list came from: "embedded" for the snapshot in
@@ -211,6 +213,10 @@ func (c *typosquatSuspect) Run(ctx context.Context, s *Subject) Result {
 		evidence["neighbor"] = match.Neighbor
 		evidence["rule"] = string(match.Rule)
 		evidence["distance"] = match.Distance
+		if match.Rule == typosquat.RuleHomoglyph {
+			evidence["skeleton"] = match.Skeleton
+			evidence["unicode_version"] = typosquat.HomoglyphUnicodeVersion
+		}
 		title = fmt.Sprintf("%q resembles the popular %s package %q", candidate, eco, match.Neighbor)
 		explanation = fmt.Sprintf("%q is not among the %d most popular %s packages but %s (rule %s, edit distance %d)",
 			candidate, set.Len(), eco, describeRule(match), match.Rule, match.Distance)
@@ -395,6 +401,8 @@ func describeRule(m typosquat.Match) string {
 		return fmt.Sprintf("is %q with a language prefix or suffix added or removed", m.Neighbor)
 	case typosquat.RuleConfusable:
 		return fmt.Sprintf("differs from %q only in look-alike characters (1 for l, 0 for o)", m.Neighbor)
+	case typosquat.RuleHomoglyph:
+		return fmt.Sprintf("uses non-ASCII look-alike characters and shares the Unicode %s package-name skeleton %q with %q", typosquat.HomoglyphUnicodeVersion, m.Skeleton, m.Neighbor)
 	case typosquat.RuleCommonWord:
 		return fmt.Sprintf("is %q with a common word such as utils or cli inserted", m.Neighbor)
 	case typosquat.RuleTransposition:

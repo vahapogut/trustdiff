@@ -4,6 +4,7 @@
 // against a Set of popular names with a fixed list of rules (edit distance with a
 // length-based threshold, adjacent transpositions, separator swaps, npm scope
 // confusion, language affixes such as py or node, digit and letter confusables,
+// exact Unicode homoglyph skeleton collisions,
 // and common-word insertions such as -utils) and reports the closest neighbor
 // together with the rule that matched.
 //
@@ -49,8 +50,11 @@ const (
 	RuleAffix Rule = "language-affix"
 	// RuleConfusable matches names that differ only in the digit and letter pairs
 	// l and 1, o and 0, for example 1odash for lodash or pi11ow for pillow. Letter
-	// pairs such as i and l are left to a future homoglyph rule.
+	// pairs such as i and l are not folded by this rule.
 	RuleConfusable Rule = "confusable-characters"
+	// RuleHomoglyph matches a non-ASCII confusable whose bounded Unicode skeleton
+	// equals that of an ASCII popular name. Merely mixing scripts is not a match.
+	RuleHomoglyph Rule = "unicode-homoglyph"
 	// RuleCommonWord matches a popular name with one of the words dev, utils, cli,
 	// js or py inserted as a separate token, for example lodash-utils for lodash.
 	RuleCommonWord Rule = "common-word"
@@ -64,7 +68,7 @@ const (
 
 // Rules lists every rule in the order Suspect tries them.
 func Rules() []Rule {
-	return []Rule{RuleSeparator, RuleScope, RuleAffix, RuleConfusable, RuleCommonWord, RuleTransposition, RuleEditDistance}
+	return []Rule{RuleSeparator, RuleScope, RuleAffix, RuleConfusable, RuleHomoglyph, RuleCommonWord, RuleTransposition, RuleEditDistance}
 }
 
 // separators are the characters ecosystems use between words of a name.

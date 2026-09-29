@@ -17,6 +17,8 @@ type Match struct {
 	Rule Rule `json:"rule"`
 	// Distance is the Damerau-Levenshtein distance between the two spellings.
 	Distance int `json:"distance"`
+	// Skeleton is the shared bounded Unicode skeleton, only for RuleHomoglyph.
+	Skeleton string `json:"skeleton,omitempty"`
 }
 
 // Suspect reports whether name looks like a misspelling of a popular name in eco
@@ -52,6 +54,9 @@ func Suspect(eco model.Ecosystem, name string, popular *Set) (Match, bool) {
 			return
 		}
 		m := Match{Candidate: c, Neighbor: neighbor, Rule: rule, Distance: Distance(c, neighbor)}
+		if rule == RuleHomoglyph {
+			m.Skeleton, _ = HomoglyphSkeleton(c)
+		}
 		if !found || closer(m, best) {
 			best, found = m, true
 		}
@@ -78,6 +83,9 @@ func Suspect(eco model.Ecosystem, name string, popular *Set) (Match, bool) {
 	}
 
 	lookup(popular.byFolded, foldConfusables(stripped), RuleConfusable)
+	if skeleton, changed := HomoglyphSkeleton(c); changed {
+		lookup(popular.bySkeleton, skeleton, RuleHomoglyph)
+	}
 
 	for _, variant := range commonWordVariants(c) {
 		lookup(popular.byStripped, variant, RuleCommonWord)

@@ -397,6 +397,33 @@ version in the pattern, as above, so that the next release is judged again.
 
 ## TD008 typosquat-suspect
 
+**Unicode names.** The `unicode-homoglyph` rule compares a bounded Unicode
+confusables skeleton with the skeleton of an ASCII popular name. For example,
+`\u0441halk` (Cyrillic small es followed by `halk`) resembles `chalk`. Both sides
+are canonicalized first; at least one non-ASCII character in the candidate must
+have a retained mapping, and the complete skeletons must match, including scope
+and separators. Mixing scripts alone never triggers this rule. A name entirely
+in another script can match when its skeleton is exactly a popular ASCII name;
+ordinary Russian, Greek or Japanese names are not transliterated or rejected by
+the rule, and names that are themselves popular remain exempt.
+
+The source is [Unicode confusables](https://www.unicode.org/Public/security/latest/confusables.txt),
+version 18.0.0, dated 2026-08-06 and fetched 2026-09-29. The checked-in generated
+subset has 1,862 mappings whose full targets fit ASCII package-name characters,
+lowercased and closed under the ASCII mappings. The generator pins the source
+SHA256; [the provenance and regeneration notes](../internal/typosquat/HOMOGLYPHS.md)
+describe how to reproduce it. This is a package-name heuristic, not the full UTS
+#39 algorithm: it does not normalize combining marks, perform script detection,
+or cover confusables whose targets fall outside the retained ASCII subset.
+
+npm does not accept Unicode names. To diagnose such text without presenting it
+as an installable package, `trustdiff check 'npm:сhalk' --offline --format json`
+runs TD008 locally and explicitly skips the other applicable checks. No registry
+or advisory requests are made for that input, with or without `--offline`; a
+version supplied in the input is not verified. The usual policy level, allow
+entries and `--fail-on` still apply. General npm ref and registry validation stay
+strict. Unicode names with no supported ASCII skeleton remain usage errors.
+
 **Detects.** A package whose name looks like a misspelling of a popular package in the same ecosystem. The name is compared with the ecosystem's popular list (an embedded snapshot of about 14 900 npm names, 14 900 PyPI names and 5 000 crates, fetched on 2026-09-09 from the sources named in `internal/typosquat/data`, or a refreshed copy under the cache directory when it is less than 30 days old) using edit distance with a length-based threshold, adjacent transpositions, separator swaps, npm scope confusion, `py`, `python`, `js` and `node` affixes, digit and letter confusables and common-word insertions. A name that is itself popular is never a suspect. A match is reported at the level the policy sets only for a candidate that could still be a squat: one whose first release is less than a year old, or whose weekly downloads are below `low-usage.min_weekly_downloads`. A package that is neither is one a project has been living with, and it is reported at `warn` however the policy is set, because failing a gate on a name a project has installed for years is a cost with no finding behind it. One thing takes that back: how far behind the name it resembles the candidate is. Where the registry gives weekly downloads for both and the neighbor has a thousand times the candidate's, the demotion does not apply, because a package that far behind the name it imitates is where a typo lands whatever its age. A hundredfold was the figure until 2026-09-12, when a pass over ten public lockfiles found it firing on nothing but packages with years of history and real users, between 104 and 476 times behind the names they resemble, while the malware it was written for sits fourteen thousand times behind. A fact the run could not read never lowers the level, so a registry that did not answer leaves the finding where the policy put it, and a neighbor nobody could count vetoes nothing. One thing takes the veto back in turn: a name cannot have been registered to catch the typos of a name that did not exist yet, so a candidate whose first release is earlier than the neighbor's keeps its demotion whatever the gap, and its evidence carries `existed_before`. For a scoped popular name the threshold is read from the bare half alone: a scope is shared by every package inside it, so it is not the part a squatter imitates, and while the whole spelling decided, `@loaders.gl/` cleared the ten-rune line on its own and every package in that scope was two edits from every other one in it. The distance is still measured over the whole name, so a misspelled scope costs its edits like any other. As a cross-check, deps.dev's similarly named packages are consulted; a neighbor that is much more popular is added to the evidence and reported on its own when no rule matched. Where a rule did match, the finding stands on the popular list alone and a deps.dev outage changes nothing. Where no rule matched and the cross-check could not be made, the check reports itself as skipped rather than as a clean name: the list is embedded and cannot fail, so a name it does not resemble is half an answer, and the cross-check is the half that catches a look-alike the list has no entry for. An ecosystem deps.dev does not index is an answer rather than an outage, and the list then settles it. Skipped for an ecosystem without a popular list. Applies to every ecosystem.
 
 **Why it matters.** In July 2017 a user published about forty packages under names one character away from popular ones; `crossenv`, the look-alike of `cross-env`, sent the environment variables of every machine that installed it to the attacker's server and went unnoticed for two weeks ([npm, 1 August 2017](https://blog.npmjs.org/post/163723642530/crossenv-malware-on-the-npm-registry)). The `plain-crypto-js` of the 2026 axios compromise borrowed the name of `crypto-js` for the same reason. Note the limits: the rules match `crossenv`, but a made-up prefix such as `plain-` is not in the common-word list, so `plain-crypto-js` was caught by TD009 and TD012 rather than by this check.
@@ -407,8 +434,10 @@ version in the pattern, as above, so that the next release is judged again.
 |---|---|
 | `candidate` | the evaluated name in canonical spelling |
 | `neighbor` | the popular name it resembles (when a rule matched) |
-| `rule` | the rule that matched: `separator-swap`, `scope-confusion`, `language-affix`, `confusable-characters`, `common-word`, `transposition` or `edit-distance` (when a rule matched) |
+| `rule` | the rule that matched: `separator-swap`, `scope-confusion`, `language-affix`, `confusable-characters`, `unicode-homoglyph`, `common-word`, `transposition` or `edit-distance` (when a rule matched) |
 | `distance` | the Damerau-Levenshtein distance to the neighbor (when a rule matched) |
+| `skeleton` | the shared bounded ASCII skeleton of the candidate and neighbor (`unicode-homoglyph` only) |
+| `unicode_version` | the Unicode confusables data version used for that skeleton (`unicode-homoglyph` only) |
 | `list_fetched` | the date of the popular list consulted, `yyyy-mm-dd` |
 | `deps_dev_neighbor` | a similarly named, much more popular package deps.dev returned (when the cross-check found one) |
 | `standing` | what the level turned on: `young`, `low-usage`, `established`, `overshadowed`, `age-unknown` or `usage-unknown` |

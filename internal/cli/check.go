@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -25,6 +26,7 @@ import (
 	"github.com/vahapogut/trustdiff/internal/registry/npm"
 	"github.com/vahapogut/trustdiff/internal/registry/pypi"
 	"github.com/vahapogut/trustdiff/internal/report"
+	"github.com/vahapogut/trustdiff/internal/typosquat"
 	"github.com/vahapogut/trustdiff/internal/version"
 )
 
@@ -55,7 +57,11 @@ version behind it, a git URL or a path or a range trustdiff cannot read, is name
 beside the report rather than guessed at.
 
 The policy comes from --policy, else from the .trustdiff.yaml found upward from the
-working directory, else from the user-level policy, else from the built-in defaults.`,
+working directory, else from the user-level policy, else from the built-in defaults.
+
+An npm name containing a supported Unicode look-alike gets a local name-only
+diagnostic. npm does not accept these names: TD008 runs, other checks skip, and
+no registry or advisory requests are made for that input.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: a.runCheck,
 	}
@@ -90,9 +96,12 @@ func (a *App) runCheck(cmd *cobra.Command, args []string) error {
 		return Usagef("%v", err)
 	}
 
-	loader, err := loaderFactory(a, now)
-	if err != nil {
-		return Usagef("%v", err)
+	var loader checks.Loader
+	if slices.ContainsFunc(targets, func(t checkTarget) bool { return !t.nameOnly }) {
+		loader, err = loaderFactory(a, now)
+		if err != nil {
+			return Usagef("%v", err)
+		}
 	}
 
 	// A manifest's declarations are resolved through the run's own loader, so the
@@ -110,7 +119,7 @@ func (a *App) runCheck(cmd *cobra.Command, args []string) error {
 		Now:     now,
 		Log:     a.Opts.Log,
 	}
-	outcomes := runner.Evaluate(cmd.Context(), inputs)
+	outcomes := evaluateCheckInputs(cmd.Context(), runner, inputs, targets)
 
 	rep := report.Build(checks.Subjects(outcomes), report.CurrentTool(), report.Policy{
 		Path:     policyPath,
@@ -138,6 +147,8 @@ func (a *App) runCheck(cmd *cobra.Command, args []string) error {
 // exists.
 type checkTarget struct {
 	ref model.PackageRef
+	// nameOnly is a Unicode npm spelling diagnosed without registry requests.
+	nameOnly bool
 	// manifest is the parsed file, nil when the argument was a ref.
 	manifest *manifest.Manifest
 }
@@ -155,6 +166,10 @@ func readCheckArgs(args []string) ([]checkTarget, error) {
 			targets = append(targets, checkTarget{ref: ref})
 			continue
 		}
+		if ref, ok := unicodeNPMDiagnostic(arg); ok {
+			targets = append(targets, checkTarget{ref: ref, nameOnly: true})
+			continue
+		}
 		if _, ok := manifest.For(arg); !ok {
 			return nil, Usagef("%v", err)
 		}
@@ -165,6 +180,69 @@ func readCheckArgs(args []string) ([]checkTarget, error) {
 		targets = append(targets, checkTarget{manifest: m})
 	}
 	return targets, nil
+}
+
+// unicodeNPMDiagnostic admits only a non-ASCII confusable whose ASCII skeleton
+// would be a valid npm ref. General model and registry validation stays strict:
+// this input can be diagnosed, but cannot be queried as an npm package.
+func unicodeNPMDiagnostic(arg string) (model.PackageRef, bool) {
+	arg = strings.TrimSpace(arg)
+	if !strings.HasPrefix(arg, "npm:") {
+		return model.PackageRef{}, false
+	}
+	rest := strings.TrimPrefix(arg, "npm:")
+	name, version := rest, ""
+	if at := strings.LastIndex(rest, "@"); at > 0 {
+		name, version = rest[:at], rest[at+1:]
+	}
+	if strings.TrimSpace(name) != name {
+		return model.PackageRef{}, false
+	}
+	skeleton, changed := typosquat.HomoglyphSkeleton(typosquat.Canonical(model.NPM, name))
+	if !changed {
+		return model.PackageRef{}, false
+	}
+	// Reconstruct the suffix verbatim so that an empty trailing @ still fails.
+	if _, err := model.ParseRef("npm:" + skeleton + rest[len(name):]); err != nil {
+		return model.PackageRef{}, false
+	}
+	return model.PackageRef{Ecosystem: model.NPM, Name: name, Version: version}, true
+}
+
+func evaluateCheckInputs(ctx context.Context, runner *checks.Runner, inputs []checks.Input, targets []checkTarget) []checks.Outcome {
+	names := map[model.PackageRef]bool{}
+	for _, target := range targets {
+		if target.nameOnly {
+			names[target.ref] = true
+		}
+	}
+	if len(names) == 0 {
+		return runner.Evaluate(ctx, inputs)
+	}
+	out := make([]checks.Outcome, len(inputs))
+	for _, local := range []bool{false, true} {
+		var group []checks.Input
+		var positions []int
+		for i, in := range inputs {
+			if names[in.Ref] == local {
+				group = append(group, in)
+				positions = append(positions, i)
+			}
+		}
+		if len(group) == 0 {
+			continue
+		}
+		var results []checks.Outcome
+		if local {
+			results = runner.EvaluateNames(ctx, group)
+		} else {
+			results = runner.Evaluate(ctx, group)
+		}
+		for i := range results {
+			out[positions[i]] = results[i]
+		}
+	}
+	return out
 }
 
 // readManifest reads one manifest named on the command line, and only if it is a

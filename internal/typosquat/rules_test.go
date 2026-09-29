@@ -82,6 +82,7 @@ var suspectCases = []suspectCase{
 	{name: "digit one for l", eco: model.NPM, popular: []string{"lodash"}, input: "1odash", want: "lodash", rule: RuleConfusable, distance: 1},
 	{name: "zero for o", eco: model.NPM, popular: []string{"react-dom"}, input: "react-d0m", want: "react-dom", rule: RuleConfusable, distance: 1},
 	{name: "two digits beyond the edit threshold", eco: model.PyPI, popular: []string{"pillow"}, input: "pi11ow", want: "pillow", rule: RuleConfusable, distance: 2},
+	{name: "Cyrillic c looks like Latin c", eco: model.NPM, popular: []string{"chalk"}, input: "\u0441halk", want: "chalk", rule: RuleHomoglyph, distance: 1},
 	{name: "utils inserted", eco: model.NPM, popular: []string{"lodash"}, input: "lodash-utils", want: "lodash", rule: RuleCommonWord, distance: 6},
 	{name: "cli inserted", eco: model.PyPI, popular: []string{"requests"}, input: "requests-cli", want: "requests", rule: RuleCommonWord, distance: 4},
 	{name: "dev inserted in front", eco: model.Cargo, popular: []string{"serde"}, input: "dev-serde", want: "serde", rule: RuleCommonWord, distance: 4},
@@ -127,6 +128,9 @@ func TestSuspect(t *testing.T) {
 				t.Fatalf("Suspect(%q) found nothing, want %q by %s", tt.input, tt.want, tt.rule)
 			}
 			want := Match{Candidate: Canonical(tt.eco, tt.input), Neighbor: tt.want, Rule: tt.rule, Distance: tt.distance}
+			if tt.rule == RuleHomoglyph {
+				want.Skeleton, _ = HomoglyphSkeleton(want.Candidate)
+			}
 			if got != want {
 				t.Errorf("Suspect(%q) = %+v, want %+v", tt.input, got, want)
 			}
