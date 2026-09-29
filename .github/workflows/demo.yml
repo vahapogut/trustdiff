@@ -20,7 +20,8 @@
 #   charmbracelet/vhs-action v2.1.1   f6d7db07a432fcd3b06772628d36a57f96d95dcf
 #                                     (tag object 60ed28058cc5ec1ac4edbf3a6380a1ea17b89c42)
 #   actions/upload-artifact v7.0.1    043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-#   actions/download-artifact v6.0.0  018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
+#   actions/download-artifact v8.0.1  3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+# The download-artifact tag was reverified on 2026-09-29.
 #
 # Two jobs, and the split is the point. The recording job runs vhs, which installs
 # ttyd and ffmpeg of its own and downloads fonts, and it has no token and no

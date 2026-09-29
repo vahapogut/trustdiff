@@ -17,8 +17,9 @@
 #   gh api repos/<owner>/<repo>/git/tags/<sha> --jq .object.sha:
 #   actions/checkout v7.0.1        3d3c42e5aac5ba805825da76410c181273ba90b1
 #   actions/setup-go v7.0.0        b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
-#   github/codeql-action v4.38.0   b96794f015dfd88f77b49b1c93e0fa7110f94c63
-#                                  (tag object 4bd7200e1f146b1c937cae12d258b50f41a53cf8)
+#   github/codeql-action v4.38.1   1c5b675653bb5c22dbe9b12b556ec555138e09fd
+#                                  (tag object c23de5a82f64bb08c6d9f28844551440ca298e76)
+# The CodeQL annotated tag was dereferenced again on 2026-09-29.
 
 name: selftest
 
