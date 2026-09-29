@@ -1,0 +1,40 @@
+name: README translations
+
+on:
+  push:
+    branches: [main]
+    paths: [README.md, "docs/readme/**", .github/workflows/readme-translations.yml]
+  pull_request:
+    paths: [README.md, "docs/readme/**", .github/workflows/readme-translations.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compare translated source revisions with the English README
+        shell: bash
+        run: |
+          failed=0
+          current=$(git rev-parse HEAD:README.md)
+          for translation in docs/readme/*.md; do
+            source=$(sed -n 's/^<!-- trustdiff-readme-source: \([0-9a-f]\{40\}\) -->$/\1/p' "$translation")
+            blob=$(sed -n 's/^<!-- trustdiff-readme-blob: \([0-9a-f]\{40\}\) -->$/\1/p' "$translation")
+            if ! [[ "$source" =~ ^[0-9a-f]{40}$ && "$blob" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error file=$translation::Missing or invalid English README source commit/blob."
+              failed=1
+            elif [[ "$blob" != "$current" ]]; then
+              echo "::error file=$translation::English README changed since $source. Review the translation and update its source commit."
+              failed=1
+            else
+              echo "$translation matches English README at $source"
+            fi
+          done
+          exit "$failed"

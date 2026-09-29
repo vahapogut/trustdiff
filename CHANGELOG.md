@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- A partial Turkish README covering installation and the three main workflows, linked to its exact English source revision. A dedicated CI check compares the recorded README content hash with the current English document, so translation drift is visible even after a squash merge or a shallow checkout. (#4)
+
 ### Fixed
 
 - Update the pinned artifact downloader to v8.0.1 and CodeQL SARIF uploader to v4.38.1. The downloader's stricter artifact digest validation is retained; both workflow references and the composite action use verified release commit SHAs. (#7, #8)
