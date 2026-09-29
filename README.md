@@ -6,6 +6,11 @@ trustdiff is a single-binary command line tool that finds trust regressions in a
 
 Version 0.5.2 ships `check` for single packages and for a manifest read at the versions its ranges resolve to, `diff` for pull requests with the GitHub Action, the pre-commit hook and SARIF output, `doctor` for the hardening settings your package managers already support, `baseline` for the registries that only answer about now, an offline advisory mirror, and a Bun scanner that stops an install before anything reaches the disk. It reads nine lockfile formats and evaluates npm, PyPI, crates.io and JSR; see the [roadmap](#roadmap).
 
+Version 0.6.0 adds baseline monitoring with `watch`, optional local npm signature
+verification and sandboxed code analysis, reviewed policy exceptions, Unicode
+look-alike detection, a bulk crates.io index and a pnpm install gate. Its release
+is being prepared; source builds include these changes now.
+
 ## Demo
 
 ![trustdiff checking express, requests and serde](docs/demo.gif)
@@ -85,7 +90,7 @@ Both point at [vahapogut/homebrew-tap](https://github.com/vahapogut/homebrew-tap
 
 The Homebrew line names the cask in full on purpose. Since Homebrew 6.0 a tap that is not one of Homebrew's own has to be trusted before its code will run, and installing a fully qualified name trusts that one cask and nothing else. `brew tap vahapogut/tap` followed by the short name needs a separate `brew trust --cask vahapogut/tap/trustdiff`, and `brew trust vahapogut/tap` accepts everything the tap ever holds, which is more than anyone should hand a third party.
 
-The route that works on every platform, and the only one that lets you check the signature and the provenance yourself, is to download a release from the [releases page](https://github.com/vahapogut/trustdiff/releases). Every release ships one archive per platform (`trustdiff_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows), `checksums.txt`, its cosign bundle `checksums.txt.sigstore.json`, an SPDX SBOM per archive and GitHub build provenance. Download the archive for your platform together with the two checksum files and verify before you unpack; substitute the archive you downloaded for `trustdiff_0.5.2_linux_amd64.tar.gz`.
+The route that works on every platform, and the only one that lets you check the signature and the provenance yourself, is to download a release from the [releases page](https://github.com/vahapogut/trustdiff/releases). Every release ships one archive per platform (`trustdiff_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows), `checksums.txt`, its cosign bundle `checksums.txt.sigstore.json`, an SPDX SBOM per archive and GitHub build provenance. Download the archive for your platform together with the two checksum files and verify before you unpack; substitute the archive you downloaded for `trustdiff_0.6.0_linux_amd64.tar.gz`.
 
 1. Verify the signature on the checksum file (cosign v3 or later). The identity is the release workflow of this repository, running on a version tag.
 
@@ -107,14 +112,14 @@ The route that works on every platform, and the only one that lets you check the
    On Windows, compare the two outputs by eye:
 
    ```powershell
-   (Get-FileHash .\trustdiff_0.5.2_windows_amd64.zip -Algorithm SHA256).Hash
+   (Get-FileHash .\trustdiff_0.6.0_windows_amd64.zip -Algorithm SHA256).Hash
    Select-String windows_amd64 .\checksums.txt
    ```
 
 3. Verify the build provenance with the GitHub CLI.
 
    ```sh
-   gh attestation verify trustdiff_0.5.2_linux_amd64.tar.gz \
+   gh attestation verify trustdiff_0.6.0_linux_amd64.tar.gz \
      --owner vahapogut \
      --signer-workflow vahapogut/trustdiff/.github/workflows/release.yml
    ```
@@ -475,7 +480,7 @@ the separately versioned Bun scanner is 0.5.0.
 - 0.4.1: the five silent passes an independent review of 0.4.0 found, TD016 `lockfile-entry-changed` among them, and plain `requirements` files read whether or not they are hash pinned.
 - 0.5.0: the rest of that review's three remaining sections. `doctor` tells a mistake apart from a choice, `--fix` writes only what is absent, and every wait setting is read in every spelling its package manager accepts. TD017 `version-downgraded`. The repository's own code is no longer reported as one of its dependencies. The parts that run in somebody else's pipeline are closed too: a Bun scanner that fails closed, a pre-commit hook that covers every lockfile format, `action.yml` exercised on all three runners, third-party notices in every archive, and DR110 reading composite actions.
 
-### Current development (Unreleased)
+### Version 0.6.0 (release preparation)
 
 Changes on `main` become available through a source build before the next tagged
 release. Installing the latest release still installs the versions above.
@@ -502,7 +507,7 @@ release. Baselines and `watch` record observed changes without inventing that pa
 ## Principles
 
 - One static binary, no runtime, no vendor account.
-- No telemetry, no auto-update, no analytics, no phone-home of any kind. The only network calls are the registry and advisory requests needed for the packages you ask about, and `--offline` turns those off too.
+- No telemetry, no auto-update, no analytics, no phone-home of any kind. Normal metadata checks query the registries and advisory sources needed for the packages you ask about. Optional [local signature verification](docs/local-attestations.md) also retrieves authenticated trust material; optional [GuardDog analysis](docs/guarddog.md) downloads package sources. `--offline` disables network access, requires a local trust root for signature verification, and refuses GuardDog.
 - Almost no dependencies of its own, because a tool about dependency risk should not add much of it: six third-party modules, enforced in CI.
 - Anything that could not be evaluated is reported as skipped, never as a pass.
 - Releases are reproducible, signed with cosign and attested with GitHub build provenance; [SECURITY.md](SECURITY.md) explains how to verify one and how to report a problem.

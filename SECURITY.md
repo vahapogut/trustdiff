@@ -45,7 +45,7 @@ During 0.x only the latest minor release line receives security fixes, as a patc
 
 ## How this project protects itself
 
-- No telemetry, no auto-update, no analytics, no phone-home of any kind. The only network calls are the registry and advisory requests needed for the packages you ask about, and `--offline` turns those off.
+- No telemetry, no auto-update, no analytics, no phone-home of any kind. Normal metadata checks query registry and advisory sources. Optional [Cosign verification](docs/local-attestations.md) also retrieves authenticated TUF trust material, and optional [GuardDog analysis](docs/guarddog.md) downloads package sources and metadata. `--offline` disables network access: local verification requires cached npm metadata and an explicit local trust root; GuardDog is refused before any subprocess starts.
 - Standard library first. Six third-party modules are allowed (`github.com/spf13/cobra`, `go.yaml.in/yaml/v3`, `github.com/BurntSushi/toml`, `golang.org/x/term`, `golang.org/x/time`, `golang.org/x/mod`) and CI fails when the direct dependency count exceeds six. CGO is disabled.
 - Every GitHub Action is pinned to a full 40-character commit SHA. Build provenance comes from GitHub's native attestation action rather than a reusable workflow that must be referenced by tag, so the pin rule has no exception.
 - Dependabot watches Go modules and GitHub Actions with a 7 day cooldown, so a version that gets pulled shortly after publication is never proposed here. Dependabot alerts and Dependabot security updates are enabled too, so an advisory published against a dependency this repository already has opens an alert and a pull request.
@@ -57,7 +57,7 @@ During 0.x only the latest minor release line receives security fixes, as a patc
 
 ## Verifying a download
 
-Every release publishes `checksums.txt`, its cosign bundle `checksums.txt.sigstore.json`, one archive per platform (`trustdiff_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows) and an SPDX SBOM next to each archive. Download the archive for your platform together with the two checksum files, then run the three steps below from the download directory. Substitute the archive name you downloaded for `trustdiff_0.5.2_linux_amd64.tar.gz`.
+Every release publishes `checksums.txt`, its cosign bundle `checksums.txt.sigstore.json`, one archive per platform (`trustdiff_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows) and an SPDX SBOM next to each archive. Download the archive for your platform together with the two checksum files, then run the three steps below from the download directory. Substitute the archive name you downloaded for `trustdiff_0.6.0_linux_amd64.tar.gz`.
 
 1. Verify the signature on the checksum file. This needs cosign v3 or later. The identity is the release workflow of this repository, running on a version tag.
 
@@ -79,14 +79,14 @@ Every release publishes `checksums.txt`, its cosign bundle `checksums.txt.sigsto
    On Windows, compare the two outputs by eye:
 
    ```powershell
-   (Get-FileHash .\trustdiff_0.5.2_windows_amd64.zip -Algorithm SHA256).Hash
+   (Get-FileHash .\trustdiff_0.6.0_windows_amd64.zip -Algorithm SHA256).Hash
    Select-String windows_amd64 .\checksums.txt
    ```
 
 3. Verify the build provenance with the GitHub CLI. This confirms the archive was built by this repository's release workflow from the tagged commit.
 
    ```sh
-   gh attestation verify trustdiff_0.5.2_linux_amd64.tar.gz \
+   gh attestation verify trustdiff_0.6.0_linux_amd64.tar.gz \
      --owner vahapogut \
      --signer-workflow vahapogut/trustdiff/.github/workflows/release.yml
    ```

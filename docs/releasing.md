@@ -237,8 +237,9 @@ anything at run time. That table can only be written after the release exists.
    reader copies, `- uses: vahapogut/trustdiff@<sha> # <tag>` near "A pull request
    gate", and the sha is the commit this step is about to make rather than the one
    the tag points at: at the tag the action still defaults to the release before
-   it. So commit first, then rewrite the line with the commit's own sha and amend,
-   or push the pin commit and correct the readme in the next one.
+   it. Push the pin commit first, then put that existing commit's sha in the
+   readme in a separate commit. Amending the pin commit changes its sha and
+   would leave the example pointing at the superseded commit.
    `TestREADMEPinsTheActionAtACommit` checks that it is a 40 character sha with a
    `# vX.Y.Z` beside it, which is the half that rots silently; nothing can check
    that it is the newest such commit.

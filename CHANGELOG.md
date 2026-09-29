@@ -6,15 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-29
+
 ### Added
 
 - `watch` evaluates the exact versions in an existing baseline once or at a bounded interval, reports changes in findings and coverage, and compares current owners even when a locked release is unchanged. Online cycles bypass stale HTTP caches; offline cycles explicitly use recorded data. JSON events use the published `trustdiff.watch/1` schema and never approve or rewrite the baseline.
 - Optional local npm SLSA verification with `--verify-npm-attestations` and Cosign 3.1.3. Exact package/version/SHA512 binding, certificate identity and normal Sigstore transparency verification are required; verification errors remain unavailable rather than falling back to deps.dev. Default builds keep six direct Go dependencies.
 - Optional `--guarddog` source-analysis supplements for suspicious, identified public registry releases. The reviewed GuardDog 3.2.0 runs with its sandbox on Linux/macOS, bounded time/output/package count, exact versions, and no shell. Partial and failed analyses are explicit and prevent exit 0; metadata findings remain unchanged. Native Windows, private mirrors and ambiguous locked sources are reported unsupported rather than scanning a substitute package.
 - `policy allow <check> <package-ref>` previews one reviewed exception with required reason and expiry. `--write` preserves unrelated policy text, creates a timestamped backup and replaces the file atomically. Broad patterns, expired dates and ambiguous edits are refused.
-
-
-
 - `cache refresh --crates-dump` builds a bounded, hash-checked plain-file index of the public crates.io database for bulk `scan` runs. Scans preload only requested crates, grouped by shard, and retain the normal API path for single-package `check`. `cache status` reports snapshot age; stale metadata falls back with a diagnostic, while a damaged selected shard or a package newer than the snapshot stays unavailable. Publication times, available publishers, yank flags, checksums and current owners are indexed; scripts, dependency rows, downloads, trusted-publisher evidence and historical ownership are not invented from missing data. Refreshes preserve the previous index on failure, and clearing shares the refresh lock. Ctrl+C and supported termination signals cancel the command with exit 3 and let refresh cleanup run. (#2)
 
 - A dependency-free pnpm 10 install hook that invokes trustdiff for resolved registry packages, including repeat and frozen-lockfile installs. It preserves alias/scope/peer identities, refuses unchecked or malformed reports, and stops on blocking findings, missing binaries, timeouts and output-limit violations. Documentation identifies local exclusions and unsupported dependency sources; real pnpm lifecycle tests run against a synthetic local registry on Linux and Windows. (#3)
@@ -333,7 +332,8 @@ Project skeleton, published as a prerelease so that the release pipeline (checks
 - Continuous integration: lint, tests on Linux, macOS and Windows with Go 1.26 and 1.27, `govulncheck`, `gosec`, a binary size gate and a direct dependency budget gate.
 - Signed releases: reproducible builds for Linux, macOS and Windows on amd64 and arm64, `checksums.txt`, an SBOM, cosign keyless signatures and GitHub build provenance. `SECURITY.md` explains how to verify a download.
 
-[Unreleased]: https://github.com/vahapogut/trustdiff/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/vahapogut/trustdiff/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/vahapogut/trustdiff/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/vahapogut/trustdiff/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/vahapogut/trustdiff/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/vahapogut/trustdiff/compare/v0.4.1...v0.5.0

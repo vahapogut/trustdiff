@@ -17,10 +17,10 @@ released milestones. The historical [PLAN](PLAN.md) is preserved for context.
 
 The Homebrew cask and Scoop bucket both name CLI 0.5.2. The npm package
 `@trustdiff/bun-scanner` has its own version, 0.5.0. Their version numbers do not
-need to match. The untagged npm staging correction is described under Unreleased
-in the changelog.
+need to match. The npm staging correction is included in the prepared 0.6.0
+changelog; distribution remains on the versions above until publication succeeds.
 
-## Current development
+## Version 0.6.0 release preparation
 
 The four starter issues seeded by the original plan were follow-up development,
 not evidence that every later idea had been implemented:
@@ -40,7 +40,8 @@ not evidence that every later idea had been implemented:
   linked to an exact English source commit. CI reports a stale source revision
   when the English README changes without updating the translation.
 
-These changes remain **Unreleased** until included in a published version.
+These changes are included in the prepared 0.6.0 release. A changelog entry or
+tag alone does not publish them; the release workflow must complete first.
 
 ## M5 implementation
 
@@ -55,7 +56,7 @@ The subsequently approved implementation is included in the next release:
 | 5.4 GuardDog | [Contract](guarddog.md), optional GuardDog 3.2.0 sandbox on Linux/macOS, strict source identity, subprocess cancellation/output/partial-result tests |
 | 5.6 policy allow | [Contract](policy-allow.md), exact exceptions, reason/expiry, preview/backup/atomic write, comment and expiry regressions |
 
-These features remain **Unreleased** until a tag is published. Optional external
+These features are included in the prepared 0.6.0 release. Optional external
 verifiers do not add a runtime requirement to the normal metadata-only command.
 
 Item 5.5 remains unavailable from the source: the public crates.io dump does not provide a

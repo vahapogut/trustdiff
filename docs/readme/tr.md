@@ -42,8 +42,8 @@ macOS Gatekeeper uyarıları ve bunların doğrulama sonrasında nasıl ele alı
 da orada açıklanır.
 
 Yayımlanmış CLI sürümü 0.5.2, ayrı yayımlanan Bun tarayıcı paketi 0.5.0'dır.
-`main` üzerindeki yeni özellikler yayımlanana kadar `Unreleased` olarak izlenir;
-`@latest` komutu henüz yayımlanmamış özellikleri kurmaz.
+`main` üzerindeki yeni özellikler 0.6.0 sürümü için hazırlandı; yayın iş akışı
+tamamlanana kadar `@latest` komutu bu özellikleri kurmaz.
 
 ## Üç kullanım yolu
 
@@ -151,6 +151,9 @@ Kaynak kodda yeni eklenen özellikler: baseline içindeki paketleri tekrar incel
 sayısı sorgularını atlama, Linux/macOS üzerinde GuardDog 3.2.0 ile isteğe bağlı
 [kod incelemesi](../guarddog.md) ve gerekçe/bitiş tarihiyle
 [`policy allow`](../policy-allow.md). Harici araçlar normal kullanıma zorunlu değildir.
+Cosign çevrimiçi çalışırken güven kökü verilerini, GuardDog paket kaynaklarını
+indirir. Çevrimdışı imza doğrulaması yerel güven kökü ve önbellekteki npm
+verilerini gerektirir; GuardDog çevrimdışı çalıştırılmaz.
 Özel depo paketlerinin yerine aynı adlı public paket incelenmez. crates.io'nun
 yayımlamadığı geçmiş sahiplik bilgisi doğrulanmış kabul edilmez. Sürüm durumu
 [yol haritasında](../roadmap.md) ayrı gösterilir.
