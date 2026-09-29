@@ -1,0 +1,12 @@
+{
+  "name": "trustdiff-pnpm-hook-tests",
+  "private": true,
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.cjs"
+  }
+}

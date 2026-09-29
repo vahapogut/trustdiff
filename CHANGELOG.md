@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- A dependency-free pnpm 10 install hook that invokes trustdiff for resolved registry packages, including repeat and frozen-lockfile installs. It preserves alias/scope/peer identities, refuses unchecked or malformed reports, and stops on blocking findings, missing binaries, timeouts and output-limit violations. Documentation identifies local exclusions and unsupported dependency sources; real pnpm lifecycle tests run against a synthetic local registry on Linux and Windows. (#3)
+
 - TD008 recognizes exact Unicode confusable skeleton collisions with popular package names. The checked-in ASCII subset is generated from pinned Unicode data with its license and source hash; ordinary non-Latin names are not flagged just for their script. `check npm:<Unicode name>` can diagnose supported look-alike spellings without querying the registry or relaxing npm's name validation. Other checks explicitly skip this name-only input. (#1)
 
 - A partial Turkish README covering installation and the three main workflows, linked to its exact English source revision. A dedicated CI check compares the recorded README content hash with the current English document, so translation drift is visible even after a squash merge or a shallow checkout. (#4)

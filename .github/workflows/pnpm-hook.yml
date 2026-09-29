@@ -1,0 +1,52 @@
+# Pins match the existing bun-scanner workflow. pnpm 10.33.2's API and
+# executable lifecycle behavior were verified on 2026-09-29.
+name: pnpm-hook
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "integrations/pnpm-hook/**"
+      - ".github/workflows/pnpm-hook.yml"
+  pull_request:
+    paths:
+      - "integrations/pnpm-hook/**"
+      - ".github/workflows/pnpm-hook.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: pnpm 10 hook on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - name: Install the pinned pnpm test runner outside the integration
+        run: npm install --prefix "$RUNNER_TEMP/pnpm-hook-tools" --ignore-scripts --no-audit --no-fund --package-lock=false pnpm@10.33.2
+      - name: Verify zero dependencies and run unit and real install tests
+        env:
+          HTTP_PROXY: http://127.0.0.1:9
+          HTTPS_PROXY: http://127.0.0.1:9
+          NO_PROXY: 127.0.0.1,localhost
+        run: |
+          node -e 'const p = require("./integrations/pnpm-hook/package.json"); for (const k of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) { if (Object.keys(p[k] || {}).length) throw new Error(k + " must be empty"); }'
+          PNPM_CLI="$RUNNER_TEMP/pnpm-hook-tools/node_modules/pnpm/bin/pnpm.cjs" node --test integrations/pnpm-hook/test/*.test.cjs
