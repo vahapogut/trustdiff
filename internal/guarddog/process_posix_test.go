@@ -41,8 +41,6 @@ func helperClient(t *testing.T, body string, timeout time.Duration) *Client {
 }
 
 func TestExecutableArgumentsIdentityAndIsolation(t *testing.T) {
-	logPath := filepath.Join(t.TempDir(), "calls")
-	t.Setenv("GUARDDOG_TEST_LOG", logPath)
 	for _, tt := range []struct {
 		ecosystem model.Ecosystem
 		command   string
@@ -53,6 +51,8 @@ func TestExecutableArgumentsIdentityAndIsolation(t *testing.T) {
 		{model.Cargo, "crates", "example_crate"},
 	} {
 		t.Run(string(tt.ecosystem), func(t *testing.T) {
+			logPath := filepath.Join(t.TempDir(), "calls")
+			t.Setenv("GUARDDOG_TEST_LOG", logPath)
 			body := `printf '%s\n' "$PWD" "$TMPDIR" "$TMP" "$TEMP" "$@" >> "$GUARDDOG_TEST_LOG"
 if [ "$1" = "--version" ]; then printf '3.2.0\n'; exit 0; fi
 [ "$(find . -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" = '0' ]
@@ -95,10 +95,47 @@ printf '{"package":"%s","package_version":"%s","issues":0,"errors":{},"results":
 			if !reflect.DeepEqual(lines[9:9+len(want)], want) || !reflect.DeepEqual(lines[13+len(want):], want) {
 				t.Fatalf("unexpected scan argv: %q", lines)
 			}
-			if err := os.Remove(logPath); err != nil {
-				t.Fatal(err)
-			}
 		})
+	}
+}
+
+func TestSymlinkedTemporaryParentUsesCanonicalPaths(t *testing.T) {
+	parent := t.TempDir()
+	canonicalParent, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "temporary-alias")
+	if err := os.Symlink(parent, alias); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(t.TempDir(), "paths")
+	t.Setenv("GUARDDOG_TEST_LOG", logPath)
+	binary := helperBinary(t, `physical="$(pwd -P)"
+printf '%s\n' "$physical" "$TMPDIR" >> "$GUARDDOG_TEST_LOG"
+printf '%s\n' "$physical"`)
+	client, err := New(Options{Binary: binary})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", alias)
+	output, err := client.run(t.Context(), "probe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(output)) != "<guarddog-temp>/work" {
+		t.Fatalf("physical working path was not normalized: %q", output)
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(paths) != 2 || filepath.Dir(paths[0]) != filepath.Dir(paths[1]) || filepath.Dir(filepath.Dir(paths[0])) != canonicalParent {
+		t.Fatalf("cwd and scratch do not use canonical parent %q: %q", canonicalParent, paths)
+	}
+	if _, err := os.Stat(filepath.Dir(paths[0])); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("canonical working directory survived cleanup: %v", err)
 	}
 }
 

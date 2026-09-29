@@ -47,6 +47,14 @@ func (c *Client) run(ctx context.Context, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("create GuardDog working directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
+	// macOS resolves /var to /private/var for cwd and sandbox paths. Resolve our
+	// private root once so cwd, scratch, output normalization and cleanup all use
+	// the same identity, including when TMPDIR itself passes through a symlink.
+	canonicalDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve GuardDog working directory: %w", err)
+	}
+	dir = canonicalDir
 	work, scratch := filepath.Join(dir, "work"), filepath.Join(dir, "scratch")
 	for _, path := range []string{work, scratch} {
 		if err := os.Mkdir(path, 0o700); err != nil {

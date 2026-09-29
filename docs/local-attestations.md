@@ -34,7 +34,7 @@ are serialized and use fixed arguments without a shell. A bundle response is
 limited to 2 MiB before parsing. Missing, unsupported, mismatched or invalid
 evidence is reported as unavailable provenance, never a successful local
 verification and never silently replaced by deps.dev. Set
-`on_data_unavailable: fail` in the policy to require complete evidence (exit3).
+`on_data_unavailable: fail` in the policy to require complete evidence (exit 3).
 Without the opt-in flag, the existing registry/deps.dev behavior is unchanged.
 
 Ordinary tests use a recorded response and a fake process. The `integration`

@@ -146,9 +146,9 @@ veriye ulaşılamadı. Eşik `--fail-on` ile değiştirilebilir.
 ## Çevirinin kapsamı ve güncelliği
 
 Kaynak kodda yeni eklenen özellikler: baseline içindeki paketleri tekrar inceleyen
-[`watch`](../watch.md), Cosign3.1.3 ile isteğe bağlı
+[`watch`](../watch.md), Cosign 3.1.3 ile isteğe bağlı
 [yerel npm imza doğrulaması](../local-attestations.md), gerekli olmadığında indirme
-sayısı sorgularını atlama, Linux/macOS üzerinde GuardDog3.2.0 ile isteğe bağlı
+sayısı sorgularını atlama, Linux/macOS üzerinde GuardDog 3.2.0 ile isteğe bağlı
 [kod incelemesi](../guarddog.md) ve gerekçe/bitiş tarihiyle
 [`policy allow`](../policy-allow.md). Harici araçlar normal kullanıma zorunlu değildir.
 Özel depo paketlerinin yerine aynı adlı public paket incelenmez. crates.io'nun
