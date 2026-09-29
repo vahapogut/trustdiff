@@ -145,14 +145,24 @@ veriye ulaşılamadı. Eşik `--fail-on` ile değiştirilebilir.
 
 ## Çevirinin kapsamı ve güncelliği
 
+Kaynak kodda yeni eklenen özellikler: baseline içindeki paketleri tekrar inceleyen
+[`watch`](../watch.md), Cosign3.1.3 ile isteğe bağlı
+[yerel npm imza doğrulaması](../local-attestations.md), gerekli olmadığında indirme
+sayısı sorgularını atlama, Linux/macOS üzerinde GuardDog3.2.0 ile isteğe bağlı
+[kod incelemesi](../guarddog.md) ve gerekçe/bitiş tarihiyle
+[`policy allow`](../policy-allow.md). Harici araçlar normal kullanıma zorunlu değildir.
+Özel depo paketlerinin yerine aynı adlı public paket incelenmez. crates.io'nun
+yayımlamadığı geçmiş sahiplik bilgisi doğrulanmış kabul edilmez. Sürüm durumu
+[yol haritasında](../roadmap.md) ayrı gösterilir.
+
 Bu, giriş, kurulum ve üç temel kullanım yolunun kısmi çevirisidir. Bütün TD/DR
 kontrol tabloları, karşılaştırmalar, ayrıntılı kurulum doğrulaması ve tüm politika
 seçenekleri henüz çevrilmemiştir; bu konularda İngilizce README'yi okuyun.
 
-<!-- trustdiff-readme-source: d3ff89fad7404e277cc4510d330066caa43d13b4 -->
-<!-- trustdiff-readme-blob: c0c36a3b95a223cc96ed14cf513f76476b96b734 -->
+<!-- trustdiff-readme-source: c0a75d296ca2f92ab9a6b890fe0961cb977c298d -->
+<!-- trustdiff-readme-blob: 2fffb00d4f02ac237939d693ec8a61c1dfb09fa5 -->
 
-Kaynak: [İngilizce README, d3ff89fad7404e277cc4510d330066caa43d13b4](https://github.com/vahapogut/trustdiff/blob/d3ff89fad7404e277cc4510d330066caa43d13b4/README.md).
+Kaynak: [İngilizce README, c0a75d296ca2f92ab9a6b890fe0961cb977c298d](https://github.com/vahapogut/trustdiff/blob/c0a75d296ca2f92ab9a6b890fe0961cb977c298d/README.md).
 Çeviri yalnızca bu kaynak sürümüne göre günceldir. Yukarıdaki güncellik kontrolü
 başarısızsa İngilizce README çeviriden sonra değişmiş olabilir; geçerli davranışı
 İngilizce dosyadan kontrol edin. CI, kaydedilen kaynak README içerik özeti güncel
