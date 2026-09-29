@@ -4,12 +4,11 @@
 
 trustdiff is a single-binary command line tool that finds trust regressions in a project's dependency tree before they land. A trust regression is not a change in a package's code but a change in the signals that made the package trustworthy: a version published by an account that never published one before, a release that lost the provenance every earlier release had, a version that adds an install script or a dependency the previous one did not have, a name one keystroke away from a popular package, a version with a known malicious or vulnerable advisory. Each of these preceded a real incident (event-stream in 2018, ua-parser-js in 2021, Shai-Hulud in 2025, axios in 2026), and each is visible in registry metadata before anyone has looked at the code. Cooldowns buy time and malware feeds catch what is already known; trustdiff tells you, across npm (npm, pnpm, yarn, bun), PyPI (pip, uv, poetry) and crates.io, in one binary with no account and no telemetry, that a dependency's trust signals regressed relative to its own history.
 
-Version 0.5.2 ships `check` for single packages and for a manifest read at the versions its ranges resolve to, `diff` for pull requests with the GitHub Action, the pre-commit hook and SARIF output, `doctor` for the hardening settings your package managers already support, `baseline` for the registries that only answer about now, an offline advisory mirror, and a Bun scanner that stops an install before anything reaches the disk. It reads nine lockfile formats and evaluates npm, PyPI, crates.io and JSR; see the [roadmap](#roadmap).
+Version 0.6.0 ships `check` for single packages and for a manifest read at the versions its ranges resolve to, `diff` for pull requests with the GitHub Action, the pre-commit hook and SARIF output, `doctor` for the hardening settings your package managers already support, `baseline` for the registries that only answer about now, an offline advisory mirror, and a Bun scanner that stops an install before anything reaches the disk. It reads nine lockfile formats and evaluates npm, PyPI, crates.io and JSR; see the [roadmap](#roadmap).
 
-Version 0.6.0 adds baseline monitoring with `watch`, optional local npm signature
+This release adds baseline monitoring with `watch`, optional local npm signature
 verification and sandboxed code analysis, reviewed policy exceptions, Unicode
-look-alike detection, a bulk crates.io index and a pnpm install gate. Its release
-is being prepared; source builds include these changes now.
+look-alike detection, a bulk crates.io index and a pnpm install gate.
 
 ## Demo
 
@@ -304,7 +303,7 @@ Exit code 0 (no blocking findings).
 In a workflow, write SARIF instead and let code scanning put those findings on the diff:
 
 ```yaml
-- uses: vahapogut/trustdiff@95f6e9eff34722dd087051fd33a8e62b92773c1f # v0.5.2
+- uses: vahapogut/trustdiff@7d05729a751fe82c79ea980fae9c9745ef66144c # v0.6.0
   with:
     fail-on: block
     format: sarif
@@ -464,14 +463,14 @@ Native cooldowns: npm [`min-release-age`](https://docs.npmjs.com/cli/v11/using-n
 
 - It does not wrap, alias or replace your package manager, and it is not a registry proxy. Run it before an install or in CI; the install itself is unchanged.
 - It does not compete with malware feeds on latency. Its advisory checks use OSV and deps.dev; a vendor feed will list a new malicious package earlier. The history-relative checks are for the hours before any feed knows.
-- It does not sandbox install scripts and does not analyze package source code. GuardDog does the latter; trustdiff may call it in a later release.
-- It is not a service: no dashboard, no account, no vendor feed, nothing sent anywhere.
+- Normal metadata checks do not analyze package source code or execute install scripts. Optional [GuardDog analysis](docs/guarddog.md) downloads package sources and inspects them in a sandbox on Linux/macOS.
+- It is not a hosted service: no dashboard, account or telemetry.
 - It does not do license compliance or SBOM generation.
 
 ## Roadmap
 
 The milestones below have been released. They describe shipped functionality,
-not an outstanding task list. The latest CLI release is [0.5.2](https://github.com/vahapogut/trustdiff/releases/tag/v0.5.2);
+not an outstanding task list. The latest CLI release is [0.6.0](https://github.com/vahapogut/trustdiff/releases/tag/v0.6.0);
 the separately versioned Bun scanner is 0.5.0.
 
 - 0.2.0: `diff --base <git-ref>` and `scan` over `package-lock.json`, `pnpm-lock.yaml`, `uv.lock` and `Cargo.lock`, findings on lockfile lines, TD013 and TD014, SARIF and markdown output, a composite GitHub Action, a pre-commit hook and `hook install`.
@@ -480,10 +479,10 @@ the separately versioned Bun scanner is 0.5.0.
 - 0.4.1: the five silent passes an independent review of 0.4.0 found, TD016 `lockfile-entry-changed` among them, and plain `requirements` files read whether or not they are hash pinned.
 - 0.5.0: the rest of that review's three remaining sections. `doctor` tells a mistake apart from a choice, `--fix` writes only what is absent, and every wait setting is read in every spelling its package manager accepts. TD017 `version-downgraded`. The repository's own code is no longer reported as one of its dependencies. The parts that run in somebody else's pipeline are closed too: a Bun scanner that fails closed, a pre-commit hook that covers every lockfile format, `action.yml` exercised on all three runners, third-party notices in every archive, and DR110 reading composite actions.
 
-### Version 0.6.0 (release preparation)
+### Version 0.6.0
 
-Changes on `main` become available through a source build before the next tagged
-release. Installing the latest release still installs the versions above.
+Version 0.6.0 includes the following features. Optional external tools are
+installed separately; each linked guide describes its requirements and limits.
 
 | Work | Implementation and usage |
 |---|---|

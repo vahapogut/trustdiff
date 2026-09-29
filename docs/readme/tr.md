@@ -41,9 +41,8 @@ doğrulama adımları [İngilizce kurulum bölümündedir](../../README.md#insta
 macOS Gatekeeper uyarıları ve bunların doğrulama sonrasında nasıl ele alınacağı
 da orada açıklanır.
 
-Yayımlanmış CLI sürümü 0.5.2, ayrı yayımlanan Bun tarayıcı paketi 0.5.0'dır.
-`main` üzerindeki yeni özellikler 0.6.0 sürümü için hazırlandı; yayın iş akışı
-tamamlanana kadar `@latest` komutu bu özellikleri kurmaz.
+Yayımlanmış CLI sürümü 0.6.0, ayrı yayımlanan Bun tarayıcı paketi 0.5.0'dır.
+0.6.0 sürümündeki yeni özellikler ve sınırları aşağıda özetlenir.
 
 ## Üç kullanım yolu
 
@@ -72,7 +71,8 @@ scanner = "@trustdiff/bun-scanner"
 
 pnpm kurulumu için [pnpm hook kılavuzuna](../../integrations/pnpm-hook/README.md)
 bakın. Bu entegrasyonun desteklediği pnpm sürümleri ve dondurulmuş kilit dosyası
-davranışı kılavuzda belirtilir; henüz yayımlanmış CLI sürümünün parçası değildir.
+davranışı kılavuzda belirtilir. Kanca dosyası projeye ayrıca kopyalanır;
+ayrı bir npm paketi olarak yayımlanmaz.
 
 ### 2. Pull request içindeki değişiklikleri kontrol etmek
 
@@ -136,7 +136,7 @@ trustdiff scan --offline
 `cache refresh`, çevrimdışı güvenlik duyuruları için OSV verisini indirir.
 `--offline`, ağ isteklerini kapatır. Önbellekte olmayan veriler için kontrol
 atlanır ve nedeni yazılır; çevrimdışı çalışmak her paketin doğrulandığı anlamına
-gelmez. Büyük Cargo taramaları için yeni
+gelmez. Büyük Cargo taramaları için
 [crates.io veri dökümü desteği](../crates-dump.md) ayrı ve açık bir yenileme ister.
 
 Normal değerlendirmede çıkış kodları: `0` engelleyici bulgu yok, `1` eşiğe ulaşan
@@ -145,7 +145,7 @@ veriye ulaşılamadı. Eşik `--fail-on` ile değiştirilebilir.
 
 ## Çevirinin kapsamı ve güncelliği
 
-Kaynak kodda yeni eklenen özellikler: baseline içindeki paketleri tekrar inceleyen
+0.6.0 sürümünde eklenen özellikler: baseline içindeki paketleri tekrar inceleyen
 [`watch`](../watch.md), Cosign 3.1.3 ile isteğe bağlı
 [yerel npm imza doğrulaması](../local-attestations.md), gerekli olmadığında indirme
 sayısı sorgularını atlama, Linux/macOS üzerinde GuardDog 3.2.0 ile isteğe bağlı

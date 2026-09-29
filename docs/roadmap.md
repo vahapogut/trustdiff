@@ -14,16 +14,16 @@ released milestones. The historical [PLAN](PLAN.md) is preserved for context.
 | [0.4.1](https://github.com/vahapogut/trustdiff/releases/tag/v0.4.1) | Review corrections including TD016 and unhashed requirements | `internal/checks/td016.go`, `internal/lockfile/pipreq` |
 | [0.5.0](https://github.com/vahapogut/trustdiff/releases/tag/v0.5.0) | Doctor precision, TD017, local-source handling and integration failure handling | `internal/doctor`, `internal/checks/td017.go`, `internal/checks/runner.go`, Bun and Action regression suites |
 | [0.5.1](https://github.com/vahapogut/trustdiff/releases/tag/v0.5.1), [0.5.2](https://github.com/vahapogut/trustdiff/releases/tag/v0.5.2) | Publishing/workflow and finding-precision corrections | [CHANGELOG](../CHANGELOG.md), CLI/check/registry tests |
+| [0.6.0](https://github.com/vahapogut/trustdiff/releases/tag/v0.6.0) | Unicode look-alike detection, bulk Cargo metadata, pnpm install gate, Turkish guide, baseline monitoring, optional local npm signature verification and GuardDog analysis, lazy download counts and reviewed policy exceptions | [Feature details](#version-060), [M5 implementation](#m5-implementation), [CHANGELOG](../CHANGELOG.md#060---2026-09-29) |
 
-The Homebrew cask and Scoop bucket both name CLI 0.5.2. The npm package
+The Homebrew cask and Scoop bucket both name CLI 0.6.0. The npm package
 `@trustdiff/bun-scanner` has its own version, 0.5.0. Their version numbers do not
-need to match. The npm staging correction is included in the prepared 0.6.0
-changelog; distribution remains on the versions above until publication succeeds.
+need to match. The npm staging correction ships in CLI 0.6.0; see the
+[changelog](../CHANGELOG.md#060---2026-09-29).
 
-## Version 0.6.0 release preparation
+## Version 0.6.0
 
-The four starter issues seeded by the original plan were follow-up development,
-not evidence that every later idea had been implemented:
+Version 0.6.0 implements the four starter issues from the original plan:
 
 - [#1](https://github.com/vahapogut/trustdiff/issues/1): Unicode look-alike names
   in TD008, including a name-only diagnostic for Unicode npm input. npm's package
@@ -40,13 +40,12 @@ not evidence that every later idea had been implemented:
   linked to an exact English source commit. CI reports a stale source revision
   when the English README changes without updating the translation.
 
-These changes are included in the prepared 0.6.0 release. A changelog entry or
-tag alone does not publish them; the release workflow must complete first.
+The guides above document the supported inputs and limits of each feature.
 
 ## M5 implementation
 
 [PLAN section 16](PLAN.md#16-proposed-m5-v060) is the historical proposal.
-The subsequently approved implementation is included in the next release:
+The subsequently approved implementation ships in 0.6.0:
 
 | Item | Implementation and verification |
 |---|---|
@@ -56,8 +55,8 @@ The subsequently approved implementation is included in the next release:
 | 5.4 GuardDog | [Contract](guarddog.md), optional GuardDog 3.2.0 sandbox on Linux/macOS, strict source identity, subprocess cancellation/output/partial-result tests |
 | 5.6 policy allow | [Contract](policy-allow.md), exact exceptions, reason/expiry, preview/backup/atomic write, comment and expiry regressions |
 
-These features are included in the prepared 0.6.0 release. Optional external
-verifiers do not add a runtime requirement to the normal metadata-only command.
+Optional external verifiers do not add a runtime requirement to the normal
+metadata-only command.
 
 Item 5.5 remains unavailable from the source: the public crates.io dump does not provide a
 complete ownership-event history. Current owner rows and their creation times
