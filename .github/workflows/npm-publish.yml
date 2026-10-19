@@ -108,7 +108,7 @@ jobs:
           # The same release the bun-scanner test workflow pins.
           bun-version: "1.4.2"
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           # npm 12 asks for ^24.15.0 on the 24 line; setup-node resolves the
           # newest 24.x, which has been past that since 2026.
